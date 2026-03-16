@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 // EnableWindow lives in Win32_UI_Input_KeyboardAndMouse which is not in our feature set.
 #[link(name = "user32")]
 unsafe extern "system" {
@@ -272,6 +273,7 @@ unsafe fn create_controls(hwnd: HWND, ctx: &mut DialogCtx) {
 
     static_text!("PETS", 14, 14, 60, 14);
     push_btn!("+ Add pet", ID_BTN_ADD_PET, 460, 11, 80, 24);
+    push_btn!("Remove pet", ID_BTN_REMOVE_PET, 460, 39, 80, 24);
     static_text!("SPRITE", 14, 58, 80, 14);
 
     CreateWindowExW(
@@ -675,6 +677,18 @@ unsafe extern "system" fn config_wnd_proc(
                     let mut rc = dis.rcItem;
                     DrawTextW(dis.hDC, text.as_ptr(), -1, &mut rc,
                         DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                }
+                ID_BTN_ADD_PET | ID_BTN_REMOVE_PET => {
+                    // Secondary action buttons: same style as Cancel
+                    let hbr = CreateSolidBrush(clr_bg_ctrl());
+                    FillRect(dis.hDC, &dis.rcItem, hbr);
+                    DeleteObject(hbr as *mut _);
+                    SetTextColor(dis.hDC, clr_text());
+                    SetBkMode(dis.hDC, TRANSPARENT as i32);
+                    let mut buf = [0u16; 64];
+                    let n = GetWindowTextW(dis.hwndItem, buf.as_mut_ptr(), buf.len() as i32);
+                    let mut rc = dis.rcItem;
+                    DrawTextW(dis.hDC, buf.as_ptr(), n, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 }
                 ID_LIST_GALLERY => {
                     draw_gallery_card(dis);
