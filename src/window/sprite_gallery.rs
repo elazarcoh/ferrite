@@ -50,7 +50,6 @@ pub struct BrowseEntry;
 // ─── Embedded asset stems ────────────────────────────────────────────────────
 
 /// Collect stems of embedded sprites that have BOTH a .json and a .png.
-/// Excludes "test_pet" (internal only, not user-visible).
 fn embedded_stems() -> Vec<String> {
     let mut jsons: std::collections::HashSet<String> = Default::default();
     let mut pngs: std::collections::HashSet<String> = Default::default();
@@ -64,7 +63,6 @@ fn embedded_stems() -> Vec<String> {
     }
     let mut stems: Vec<String> = jsons
         .intersection(&pngs)
-        .filter(|s| *s != "test_pet")
         .cloned()
         .collect();
     stems.sort();
@@ -81,9 +79,14 @@ impl SpriteGallery {
 
         // Embedded sprites
         for stem in embedded_stems() {
+            let display_name = if stem == "test_pet" {
+                "arrows".to_string()
+            } else {
+                stem.clone()
+            };
             entries.push(GalleryEntry {
                 key: SpriteKey::Embedded(stem.clone()),
-                display_name: stem,
+                display_name,
                 source: SourceKind::BuiltIn,
                 thumbnail: None,
             });

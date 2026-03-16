@@ -30,11 +30,14 @@ fn write_test_sprite_source(dir: &TempDir) -> (PathBuf, PathBuf) {
 }
 
 #[test]
-fn gallery_load_skips_test_pet() {
+fn gallery_load_shows_arrows_not_test_pet() {
     let _sprites_dir = temp_sprites_dir();
     let gallery = SpriteGallery::load();
     let names: Vec<&str> = gallery.entries.iter().map(|e| e.display_name.as_str()).collect();
-    assert!(!names.contains(&"test_pet"), "test_pet must not appear in user-visible gallery");
+    // "test_pet" must not appear as a display name — it's remapped to "arrows"
+    assert!(!names.contains(&"test_pet"), "test_pet must not appear as display name");
+    // "arrows" (the renamed test_pet) must be present
+    assert!(names.contains(&"arrows"), "arrows must appear in user-visible gallery");
     // eSheep is embedded and should appear
     assert!(names.iter().any(|n| n.eq_ignore_ascii_case("esheep")));
 }
