@@ -21,11 +21,11 @@ use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::{
         BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection, CreatePen, CreateSolidBrush,
-        DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC, InvalidateRect,
-        ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, StretchDIBits,
+        DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC, GetStockObject, InvalidateRect,
+        ReleaseDC, Rectangle, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, StretchDIBits,
         UpdateWindow, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DT_CENTER,
         DT_LEFT, DT_SINGLELINE, DT_TOP, DT_VCENTER, HBITMAP, HBRUSH, PAINTSTRUCT,
-        PS_SOLID, SRCCOPY, TRANSPARENT, BI_RGB, HDC,
+        PS_DASH, PS_SOLID, SRCCOPY, TRANSPARENT, BI_RGB, HDC, NULL_BRUSH,
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::Controls::{DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODS_SELECTED},
@@ -472,6 +472,20 @@ unsafe fn draw_gallery_card(dis: &DRAWITEMSTRUCT) {
         };
         DrawTextW(dis.hDC, text.as_ptr(), -1, &mut text_rc,
             DT_VCENTER | DT_SINGLELINE | DT_LEFT);
+
+        // Dashed border around Browse card
+        let hpen_dash = CreatePen(PS_DASH as i32, 1, 0x444444_u32);
+        let old_pen = SelectObject(dis.hDC, hpen_dash as *mut _);
+        let hbr_null = GetStockObject(NULL_BRUSH as i32);
+        let old_br = SelectObject(dis.hDC, hbr_null);
+        let mut border_rc = dis.rcItem;
+        border_rc.right -= 1;
+        border_rc.bottom -= 1;
+        Rectangle(dis.hDC, border_rc.left, border_rc.top, border_rc.right, border_rc.bottom);
+        SelectObject(dis.hDC, old_pen as *mut _);
+        SelectObject(dis.hDC, old_br);
+        DeleteObject(hpen_dash as *mut _);
+
         return;
     }
 
@@ -484,14 +498,23 @@ unsafe fn draw_gallery_card(dis: &DRAWITEMSTRUCT) {
     // Draw thumbnail
     if let Some(hbmp) = entry.thumbnail {
         let hdc_mem = CreateCompatibleDC(dis.hDC);
-        SelectObject(hdc_mem, hbmp as *mut _);
+        let old_bmp = SelectObject(hdc_mem, hbmp as *mut _);
         BitBlt(dis.hDC, thumb_x, thumb_y, thumb_w, thumb_h, hdc_mem, 0, 0, SRCCOPY);
+        SelectObject(hdc_mem, old_bmp as *mut _);
         DeleteDC(hdc_mem);
     } else {
-        let hbr = CreateSolidBrush(0x2d2d2d_u32);
+        // Draw folder icon placeholder
+        let hbr_thumb = CreateSolidBrush(0x2d2d2d_u32);
         let thumb_rc = RECT { left: thumb_x, top: thumb_y, right: thumb_x + thumb_w, bottom: thumb_y + thumb_h };
-        FillRect(dis.hDC, &thumb_rc, hbr);
-        DeleteObject(hbr as *mut _);
+        FillRect(dis.hDC, &thumb_rc, hbr_thumb);
+        DeleteObject(hbr_thumb as *mut _);
+        // Folder icon glyph centered in thumbnail area
+        SetBkMode(dis.hDC, TRANSPARENT as i32);
+        SetTextColor(dis.hDC, 0x888888_u32);
+        let folder_glyph = wide("\u{1F4C1}"); // 📁 folder emoji
+        let mut icon_rc = thumb_rc;
+        DrawTextW(dis.hDC, folder_glyph.as_ptr(), -1, &mut icon_rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     // Display name
