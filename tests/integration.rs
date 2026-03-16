@@ -21,3 +21,7 @@ mod config_roundtrip {
 mod hot_reload {
     include!("integration/test_hot_reload.rs");
 }
+
+mod sprite_gallery {
+    include!("integration/test_sprite_gallery.rs");
+}
