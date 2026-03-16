@@ -7,7 +7,6 @@ use crate::assets::{self, Assets};
 use crate::config::dialog_state::SpriteKey;
 use crate::sprite::sheet::load_embedded;
 use anyhow::{anyhow, Context, Result};
-use rust_embed::Embed;
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "windows")]
@@ -44,6 +43,9 @@ pub struct SpriteGallery {
     /// Real sprite entries only. The Browse sentinel is rendered separately by the dialog.
     pub entries: Vec<GalleryEntry>,
 }
+
+/// Sentinel last entry — not a real sprite.
+pub struct BrowseEntry;
 
 // ─── Embedded asset stems ────────────────────────────────────────────────────
 
