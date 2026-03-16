@@ -9,7 +9,6 @@ unsafe extern "system" {
 
 // Re-export for backward compatibility with existing tests that import these from tray::config_window.
 pub use crate::config::dialog_state::{ConfigDialogState, DialogResult};
-use crate::config::dialog_state::SpriteKey;
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
@@ -17,7 +16,6 @@ use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::HBRUSH,
     System::LibraryLoader::GetModuleHandleW,
-    UI::Controls::Dialogs::{GetOpenFileNameW, OPENFILENAMEW},
     UI::WindowsAndMessaging::*,
 };
 

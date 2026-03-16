@@ -153,7 +153,7 @@ impl ConfigDialogState {
             Ok(f) => f,
             Err(_) => return false,
         };
-        if v < 1.0 || v > 500.0 {
+        if !v.is_finite() || v < 1.0 || v > 500.0 {
             return false;
         }
         if let Some(p) = self.selected_pet_mut() {
