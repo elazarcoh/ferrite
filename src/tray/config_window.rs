@@ -19,12 +19,12 @@ use std::os::windows::ffi::OsStrExt;
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::{
-        BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection, CreateSolidBrush,
+        BeginPaint, BitBlt, CreateCompatibleDC, CreateDIBSection, CreatePen, CreateSolidBrush,
         DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, GetDC, InvalidateRect,
-        ReleaseDC, SelectObject, SetBkColor, SetBkMode, SetTextColor, StretchDIBits,
+        ReleaseDC, RoundRect, SelectObject, SetBkColor, SetBkMode, SetTextColor, StretchDIBits,
         UpdateWindow, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DT_CENTER,
         DT_LEFT, DT_SINGLELINE, DT_TOP, DT_VCENTER, HBITMAP, HBRUSH, PAINTSTRUCT,
-        SRCCOPY, TRANSPARENT, BI_RGB, HDC,
+        PS_SOLID, SRCCOPY, TRANSPARENT, BI_RGB, HDC,
     },
     System::LibraryLoader::GetModuleHandleW,
     UI::Controls::{DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODS_SELECTED},
@@ -554,14 +554,20 @@ unsafe extern "system" fn chip_wnd_proc(
             let ctx = get_ctx(parent);
             let selected = !ctx.is_null() && (*ctx).state.selected == pet_idx;
 
-            let (bg, _border) = if selected {
+            let (bg, border) = if selected {
                 (clr_bg_sel(), clr_accent())
             } else {
                 (0x2d2d2d_u32, 0x444444_u32)
             };
             let hbr = CreateSolidBrush(bg);
-            FillRect(hdc, &rc, hbr);
+            let hpen = CreatePen(PS_SOLID as i32, 1, border);
+            let old_br = SelectObject(hdc, hbr as *mut _);
+            let old_pen = SelectObject(hdc, hpen as *mut _);
+            RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 12, 12);
+            SelectObject(hdc, old_br as *mut _);
+            SelectObject(hdc, old_pen as *mut _);
             DeleteObject(hbr as *mut _);
+            DeleteObject(hpen as *mut _);
 
             let mut buf = [0u16; 128];
             let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
