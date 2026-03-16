@@ -1,3 +1,4 @@
+pub mod dialog_state;
 pub mod schema;
 pub mod watcher;
 

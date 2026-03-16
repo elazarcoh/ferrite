@@ -1,4 +1,16 @@
-use crate::config::schema::{Config, PetConfig};
+use crate::config::schema::Config;
+
+// EnableWindow lives in Win32_UI_Input_KeyboardAndMouse which is not in our feature set.
+// Keep the manual FFI declaration from the original file:
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn EnableWindow(hwnd: HWND, enable: i32) -> i32;
+}
+
+// Re-export for backward compatibility with existing tests that import these from tray::config_window.
+pub use crate::config::dialog_state::{ConfigDialogState, DialogResult};
+use crate::config::dialog_state::SpriteKey;
+
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use windows_sys::Win32::{
@@ -14,138 +26,17 @@ const SS_LEFT: u32 = 0;
 // COLOR_BTNFACE = 15; +1 converts color index to pseudo-brush handle
 const DIALOG_BG_BRUSH: usize = 16;
 
-// EnableWindow is in user32 but windows-sys may not re-export it under Win32_UI_WindowsAndMessaging
-#[link(name = "user32")]
-unsafe extern "system" {
-    fn EnableWindow(hwnd: HWND, enable: i32) -> i32;
-}
-
 // ─── Control IDs ──────────────────────────────────────────────────────────────
 
 const ID_LIST: i32 = 101;
 const ID_BTN_ADD: i32 = 102;
 const ID_BTN_REMOVE: i32 = 103;
-const ID_EDIT_PATH: i32 = 104;
-const ID_BTN_BROWSE: i32 = 105;
 const ID_EDIT_SCALE: i32 = 106;
-const ID_EDIT_TAG: i32 = 107;
 const ID_EDIT_X: i32 = 108;
 const ID_EDIT_Y: i32 = 109;
+const ID_EDIT_SPEED: i32 = 110;
 const DLG_OK: i32 = 1;     // IDOK
 const DLG_CANCEL: i32 = 2; // IDCANCEL
-
-// ─── Dialog model (fully testable without Win32) ───────────────────────────────
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum DialogResult {
-    None,
-    Ok,
-    Cancel,
-}
-
-pub struct ConfigDialogState {
-    pub config: Config,
-    pub selected: usize,
-    pub result: DialogResult,
-}
-
-impl ConfigDialogState {
-    pub fn new(config: Config) -> Self {
-        ConfigDialogState { config, selected: 0, result: DialogResult::None }
-    }
-
-    pub fn selected_pet(&self) -> Option<&PetConfig> {
-        self.config.pets.get(self.selected)
-    }
-
-    fn selected_pet_mut(&mut self) -> Option<&mut PetConfig> {
-        self.config.pets.get_mut(self.selected)
-    }
-
-    pub fn add_pet(&mut self) {
-        let n = self.config.pets.len();
-        self.config.pets.push(PetConfig { id: format!("pet_{n}"), ..PetConfig::default() });
-        self.selected = self.config.pets.len() - 1;
-    }
-
-    pub fn remove_selected(&mut self) {
-        if self.config.pets.is_empty() {
-            return;
-        }
-        self.config.pets.remove(self.selected);
-        if !self.config.pets.is_empty() && self.selected >= self.config.pets.len() {
-            self.selected = self.config.pets.len() - 1;
-        }
-    }
-
-    pub fn select(&mut self, index: usize) {
-        if index < self.config.pets.len() {
-            self.selected = index;
-        }
-    }
-
-    pub fn update_sheet_path(&mut self, path: String) {
-        if let Some(p) = self.selected_pet_mut() {
-            p.sheet_path = path;
-        }
-    }
-
-    /// Returns `true` if scale was valid (1–4).
-    pub fn update_scale(&mut self, s: &str) -> bool {
-        match Self::parse_scale(s) {
-            Some(v) => {
-                if let Some(p) = self.selected_pet_mut() {
-                    p.scale = v;
-                }
-                true
-            }
-            None => false,
-        }
-    }
-
-    pub fn parse_scale(s: &str) -> Option<u32> {
-        let v: u32 = s.trim().parse().ok()?;
-        if (1..=4).contains(&v) { Some(v) } else { None }
-    }
-
-    pub fn update_x(&mut self, s: &str) -> bool {
-        match s.trim().parse::<i32>() {
-            Ok(v) => {
-                if let Some(p) = self.selected_pet_mut() {
-                    p.x = v;
-                }
-                true
-            }
-            Err(_) => false,
-        }
-    }
-
-    pub fn update_y(&mut self, s: &str) -> bool {
-        match s.trim().parse::<i32>() {
-            Ok(v) => {
-                if let Some(p) = self.selected_pet_mut() {
-                    p.y = v;
-                }
-                true
-            }
-            Err(_) => false,
-        }
-    }
-
-    pub fn update_tag(&mut self, tag: String) {
-        if let Some(p) = self.selected_pet_mut() {
-            p.tag_map.idle = tag;
-        }
-    }
-
-    pub fn accept(&mut self) {
-        self.result = DialogResult::Ok;
-    }
-
-    pub fn cancel(&mut self) {
-        self.result = DialogResult::Cancel;
-    }
-}
 
 // ─── Win32 dialog ─────────────────────────────────────────────────────────────
 
@@ -286,11 +177,10 @@ unsafe fn refresh_list(hwnd: HWND, state: &ConfigDialogState) {
 
 unsafe fn refresh_fields(hwnd: HWND, state: &ConfigDialogState) {
     if let Some(pet) = state.selected_pet() {
-        set_ctrl_text(hwnd, ID_EDIT_PATH, &pet.sheet_path);
         set_ctrl_text(hwnd, ID_EDIT_SCALE, &pet.scale.to_string());
-        set_ctrl_text(hwnd, ID_EDIT_TAG, &pet.tag_map.idle);
         set_ctrl_text(hwnd, ID_EDIT_X, &pet.x.to_string());
         set_ctrl_text(hwnd, ID_EDIT_Y, &pet.y.to_string());
+        set_ctrl_text(hwnd, ID_EDIT_SPEED, &pet.walk_speed.to_string());
     }
 }
 
@@ -307,49 +197,14 @@ unsafe fn read_fields(hwnd: HWND, state: &mut ConfigDialogState) {
             String::from_utf16_lossy(&buf[..n.max(0) as usize])
         }};
     }
-    let path = get_text!(ID_EDIT_PATH);
-    if !path.is_empty() {
-        state.update_sheet_path(path);
-    }
     let scale = get_text!(ID_EDIT_SCALE);
     state.update_scale(&scale);
-    let tag = get_text!(ID_EDIT_TAG);
-    if !tag.is_empty() {
-        state.update_tag(tag);
-    }
     let x = get_text!(ID_EDIT_X);
     state.update_x(&x);
     let y = get_text!(ID_EDIT_Y);
     state.update_y(&y);
-}
-
-unsafe fn browse_for_file(parent: HWND) -> Option<String> {
-    let mut buf = [0u16; 512];
-    // Double-null-terminated filter string.
-    let mut filter: Vec<u16> = Vec::new();
-    for chunk in &[
-        "Aseprite JSON (*.json)", "*.json",
-        "All Files (*.*)",        "*.*",
-    ] {
-        filter.extend(chunk.encode_utf16());
-        filter.push(0);
-    }
-    filter.push(0); // final double-null
-
-    let mut ofn: OPENFILENAMEW = std::mem::zeroed();
-    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
-    ofn.hwndOwner = parent;
-    ofn.lpstrFilter = filter.as_ptr();
-    ofn.lpstrFile = buf.as_mut_ptr();
-    ofn.nMaxFile = buf.len() as u32;
-    ofn.Flags = 0x00001000 | 0x00000800; // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST
-
-    if GetOpenFileNameW(&mut ofn) != 0 {
-        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-        Some(String::from_utf16_lossy(&buf[..end]))
-    } else {
-        None
-    }
+    let speed = get_text!(ID_EDIT_SPEED);
+    state.update_walk_speed(&speed);
 }
 
 unsafe fn create_controls(hwnd: HWND) {
@@ -380,18 +235,6 @@ unsafe fn create_controls(hwnd: HWND) {
             )
         };
     }
-    macro_rules! edit {
-        ($x:expr, $y:expr, $w:expr, $id:expr) => {
-            CreateWindowExW(
-                WS_EX_CLIENTEDGE,
-                wide("EDIT").as_ptr(),
-                wide("").as_ptr(),
-                WS_CHILD | WS_VISIBLE | tab | ES_AUTOHSCROLL as u32,
-                $x, $y, $w, 22,
-                hwnd, $id as usize as HMENU, hi, std::ptr::null(),
-            )
-        };
-    }
 
     // Pets list
     label!("Pets:", 10, 10, 300);
@@ -405,27 +248,6 @@ unsafe fn create_controls(hwnd: HWND) {
     );
     btn!("Add",    320, 30, 80, 24, ID_BTN_ADD,    BS_PUSHBUTTON);
     btn!("Remove", 320, 60, 80, 24, ID_BTN_REMOVE, BS_PUSHBUTTON);
-
-    // Sheet path
-    label!("Sheet path:", 10, 125, 90);
-    edit!(10, 143, 330, ID_EDIT_PATH);
-    btn!("Browse...", 350, 143, 100, 22, ID_BTN_BROWSE, BS_PUSHBUTTON);
-
-    // Scale + tag
-    label!("Scale (1-4):", 10, 179, 80);
-    edit!(10, 199, 50, ID_EDIT_SCALE);
-    label!("Start tag:", 80, 179, 70);
-    edit!(80, 199, 160, ID_EDIT_TAG);
-
-    // X / Y
-    label!("X:", 10, 237, 20);
-    edit!(10, 257, 70, ID_EDIT_X);
-    label!("Y:", 100, 237, 20);
-    edit!(100, 257, 70, ID_EDIT_Y);
-
-    // OK / Cancel
-    btn!("OK",     300, 310, 80, 28, DLG_OK,     BS_DEFPUSHBUTTON);
-    btn!("Cancel", 395, 310, 80, 28, DLG_CANCEL, BS_PUSHBUTTON);
 }
 
 unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, state: &mut ConfigDialogState) {
@@ -458,12 +280,6 @@ unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, state: &mut ConfigDia
                     state.select(sel as usize);
                     refresh_fields(hwnd, state);
                 }
-            }
-        }
-        ID_BTN_BROWSE => {
-            if let Some(path) = browse_for_file(hwnd) {
-                state.update_sheet_path(path.clone());
-                set_ctrl_text(hwnd, ID_EDIT_PATH, &path);
             }
         }
         _ => {}

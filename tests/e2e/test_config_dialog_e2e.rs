@@ -4,6 +4,8 @@ use my_pet::{
     config::schema::{Config, PetConfig},
     tray::config_window::{ConfigDialogState, DialogResult},
 };
+use my_pet::config::dialog_state::SpriteKey;
+use std::path::PathBuf;
 
 fn two_pet_config() -> Config {
     Config {
@@ -159,4 +161,66 @@ fn cancel_sets_result_cancel() {
 fn selected_pet_none_when_empty() {
     let state = ConfigDialogState::new(Config { pets: vec![] });
     assert!(state.selected_pet().is_none());
+}
+
+// ── SpriteKey tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn sprite_key_roundtrip_embedded() {
+    let key = SpriteKey::Embedded("esheep".into());
+    let path = key.to_sheet_path();
+    assert_eq!(path, "embedded://esheep");
+    assert_eq!(SpriteKey::from_sheet_path(&path), key);
+}
+
+#[test]
+fn sprite_key_roundtrip_installed() {
+    let key = SpriteKey::Installed(PathBuf::from("C:/sprites/my_cat.json"));
+    let path = key.to_sheet_path();
+    assert_eq!(SpriteKey::from_sheet_path(&path), key);
+}
+
+// ── select_sprite / selected_sprite tests ────────────────────────────────────
+
+#[test]
+fn dialog_state_select_sprite_updates_path() {
+    let mut state = ConfigDialogState::new(Config::default());
+    state.select_sprite(SpriteKey::Embedded("esheep".into()));
+    assert_eq!(state.config.pets[0].sheet_path, "embedded://esheep");
+    assert_eq!(state.selected_sprite, SpriteKey::Embedded("esheep".into()));
+}
+
+#[test]
+fn dialog_state_new_derives_selected_sprite_from_sheet_path() {
+    let cfg = Config {
+        pets: vec![PetConfig { sheet_path: "embedded://esheep".into(), ..PetConfig::default() }],
+    };
+    let state = ConfigDialogState::new(cfg);
+    assert_eq!(state.selected_sprite, SpriteKey::Embedded("esheep".into()));
+}
+
+// ── update_walk_speed tests ───────────────────────────────────────────────────
+
+#[test]
+fn dialog_state_update_walk_speed_valid() {
+    let mut state = ConfigDialogState::new(Config::default());
+    assert!(state.update_walk_speed("80"));
+    assert!((state.config.pets[0].walk_speed - 80.0).abs() < 0.001);
+    assert!(state.update_walk_speed("80.5"));
+    assert!((state.config.pets[0].walk_speed - 80.5).abs() < 0.001);
+    assert!(state.update_walk_speed("1"));
+    assert!(state.update_walk_speed("500"));
+}
+
+#[test]
+fn dialog_state_update_walk_speed_invalid() {
+    let mut state = ConfigDialogState::new(Config::default());
+    let original = state.config.pets[0].walk_speed;
+    assert!(!state.update_walk_speed("0"));
+    assert!(!state.update_walk_speed("-1"));
+    assert!(!state.update_walk_speed("abc"));
+    assert!(!state.update_walk_speed("501"));
+    assert!(!state.update_walk_speed("0.5"));
+    // State must not have been mutated
+    assert!((state.config.pets[0].walk_speed - original).abs() < 0.001);
 }
