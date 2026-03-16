@@ -461,7 +461,14 @@ unsafe fn draw_gallery_card(dis: &DRAWITEMSTRUCT) {
         FillRect(dis.hDC, &thumb_rc, hbr_thumb);
         DeleteObject(hbr_thumb as *mut _);
 
+        // Folder icon in browse thumbnail area
         SetBkMode(dis.hDC, TRANSPARENT as i32);
+        SetTextColor(dis.hDC, 0x888888_u32);
+        let folder_glyph = wide("\u{1F4C1}");
+        let mut icon_rc = thumb_rc;
+        DrawTextW(dis.hDC, folder_glyph.as_ptr(), -1, &mut icon_rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
         SetTextColor(dis.hDC, 0x555555_u32);
         let text = wide("Browse\u{2026}");
         let mut text_rc = RECT {
@@ -503,18 +510,11 @@ unsafe fn draw_gallery_card(dis: &DRAWITEMSTRUCT) {
         SelectObject(hdc_mem, old_bmp as *mut _);
         DeleteDC(hdc_mem);
     } else {
-        // Draw folder icon placeholder
+        // Gray placeholder rectangle (no thumbnail)
         let hbr_thumb = CreateSolidBrush(0x2d2d2d_u32);
         let thumb_rc = RECT { left: thumb_x, top: thumb_y, right: thumb_x + thumb_w, bottom: thumb_y + thumb_h };
         FillRect(dis.hDC, &thumb_rc, hbr_thumb);
         DeleteObject(hbr_thumb as *mut _);
-        // Folder icon glyph centered in thumbnail area
-        SetBkMode(dis.hDC, TRANSPARENT as i32);
-        SetTextColor(dis.hDC, 0x888888_u32);
-        let folder_glyph = wide("\u{1F4C1}"); // 📁 folder emoji
-        let mut icon_rc = thumb_rc;
-        DrawTextW(dis.hDC, folder_glyph.as_ptr(), -1, &mut icon_rc,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     // Display name
