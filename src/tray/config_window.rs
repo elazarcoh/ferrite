@@ -424,9 +424,106 @@ unsafe fn read_fields(hwnd: HWND, state: &mut ConfigDialogState) {
 
 // ─── Gallery card drawing stub ────────────────────────────────────────────────
 
-/// Draw a gallery listbox card. Stub replaced in Chunk 4.
-unsafe fn draw_gallery_card(_dis: &DRAWITEMSTRUCT) {
-    // Full implementation in Task 14.
+unsafe fn draw_gallery_card(dis: &DRAWITEMSTRUCT) {
+    let parent = GetParent(dis.hwndItem);
+    let ctx = get_ctx(parent);
+    if ctx.is_null() { return; }
+    let ctx = &mut *ctx;
+
+    let idx = dis.itemID as usize;
+    let is_browse = idx == ctx.gallery.entries.len();
+    let is_selected = (dis.itemState & ODS_SELECTED) != 0;
+
+    // Background
+    let bg_color = if is_selected { clr_bg_sel() } else { clr_bg() };
+    let hbr_bg = CreateSolidBrush(bg_color);
+    FillRect(dis.hDC, &dis.rcItem, hbr_bg);
+    DeleteObject(hbr_bg as *mut _);
+
+    // Left accent bar (2px, blue) when selected
+    if is_selected {
+        let mut bar = dis.rcItem;
+        bar.right = bar.left + 2;
+        let hbr_bar = CreateSolidBrush(clr_accent());
+        FillRect(dis.hDC, &bar, hbr_bar);
+        DeleteObject(hbr_bar as *mut _);
+    }
+
+    let rc = dis.rcItem;
+    let thumb_x = rc.left + 8;
+    let thumb_y = rc.top + 8;
+    let thumb_w = 28i32;
+    let thumb_h = 28i32;
+
+    if is_browse {
+        let hbr_thumb = CreateSolidBrush(0x3c3c3c_u32);
+        let thumb_rc = RECT { left: thumb_x, top: thumb_y, right: thumb_x + thumb_w, bottom: thumb_y + thumb_h };
+        FillRect(dis.hDC, &thumb_rc, hbr_thumb);
+        DeleteObject(hbr_thumb as *mut _);
+
+        SetBkMode(dis.hDC, TRANSPARENT as i32);
+        SetTextColor(dis.hDC, 0x555555_u32);
+        let text = wide("Browse\u{2026}");
+        let mut text_rc = RECT {
+            left: thumb_x + thumb_w + 8,
+            top: rc.top,
+            right: rc.right - 4,
+            bottom: rc.bottom,
+        };
+        DrawTextW(dis.hDC, text.as_ptr(), -1, &mut text_rc,
+            DT_VCENTER | DT_SINGLELINE | DT_LEFT);
+        return;
+    }
+
+    // Real gallery entry
+    let entry = &mut ctx.gallery.entries[idx];
+
+    // Lazy-load thumbnail
+    SpriteGallery::load_thumbnail(entry);
+
+    // Draw thumbnail
+    if let Some(hbmp) = entry.thumbnail {
+        let hdc_mem = CreateCompatibleDC(dis.hDC);
+        SelectObject(hdc_mem, hbmp as *mut _);
+        BitBlt(dis.hDC, thumb_x, thumb_y, thumb_w, thumb_h, hdc_mem, 0, 0, SRCCOPY);
+        DeleteDC(hdc_mem);
+    } else {
+        let hbr = CreateSolidBrush(0x2d2d2d_u32);
+        let thumb_rc = RECT { left: thumb_x, top: thumb_y, right: thumb_x + thumb_w, bottom: thumb_y + thumb_h };
+        FillRect(dis.hDC, &thumb_rc, hbr);
+        DeleteObject(hbr as *mut _);
+    }
+
+    // Display name
+    SetBkMode(dis.hDC, TRANSPARENT as i32);
+    let name_color_ref: u32 = if is_selected { 0x4f | (0xc3 << 8) | (0xf7 << 16) } else { clr_text() };
+    SetTextColor(dis.hDC, name_color_ref);
+    let name_w = wide(&entry.display_name);
+    let mut name_rc = RECT {
+        left: thumb_x + thumb_w + 8,
+        top: rc.top + 8,
+        right: rc.right - 4,
+        bottom: rc.top + 26,
+    };
+    DrawTextW(dis.hDC, name_w.as_ptr(), -1, &mut name_rc,
+        DT_LEFT | DT_TOP | DT_SINGLELINE);
+
+    // Source label ("built-in" / "custom")
+    let src_text = match entry.source {
+        SourceKind::BuiltIn => "built-in",
+        SourceKind::Custom => "custom",
+    };
+    let src_color: u32 = if is_selected { 0x3d | (0x85 << 8) | (0xc8 << 16) } else { 0x00555555 };
+    SetTextColor(dis.hDC, src_color);
+    let src_w = wide(src_text);
+    let mut src_rc = RECT {
+        left: thumb_x + thumb_w + 8,
+        top: rc.top + 26,
+        right: rc.right - 4,
+        bottom: rc.bottom - 4,
+    };
+    DrawTextW(dis.hDC, src_w.as_ptr(), -1, &mut src_rc,
+        DT_LEFT | DT_TOP | DT_SINGLELINE);
 }
 
 // ─── Browse and install ───────────────────────────────────────────────────────
@@ -600,7 +697,94 @@ unsafe extern "system" fn chip_wnd_proc(
 unsafe extern "system" fn preview_wnd_proc(
     hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
-    DefWindowProcW(hwnd, msg, wparam, lparam)
+    match msg {
+        WM_PAINT => {
+            let mut ps: PAINTSTRUCT = std::mem::zeroed();
+            let hdc = BeginPaint(hwnd, &mut ps);
+
+            let parent = GetParent(hwnd);
+            let ctx = get_ctx(parent);
+
+            let mut rc: RECT = std::mem::zeroed();
+            GetClientRect(hwnd, &mut rc);
+            let pane_w = rc.right - rc.left;
+            let pane_h = rc.bottom - rc.top;
+
+            if ctx.is_null() || (*ctx).preview_sheet.is_none() {
+                let hbr = CreateSolidBrush(0x141414_u32);
+                FillRect(hdc, &rc, hbr);
+                DeleteObject(hbr as *mut _);
+                EndPaint(hwnd, &ps);
+                return 0;
+            }
+
+            let ctx = &mut *ctx;
+            let sheet = ctx.preview_sheet.as_ref().unwrap();
+            let abs = ctx.preview_anim.absolute_frame(sheet);
+            let frame = &sheet.frames[abs];
+
+            // Build BGRA pixels from RGBA image
+            let img_w = sheet.image.width() as i32;
+            let img_h = sheet.image.height() as i32;
+            let bgra: Vec<u8> = sheet.image.pixels()
+                .flat_map(|p| [p[2], p[1], p[0], p[3]])
+                .collect();
+
+            // Create off-screen DIBSection (pane size)
+            let hdc_mem = CreateCompatibleDC(hdc);
+            let mut bmi: BITMAPINFO = std::mem::zeroed();
+            bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            bmi.bmiHeader.biWidth = pane_w;
+            bmi.bmiHeader.biHeight = -pane_h;
+            bmi.bmiHeader.biPlanes = 1;
+            bmi.bmiHeader.biBitCount = 32;
+            bmi.bmiHeader.biCompression = BI_RGB as u32;
+            let mut bits = std::ptr::null_mut();
+            let hbmp = CreateDIBSection(hdc_mem, &bmi, DIB_RGB_COLORS, &mut bits, std::ptr::null_mut(), 0);
+            // Capture old bitmap so we can restore it before deleting hbmp (GDI leak prevention).
+            let old_bmp = SelectObject(hdc_mem, hbmp as *mut _);
+
+            // Fill background
+            let hbr_bg = CreateSolidBrush(0x141414_u32);
+            FillRect(hdc_mem, &rc, hbr_bg);
+            DeleteObject(hbr_bg as *mut _);
+
+            // Draw frame centered in pane (2x upscale, clamped to pane)
+            let draw_w = (frame.w as i32 * 2).min(pane_w - 8);
+            let draw_h = (frame.h as i32 * 2).min(pane_h - 8);
+            let draw_x = (pane_w - draw_w) / 2;
+            let draw_y = (pane_h - draw_h) / 2;
+
+            let mut src_bmi: BITMAPINFO = std::mem::zeroed();
+            src_bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            src_bmi.bmiHeader.biWidth = img_w;
+            src_bmi.bmiHeader.biHeight = -img_h;
+            src_bmi.bmiHeader.biPlanes = 1;
+            src_bmi.bmiHeader.biBitCount = 32;
+            src_bmi.bmiHeader.biCompression = BI_RGB as u32;
+
+            StretchDIBits(
+                hdc_mem,
+                draw_x, draw_y, draw_w, draw_h,
+                frame.x as i32, frame.y as i32, frame.w as i32, frame.h as i32,
+                bgra.as_ptr() as *const _,
+                &src_bmi,
+                DIB_RGB_COLORS,
+                SRCCOPY,
+            );
+
+            // Blit off-screen to screen
+            BitBlt(hdc, 0, 0, pane_w, pane_h, hdc_mem, 0, 0, SRCCOPY);
+
+            // Deselect hbmp before deleting — deleting a selected object is a GDI no-op (leak).
+            SelectObject(hdc_mem, old_bmp as *mut _);
+            DeleteObject(hbmp as *mut _);
+            DeleteDC(hdc_mem);
+            EndPaint(hwnd, &ps);
+            0
+        }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
 }
 
 // ─── Main dialog window proc ──────────────────────────────────────────────────
@@ -721,6 +905,25 @@ unsafe extern "system" fn config_wnd_proc(
                 (*ctx).gallery.destroy_thumbnails();
                 (*ctx).destroy_brushes();
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            }
+            0
+        }
+        WM_TIMER => {
+            if wparam == TIMER_ANIM {
+                let ctx = get_ctx(hwnd);
+                if !ctx.is_null() {
+                    let ctx = &mut *ctx;
+                    if let Some(sheet) = ctx.preview_sheet.as_ref() {
+                        // SAFETY: preview_anim and preview_sheet are disjoint fields of DialogCtx.
+                        // We need to tick anim (mutably) while holding sheet (immutably).
+                        let anim = &mut ctx.preview_anim as *mut AnimationState;
+                        (*anim).tick(sheet, 100);
+                    }
+                    if !ctx.preview_hwnd.is_null() {
+                        InvalidateRect(ctx.preview_hwnd, std::ptr::null(), 0);
+                        UpdateWindow(ctx.preview_hwnd);
+                    }
+                }
             }
             0
         }
