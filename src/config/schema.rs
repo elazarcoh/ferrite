@@ -15,7 +15,7 @@ impl Default for Config {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PetConfig {
     pub id: String,
-    /// Absolute path to the `.json` spritesheet, or `"embedded://test_pet"`.
+    /// Absolute path to the `.json` spritesheet, or `"embedded://<stem>"` for bundled sheets.
     pub sheet_path: String,
     pub x: i32,
     pub y: i32,
@@ -30,15 +30,34 @@ pub struct PetConfig {
 
 impl Default for PetConfig {
     fn default() -> Self {
+        PetConfig::esheep()
+    }
+}
+
+impl PetConfig {
+    /// Classic eSheep (40×40 sprites, all animations).
+    pub fn esheep() -> Self {
         PetConfig {
-            id: "pet_0".into(),
-            sheet_path: "embedded://test_pet".into(),
+            id: "esheep".into(),
+            sheet_path: "embedded://esheep".into(),
             x: 100,
             y: 800,
             scale: 2,
-            walk_speed: 100.0,
+            walk_speed: 80.0,
             flip_walk_left: true,
-            tag_map: AnimTagMap::default(),
+            tag_map: AnimTagMap {
+                idle:    "idle".into(),
+                walk:    "walk".into(),
+                run:     Some("run".into()),
+                sit:     Some("sit".into()),
+                sleep:   Some("sleep".into()),
+                wake:    Some("wake".into()),
+                grabbed: Some("grabbed".into()),
+                petted:  Some("petted".into()),
+                react:   Some("react".into()),
+                fall:    Some("fall".into()),
+                thrown:  Some("thrown".into()),
+            },
         }
     }
 }

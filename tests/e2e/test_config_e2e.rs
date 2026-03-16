@@ -54,5 +54,5 @@ fn config_roundtrip_preserves_all_pet_fields() {
 fn loading_missing_config_returns_single_default_pet() {
     let cfg = load(std::path::Path::new("C:/no/such/path.toml")).unwrap();
     assert_eq!(cfg.pets.len(), 1);
-    assert_eq!(cfg.pets[0].sheet_path, "embedded://test_pet");
+    assert_eq!(cfg.pets[0].sheet_path, "embedded://esheep");
 }
