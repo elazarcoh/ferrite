@@ -430,6 +430,10 @@ unsafe fn draw_gallery_card(dis: &DRAWITEMSTRUCT) {
     if ctx.is_null() { return; }
     let ctx = &mut *ctx;
 
+    // Win32 sends itemID = u32::MAX for empty listboxes / spurious draw messages.
+    if dis.itemID == u32::MAX {
+        return;
+    }
     let idx = dis.itemID as usize;
     let is_browse = idx == ctx.gallery.entries.len();
     let is_selected = (dis.itemState & ODS_SELECTED) != 0;
@@ -937,10 +941,7 @@ unsafe extern "system" fn config_wnd_proc(
                 if !ctx.is_null() {
                     let ctx = &mut *ctx;
                     if let Some(sheet) = ctx.preview_sheet.as_ref() {
-                        // SAFETY: preview_anim and preview_sheet are disjoint fields of DialogCtx.
-                        // We need to tick anim (mutably) while holding sheet (immutably).
-                        let anim = &mut ctx.preview_anim as *mut AnimationState;
-                        (*anim).tick(sheet, 100);
+                        ctx.preview_anim.tick(sheet, 100);
                     }
                     if !ctx.preview_hwnd.is_null() {
                         InvalidateRect(ctx.preview_hwnd, std::ptr::null(), 0);
