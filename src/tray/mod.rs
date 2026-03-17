@@ -1,4 +1,5 @@
 pub mod config_window;
+pub mod sprite_editor;
 
 use crate::event::AppEvent;
 use anyhow::Result;

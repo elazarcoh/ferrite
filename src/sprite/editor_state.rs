@@ -86,6 +86,11 @@ impl SpriteEditorState {
         !self.tag_map.idle.is_empty() && !self.tag_map.walk.is_empty()
     }
 
+    /// Iterator of `(tag_idx, &EditorTag)` — used by the canvas painter.
+    pub fn state_tags_iter(&self) -> impl Iterator<Item = (usize, &EditorTag)> {
+        self.tags.iter().enumerate()
+    }
+
     /// COLORREF for tag at `idx` (cycles through TAG_COLORS palette).
     pub fn assign_color(idx: usize) -> u32 {
         TAG_COLORS[idx % TAG_COLORS.len()]
