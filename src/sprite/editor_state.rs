@@ -44,6 +44,9 @@ pub struct SpriteEditorState {
 // ─── impl SpriteEditorState ───────────────────────────────────────────────────
 
 impl SpriteEditorState {
+    /// Create a new editor state for the given PNG file and decoded image.
+    /// `rows` and `cols` default to 1×1; set them before calling `frame_rect`
+    /// or `build_json`.
     pub fn new(png_path: PathBuf, image: RgbaImage) -> Self {
         SpriteEditorState {
             png_path,
@@ -91,16 +94,17 @@ impl SpriteEditorState {
     /// Serialise to Aseprite array-format JSON including `myPetTagMap`.
     pub fn to_json(&self) -> Vec<u8> {
         let json = self.build_json(true);
-        serde_json::to_vec_pretty(&json).expect("serialize JSON")
+        serde_json::to_vec_pretty(&json).unwrap_or_else(|e| unreachable!("serde_json::Value serialize failed: {e}"))
     }
 
     /// Serialise to Aseprite array-format JSON WITHOUT `myPetTagMap` (for export).
     pub fn to_clean_json(&self) -> Vec<u8> {
         let json = self.build_json(false);
-        serde_json::to_vec_pretty(&json).expect("serialize clean JSON")
+        serde_json::to_vec_pretty(&json).unwrap_or_else(|e| unreachable!("serde_json::Value serialize failed: {e}"))
     }
 
     /// Write JSON + copy PNG to `dir`, overwriting any existing files.
+    /// Copies the source PNG file; does not re-encode from the in-memory image.
     pub fn save_to_dir(&self, dir: &Path) -> Result<()> {
         let stem = self.png_path
             .file_stem()
