@@ -13,6 +13,8 @@ use crate::window::sprite_gallery::{GalleryEntry, SourceKind, SpriteGallery};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
+
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::Gdi::{
@@ -37,6 +39,8 @@ const ID_EDIT_SCALE:     i32 = 106;
 const ID_EDIT_X:         i32 = 108;
 const ID_EDIT_Y:         i32 = 109;
 const ID_EDIT_SPEED:     i32 = 110;
+const ID_BTN_EDIT_SPRITE: i32 = 120;
+const ID_BTN_NEW_SPRITE:  i32 = 121;
 const TIMER_ANIM:        usize = 1001;
 
 // ─── Colors (dark VS Code-ish theme) ─────────────────────────────────────────
@@ -267,6 +271,11 @@ unsafe fn create_controls(hwnd: HWND, ctx: &mut DialogCtx) {
         hi,
         std::ptr::null(),
     );
+
+    push_btn!("Edit…",        ID_BTN_EDIT_SPRITE, 14,  306, 72, 22);
+    push_btn!("New from PNG…",ID_BTN_NEW_SPRITE,  90,  306, 92, 22);
+    // Edit… is disabled until a gallery entry is selected
+    EnableWindow(GetDlgItem(hwnd, ID_BTN_EDIT_SPRITE), 0);
 
     let preview = CreateWindowExW(
         0,
@@ -568,6 +577,113 @@ unsafe fn browse_and_install(hwnd: HWND, ctx: &mut DialogCtx) -> Option<GalleryE
     }
 }
 
+// ─── Sprite editor helpers ────────────────────────────────────────────────────
+
+unsafe fn edit_selected_sprite(hwnd: HWND, ctx: &mut DialogCtx) {
+    use crate::sprite::editor_state::SpriteEditorState;
+
+    let key = ctx.state.selected_sprite.clone();
+    let (png_path, image) = match &key {
+        SpriteKey::Embedded(stem) => {
+            // Offer to copy embedded sprite to AppData for editing
+            let msg = wide("This is a built-in sprite.\nCreate an editable copy in your sprites folder?");
+            let title = wide("Edit Sprite");
+            if MessageBoxW(hwnd, msg.as_ptr(), title.as_ptr(),
+                           MB_ICONQUESTION | MB_YESNO) != IDYES as i32 { return; }
+            let Some((json_bytes, png_bytes)) = crate::assets::embedded_sheet(stem) else { return };
+            let dest_dir = crate::window::sprite_gallery::SpriteGallery::appdata_sprites_dir();
+            let _ = std::fs::create_dir_all(&dest_dir);
+            let dest_png = dest_dir.join(format!("{stem}.png"));
+            let dest_json = dest_dir.join(format!("{stem}.json"));
+            if let Err(e) = std::fs::write(&dest_png, &png_bytes) {
+                let msg = wide(&format!("Could not copy PNG: {e}"));
+                let t = wide("Error");
+                MessageBoxW(hwnd, msg.as_ptr(), t.as_ptr(), MB_ICONERROR | MB_OK);
+                return;
+            }
+            if let Err(e) = std::fs::write(&dest_json, json_bytes) {
+                let msg = wide(&format!("Could not copy JSON: {e}"));
+                let t = wide("Error");
+                MessageBoxW(hwnd, msg.as_ptr(), t.as_ptr(), MB_ICONERROR | MB_OK);
+                return;
+            }
+            let image = match image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png) {
+                Ok(img) => img.into_rgba8(),
+                Err(_) => return,
+            };
+            (dest_png, image)
+        }
+        SpriteKey::Installed(path) => {
+            let png_path = path.with_extension("png");
+            let png_bytes = match std::fs::read(&png_path) { Ok(b) => b, Err(_) => return };
+            let image = match image::load_from_memory_with_format(png_bytes.as_slice(), image::ImageFormat::Png) {
+                Ok(img) => img.into_rgba8(),
+                Err(_) => return,
+            };
+            (png_path, image)
+        }
+    };
+
+    let mut state = SpriteEditorState::new(png_path, image);
+    // Pre-load existing tag definitions from installed JSON if available
+    if let SpriteKey::Installed(json_path) = &key {
+        if let Ok(json_bytes) = std::fs::read(json_path) {
+            let png_bytes_opt = std::fs::read(json_path.with_extension("png")).ok();
+            if let Some(png_bytes) = png_bytes_opt {
+                if let Ok((sheet, tag_map_opt)) = crate::sprite::sheet::load_with_tag_map(&json_bytes, &png_bytes) {
+                    for t in &sheet.tags {
+                        let color = SpriteEditorState::assign_color(state.tags.len());
+                        state.tags.push(crate::sprite::editor_state::EditorTag {
+                            name: t.name.clone(),
+                            from: t.from,
+                            to: t.to,
+                            direction: t.direction.clone(),
+                            color,
+                        });
+                    }
+                    if let Some(tm) = tag_map_opt { state.tag_map = tm; }
+                }
+            }
+        }
+    }
+
+    crate::tray::sprite_editor::show_sprite_editor(hwnd, state);
+}
+
+unsafe fn new_sprite_from_png(hwnd: HWND, _ctx: &mut DialogCtx) {
+    use crate::sprite::editor_state::SpriteEditorState;
+
+    let filter = wide("PNG images\0*.png\0All files\0*.*\0");
+    let mut file_buf = vec![0u16; 1024];
+
+    let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+    ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+    ofn.hwndOwner   = hwnd;
+    ofn.lpstrFilter = filter.as_ptr();
+    ofn.lpstrFile   = file_buf.as_mut_ptr();
+    ofn.nMaxFile    = file_buf.len() as u32;
+    // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST — same numeric literals as browse_and_install
+    ofn.Flags       = 0x00001000 | 0x00000800;
+
+    if GetOpenFileNameW(&mut ofn) == 0 { return; }
+
+    let path = std::path::PathBuf::from(String::from_utf16_lossy(
+        &file_buf[..file_buf.iter().position(|&c| c == 0).unwrap_or(0)],
+    ));
+    let png_bytes = match std::fs::read(&path) { Ok(b) => b, Err(_) => return };
+    let image = match image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png) {
+        Ok(img) => img.into_rgba8(),
+        Err(e) => {
+            let msg = wide(&format!("Could not load PNG: {e}"));
+            let t = wide("Error");
+            MessageBoxW(hwnd, msg.as_ptr(), t.as_ptr(), MB_ICONERROR | MB_OK);
+            return;
+        }
+    };
+    let state = SpriteEditorState::new(path, image);
+    crate::tray::sprite_editor::show_sprite_editor(hwnd, state);
+}
+
 // ─── Command handler ──────────────────────────────────────────────────────────
 
 unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) {
@@ -589,6 +705,8 @@ unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) 
             if notify == LBN_SELCHANGE as u16 {
                 let lb = GetDlgItem(hwnd, ID_LIST_GALLERY);
                 let sel = SendMessageW(lb, LB_GETCURSEL, 0, 0) as usize;
+                let has_sprite = sel < ctx.gallery.entries.len();
+                EnableWindow(GetDlgItem(hwnd, ID_BTN_EDIT_SPRITE), if has_sprite { 1 } else { 0 });
                 if sel < ctx.gallery.entries.len() {
                     let key = ctx.gallery.entries[sel].key.clone();
                     ctx.state.select_sprite(key);
@@ -615,6 +733,12 @@ unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) 
                 read_fields(hwnd, &mut ctx.state);
                 send_config_changed(ctx);
             }
+        }
+        ID_BTN_EDIT_SPRITE => {
+            edit_selected_sprite(hwnd, ctx);
+        }
+        ID_BTN_NEW_SPRITE => {
+            new_sprite_from_png(hwnd, ctx);
         }
         id if id >= 2000 => {
             let pet_idx = (id - 2000) as usize;
@@ -843,7 +967,7 @@ unsafe extern "system" fn config_wnd_proc(
             let dis = &*(lparam as *const DRAWITEMSTRUCT);
             let id = dis.CtlID as i32;
             match id {
-                ID_BTN_ADD_PET | ID_BTN_REMOVE_PET => {
+                ID_BTN_ADD_PET | ID_BTN_REMOVE_PET | ID_BTN_EDIT_SPRITE | ID_BTN_NEW_SPRITE => {
                     // Secondary action buttons: same style as Cancel
                     let hbr = CreateSolidBrush(clr_bg_ctrl());
                     FillRect(dis.hDC, &dis.rcItem, hbr);
