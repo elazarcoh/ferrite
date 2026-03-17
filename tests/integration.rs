@@ -25,3 +25,7 @@ mod hot_reload {
 mod sprite_gallery {
     include!("integration/test_sprite_gallery.rs");
 }
+
+mod sprite_editor {
+    include!("integration/test_sprite_editor.rs");
+}
