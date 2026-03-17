@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context, Result};
 use image::RgbaImage;
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
