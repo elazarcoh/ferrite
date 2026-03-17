@@ -9,6 +9,8 @@ unsafe extern "system" {
 pub use crate::config::dialog_state::{ConfigDialogState, DialogResult};
 use crate::config::dialog_state::SpriteKey;
 use crate::config::schema::Config;
+use crate::event::AppEvent;
+use crossbeam_channel::Sender;
 use crate::sprite::animation::AnimationState;
 use crate::sprite::sheet::load_embedded;
 use crate::assets;
@@ -41,8 +43,6 @@ const ID_EDIT_SCALE:     i32 = 106;
 const ID_EDIT_X:         i32 = 108;
 const ID_EDIT_Y:         i32 = 109;
 const ID_EDIT_SPEED:     i32 = 110;
-const DLG_OK:            i32 = 1;  // IDOK
-const DLG_CANCEL:        i32 = 2;  // IDCANCEL
 const TIMER_ANIM:        usize = 1001;
 
 // ─── Colors (dark VS Code-ish theme) ─────────────────────────────────────────
@@ -50,11 +50,11 @@ const TIMER_ANIM:        usize = 1001;
 const fn clr_bg()       -> u32 { 0x1e | (0x1e << 8) | (0x1e << 16) } // #1e1e1e
 const fn clr_bg_card()  -> u32 { 0x26 | (0x25 << 8) | (0x25 << 16) } // #252526
 const fn clr_bg_ctrl()  -> u32 { 0x3c | (0x3c << 8) | (0x3c << 16) } // #3c3c3c
-const fn clr_bg_sel()   -> u32 { 0x71 | (0x47 << 8) | (0x09 << 16) } // #094771
-const fn clr_accent()   -> u32 { 0xcc | (0x7a << 8) | (0x00 << 16) } // #007acc
+const fn clr_bg_sel()   -> u32 { 0x09 | (0x47 << 8) | (0x71 << 16) } // #094771 dark blue
+const fn clr_accent()   -> u32 { 0x00 | (0x7a << 8) | (0xcc << 16) } // #007acc VS Code blue
 const fn clr_text()     -> u32 { 0xcc | (0xcc << 8) | (0xcc << 16) } // #cccccc
 const fn clr_label()    -> u32 { 0x85 | (0x85 << 8) | (0x85 << 16) } // #858585
-const fn clr_text_acc() -> u32 { 0xf7 | (0xc3 << 8) | (0x4f << 16) } // #4fc3f7 accent blue
+const fn clr_text_acc() -> u32 { 0x4f | (0xc3 << 8) | (0xf7 << 16) } // #4fc3f7 sky blue
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -90,10 +90,11 @@ struct DialogCtx {
     dark_bg_brush: HBRUSH,
     ctrl_brush: HBRUSH,
     card_brush: HBRUSH,
+    tx: Sender<AppEvent>,
 }
 
 impl DialogCtx {
-    unsafe fn new(config: Config) -> Box<Self> {
+    unsafe fn new(config: Config, tx: Sender<AppEvent>) -> Box<Self> {
         let state = ConfigDialogState::new(config);
         let gallery = SpriteGallery::load();
         Box::new(DialogCtx {
@@ -106,6 +107,7 @@ impl DialogCtx {
             dark_bg_brush: CreateSolidBrush(clr_bg()),
             ctrl_brush: CreateSolidBrush(clr_bg_ctrl()),
             card_brush: CreateSolidBrush(clr_bg()),
+            tx,
         })
     }
 
@@ -114,6 +116,10 @@ impl DialogCtx {
         DeleteObject(self.ctrl_brush as *mut _);
         DeleteObject(self.card_brush as *mut _);
     }
+}
+
+unsafe fn send_config_changed(ctx: &DialogCtx) {
+    let _ = ctx.tx.send(AppEvent::ConfigChanged(ctx.state.config.clone()));
 }
 
 // ─── Window classes ───────────────────────────────────────────────────────────
@@ -186,11 +192,11 @@ fn register_classes() {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-pub fn show_config_dialog(parent: HWND, config: &Config) -> Option<Config> {
+pub fn show_config_dialog(parent: HWND, config: &Config, tx: Sender<AppEvent>) -> HWND {
     register_classes();
     unsafe {
-        let mut ctx = DialogCtx::new(config.clone());
-        let ctx_ptr: *mut DialogCtx = &mut *ctx;
+        let ctx = DialogCtx::new(config.clone(), tx);
+        let ctx_ptr = Box::into_raw(ctx);
 
         let cls = wide(DLG_CLASS);
         let title = wide("My Pet \u{2014} Configure");
@@ -209,36 +215,13 @@ pub fn show_config_dialog(parent: HWND, config: &Config) -> Option<Config> {
             std::ptr::null(),
         );
         if hwnd.is_null() {
-            return None;
+            drop(Box::from_raw(ctx_ptr));
+            return std::ptr::null_mut();
         }
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, ctx_ptr as isize);
         setup_dialog_controls(hwnd, &mut *ctx_ptr);
-
-        if !parent.is_null() {
-            EnableWindow(parent, 0);
-        }
         center_window(hwnd);
-
-        loop {
-            let mut msg: MSG = std::mem::zeroed();
-            let ret = GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0);
-            if ret == 0 {
-                PostQuitMessage(msg.wParam as i32);
-                break;
-            }
-            if ret == -1 { break; }
-            if IsDialogMessageW(hwnd, &msg) == 0 {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-            if IsWindow(hwnd) == 0 { break; }
-        }
-
-        if !parent.is_null() {
-            EnableWindow(parent, 1);
-        }
-
-        if ctx.state.result == DialogResult::Ok { Some(ctx.state.config) } else { None }
+        hwnd
     }
 }
 
@@ -310,8 +293,6 @@ unsafe fn create_controls(hwnd: HWND, ctx: &mut DialogCtx) {
     static_text!("Speed",  204, 314, 40, 14);
     edit_ctrl!(ID_EDIT_SPEED, 204, 330, 56);
 
-    push_btn!("Cancel", DLG_CANCEL, 358, 395, 80, 28);
-    push_btn!("Save",   DLG_OK,    450, 395, 80, 28);
 }
 
 unsafe fn populate_gallery_listbox(hwnd: HWND, gallery: &SpriteGallery) {
@@ -597,25 +578,18 @@ unsafe fn browse_and_install(hwnd: HWND, ctx: &mut DialogCtx) -> Option<GalleryE
 
 unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) {
     match id {
-        DLG_OK => {
-            read_fields(hwnd, &mut ctx.state);
-            ctx.state.accept();
-            DestroyWindow(hwnd);
-        }
-        DLG_CANCEL => {
-            ctx.state.cancel();
-            DestroyWindow(hwnd);
-        }
         ID_BTN_ADD_PET => {
             read_fields(hwnd, &mut ctx.state);
             ctx.state.add_pet();
             refresh_pet_chips(hwnd, ctx);
             refresh_fields(hwnd, &ctx.state);
+            send_config_changed(ctx);
         }
         ID_BTN_REMOVE_PET => {
             ctx.state.remove_selected();
             refresh_pet_chips(hwnd, ctx);
             refresh_fields(hwnd, &ctx.state);
+            send_config_changed(ctx);
         }
         ID_LIST_GALLERY => {
             if notify == LBN_SELCHANGE as u16 {
@@ -626,6 +600,7 @@ unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) 
                     ctx.state.select_sprite(key);
                     load_preview_for_sprite(ctx);
                     refresh_fields(hwnd, &ctx.state);
+                    send_config_changed(ctx);
                 } else if sel == ctx.gallery.entries.len() {
                     if browse_and_install(hwnd, ctx).is_some() {
                         let new_idx = ctx.gallery.entries.len() - 1;
@@ -636,8 +611,15 @@ unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) 
                         ctx.state.select_sprite(key);
                         load_preview_for_sprite(ctx);
                         refresh_fields(hwnd, &ctx.state);
+                        send_config_changed(ctx);
                     }
                 }
+            }
+        }
+        ID_EDIT_SCALE | ID_EDIT_X | ID_EDIT_Y | ID_EDIT_SPEED => {
+            if notify == EN_KILLFOCUS as u16 {
+                read_fields(hwnd, &mut ctx.state);
+                send_config_changed(ctx);
             }
         }
         id if id >= 2000 => {
@@ -867,28 +849,6 @@ unsafe extern "system" fn config_wnd_proc(
             let dis = &*(lparam as *const DRAWITEMSTRUCT);
             let id = dis.CtlID as i32;
             match id {
-                DLG_OK => {
-                    let hbr = CreateSolidBrush(clr_accent());
-                    FillRect(dis.hDC, &dis.rcItem, hbr);
-                    DeleteObject(hbr as *mut _);
-                    SetTextColor(dis.hDC, 0x00FFFFFF);
-                    SetBkMode(dis.hDC, TRANSPARENT as i32);
-                    let text = wide("Save");
-                    let mut rc = dis.rcItem;
-                    DrawTextW(dis.hDC, text.as_ptr(), -1, &mut rc,
-                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                }
-                DLG_CANCEL => {
-                    let hbr = CreateSolidBrush(clr_bg_ctrl());
-                    FillRect(dis.hDC, &dis.rcItem, hbr);
-                    DeleteObject(hbr as *mut _);
-                    SetTextColor(dis.hDC, clr_text());
-                    SetBkMode(dis.hDC, TRANSPARENT as i32);
-                    let text = wide("Cancel");
-                    let mut rc = dis.rcItem;
-                    DrawTextW(dis.hDC, text.as_ptr(), -1, &mut rc,
-                        DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                }
                 ID_BTN_ADD_PET | ID_BTN_REMOVE_PET => {
                     // Secondary action buttons: same style as Cancel
                     let hbr = CreateSolidBrush(clr_bg_ctrl());
@@ -920,18 +880,20 @@ unsafe extern "system" fn config_wnd_proc(
         WM_CLOSE => {
             let ctx = get_ctx(hwnd);
             if !ctx.is_null() {
-                (*ctx).state.cancel();
+                read_fields(hwnd, &mut (*ctx).state);
+                send_config_changed(&*ctx);
             }
             DestroyWindow(hwnd);
             0
         }
         WM_DESTROY => {
-            let ctx = get_ctx(hwnd);
-            if !ctx.is_null() {
-                KillTimer(hwnd, TIMER_ANIM);
-                (*ctx).gallery.destroy_thumbnails();
-                (*ctx).destroy_brushes();
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut DialogCtx;
+            if !ptr.is_null() {
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+                KillTimer(hwnd, TIMER_ANIM);
+                let mut ctx = Box::from_raw(ptr);
+                ctx.gallery.destroy_thumbnails();
+                ctx.destroy_brushes();
             }
             0
         }

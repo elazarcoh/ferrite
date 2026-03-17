@@ -294,16 +294,11 @@ impl App {
             }
             AppEvent::TrayOpenConfig => {
                 let current = config::load(&config::config_path()).unwrap_or_default();
-                if let Some(new_cfg) = crate::tray::config_window::show_config_dialog(
+                crate::tray::config_window::show_config_dialog(
                     std::ptr::null_mut(),
                     &current,
-                ) {
-                    let cfg_path = config::config_path();
-                    if let Err(e) = config::save(&cfg_path, &new_cfg) {
-                        log::warn!("save config failed: {e}");
-                    }
-                    self.apply_config(new_cfg)?;
-                }
+                    self.tx.clone(),
+                );
             }
             AppEvent::ConfigReloaded(new_cfg) | AppEvent::ConfigChanged(new_cfg) => {
                 self.apply_config(new_cfg)?;
