@@ -305,7 +305,7 @@ impl App {
                     self.apply_config(new_cfg)?;
                 }
             }
-            AppEvent::ConfigReloaded(new_cfg) => {
+            AppEvent::ConfigReloaded(new_cfg) | AppEvent::ConfigChanged(new_cfg) => {
                 self.apply_config(new_cfg)?;
             }
             AppEvent::PetClicked { pet_id } => {
@@ -340,7 +340,10 @@ impl App {
             new_cfg.pets.iter().map(|p| p.id.clone()).collect();
         self.pets.retain(|id, _| new_ids.contains(id));
         for pet_cfg in new_cfg.pets {
-            if !self.pets.contains_key(&pet_cfg.id) {
+            let needs_rebuild = self.pets.get(&pet_cfg.id)
+                .map(|inst| inst.cfg != pet_cfg)
+                .unwrap_or(true);
+            if needs_rebuild {
                 match build_pet(&pet_cfg) {
                     Ok(inst) => { self.pets.insert(pet_cfg.id.clone(), inst); }
                     Err(e) => log::warn!("reload: create pet '{}': {e}", pet_cfg.id),

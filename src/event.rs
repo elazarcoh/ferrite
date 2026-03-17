@@ -6,6 +6,8 @@ pub enum AppEvent {
     Tick(u32),
     /// Config file changed on disk.
     ConfigReloaded(Config),
+    /// Config changed via the config dialog (live apply).
+    ConfigChanged(Config),
     /// Tray: add a new pet with defaults.
     TrayAddPet,
     /// Tray: remove a specific pet.
