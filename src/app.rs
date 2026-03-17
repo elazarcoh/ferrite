@@ -199,6 +199,7 @@ pub struct App {
     last_tick_ms: std::time::Instant,
     /// Actual timer ID returned by SetTimer (may differ from what we passed).
     timer_id: usize,
+    config_dialog_hwnd: windows_sys::Win32::Foundation::HWND,
 }
 
 impl App {
@@ -229,6 +230,7 @@ impl App {
             _watcher: watcher,
             last_tick_ms: std::time::Instant::now(),
             timer_id: 0, // set in run()
+            config_dialog_hwnd: std::ptr::null_mut(),
         })
     }
 
@@ -293,15 +295,31 @@ impl App {
                 self.pets.remove(&pet_id);
             }
             AppEvent::TrayOpenConfig => {
-                let current = config::load(&config::config_path()).unwrap_or_default();
-                crate::tray::config_window::show_config_dialog(
-                    std::ptr::null_mut(),
-                    &current,
-                    self.tx.clone(),
-                );
+                unsafe {
+                    if !self.config_dialog_hwnd.is_null()
+                        && windows_sys::Win32::UI::WindowsAndMessaging::IsWindow(self.config_dialog_hwnd) != 0
+                    {
+                        windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(
+                            self.config_dialog_hwnd,
+                        );
+                    } else {
+                        let current = config::load(&config::config_path()).unwrap_or_default();
+                        self.config_dialog_hwnd = crate::tray::config_window::show_config_dialog(
+                            std::ptr::null_mut(),
+                            &current,
+                            self.tx.clone(),
+                        );
+                    }
+                }
             }
-            AppEvent::ConfigReloaded(new_cfg) | AppEvent::ConfigChanged(new_cfg) => {
+            AppEvent::ConfigReloaded(new_cfg) => {
                 self.apply_config(new_cfg)?;
+            }
+            AppEvent::ConfigChanged(cfg) => {
+                if let Err(e) = config::save(&config::config_path(), &cfg) {
+                    log::warn!("auto-save config failed: {e}");
+                }
+                self.apply_config(cfg)?;
             }
             AppEvent::PetClicked { pet_id } => {
                 log::debug!("PetClicked pet_id={pet_id}");
