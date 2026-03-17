@@ -34,10 +34,10 @@ Two-panel window (~760 × 520):
 
 ### Right — Controls
 
-1. **Tags list** (owner-draw listbox) — each row: color swatch | tag name | frame range | behavior state.
+1. **Tags list** (owner-draw listbox) — each row: color swatch | tag name | frame range | behavior state dropdown.
 2. **Add / Remove** buttons — Add opens an inline section: name field, from/to frame spinners, direction dropdown (Forward / Reverse / PingPong / PingPongReverse).
 3. **Live preview** — animates the selected tag's frames using the same GDI preview as the config dialog (`AnimationState` + `WM_TIMER`).
-4. **Save** and **Export…** buttons at the bottom.
+4. **Save** and **Export…** buttons at the bottom. **Save is disabled until both `idle` and `walk` behavior states are assigned** (they are the two required fields of `AnimTagMap`). A label below the buttons shows "Assign idle and walk to enable Save" until the condition is met.
 
 ---
 
@@ -50,7 +50,7 @@ The config dialog gains two new controls next to the gallery listbox:
   - *Embedded sprite*: prompts "This is a built-in sprite. Create an editable copy?" → copies PNG to AppData sprites dir, opens editor on the copy.
 - **"New from PNG…"** button — opens a file picker; on selection opens the editor with a blank grid.
 
-Only one sprite editor window may be open at a time. If one is already open (`IsWindow` check), `SetForegroundWindow` brings it to front instead of opening a second.
+Only one sprite editor window may be open at a time. The editor HWND is stored in a `static AtomicPtr<c_void>` in `sprite_editor.rs`, set when the window is created and cleared (to null) in `WM_DESTROY`. Before opening a new editor window, the caller checks `IsWindow(stored_hwnd)`; if true, it calls `SetForegroundWindow` and returns without creating a second window.
 
 ---
 
@@ -80,13 +80,16 @@ pub struct EditorTag {
 }
 ```
 
+`AnimTagMap` has two required fields (`idle`, `walk`) and nine optional fields (`run`, `sit`, `sleep`, `wake`, `grabbed`, `petted`, `react`, `fall`, `thrown`). The editor allows optional fields to remain unmapped (shown as "— not set —" in the behavior dropdown). A Save is only valid when `tag_map.idle` and `tag_map.walk` are both non-empty strings.
+
 Key methods:
 
 - `frame_rect(i: usize) -> (u32, u32, u32, u32)` — returns `(x, y, w, h)` for frame `i` given uniform grid.
 - `frames_for_tag(tag_idx: usize) -> Vec<usize>` — frame indices covered by a tag.
-- `to_json() -> Vec<u8>` — serialises to Aseprite-format JSON including `myPetTagMap`.
+- `is_saveable(&self) -> bool` — returns `true` iff `tag_map.idle` and `tag_map.walk` are non-empty.
+- `to_json() -> Vec<u8>` — serialises to Aseprite array-format JSON including `myPetTagMap` (only populated mapping entries are written).
 - `to_clean_json() -> Vec<u8>` — same but with `myPetTagMap` stripped (for export/sharing).
-- `save_to_dir(dir: &Path) -> Result<()>` — writes JSON (`to_json()`) + copies PNG into `dir`.
+- `save_to_dir(dir: &Path) -> Result<()>` — writes JSON (`to_json()`) + copies PNG into `dir`, overwriting any existing file of the same name.
 
 ### Uniform grid formula
 
@@ -105,7 +108,18 @@ This is designed for extension: a future `FrameSlice` enum (`Uniform` vs `Manual
 
 ## JSON Format
 
-The editor writes standard Aseprite JSON. The behavior mapping is stored in a non-standard `myPetTagMap` field inside `meta`, ignored by Aseprite and other tools:
+The editor always emits **array-format** Aseprite JSON (simpler to generate; still fully accepted by Aseprite on import and by the app's `parse_frames`). The behavior mapping is stored in a non-standard `myPetTagMap` field inside `meta`, ignored by Aseprite and other tools.
+
+Tag direction serialisation exactly matches the strings accepted by `sheet.rs`'s `parse_direction`:
+
+| `TagDirection` variant | JSON string |
+|---|---|
+| `Forward` | `"forward"` |
+| `Reverse` | `"reverse"` |
+| `PingPong` | `"pingpong"` |
+| `PingPongReverse` | `"pingpong_reverse"` |
+
+Example output:
 
 ```json
 {
@@ -132,10 +146,29 @@ The editor writes standard Aseprite JSON. The behavior mapping is stored in a no
 
 ## Save vs Export
 
-| Action | Output | `myPetTagMap` | Destination |
-|---|---|---|---|
-| **Save** | JSON + PNG | ✅ included | AppData sprites dir (immediately visible in gallery) |
-| **Export…** | JSON + PNG | ❌ stripped | User-chosen folder via file dialog |
+| Action | Output | `myPetTagMap` | Destination | Collision |
+|---|---|---|---|---|
+| **Save** | JSON + PNG | ✅ included | AppData sprites dir (immediately visible in gallery) | Overwrites silently |
+| **Export…** | JSON + PNG | ❌ stripped | User-chosen folder via file dialog | Standard OS save dialog handles it |
+
+---
+
+## `SpriteEditorCtx` (Win32 window state)
+
+`src/tray/sprite_editor.rs` stores per-window state in `GWLP_USERDATA` using the same `Box::into_raw` / `Box::from_raw` ownership pattern as `config_window.rs`:
+
+```rust
+struct SpriteEditorCtx {
+    state: SpriteEditorState,
+    preview_sheet: Option<SpriteSheet>,
+    preview_anim: AnimationState,
+    dark_bg_brush: HBRUSH,
+    ctrl_brush: HBRUSH,
+}
+```
+
+- Allocated in `show_sprite_editor` via `Box::into_raw`; stored in `GWLP_USERDATA`.
+- `WM_DESTROY` reclaims via `Box::from_raw`, drops brushes, and clears the global `EDITOR_HWND` atomic.
 
 ---
 
@@ -148,7 +181,7 @@ pub fn load_with_tag_map(json: &[u8], png: &[u8])
     -> Result<(SpriteSheet, Option<AnimTagMap>)>
 ```
 
-If `meta.myPetTagMap` is present, it is parsed into an `AnimTagMap` and returned alongside the sheet. When a pet is created using this sprite and no explicit `AnimTagMap` override exists in `config.toml`, the app uses the returned mapping as the default.
+If `meta.myPetTagMap` is present, it is parsed leniently: optional fields that fail to parse as strings are silently ignored. If the field is absent, or if either `idle` or `walk` is missing or an empty string, `None` is returned (the entire map is dropped, not an error). When a valid map is returned, the app uses it as the default `AnimTagMap` for any new pet created with this sprite and no explicit override in `config.toml`.
 
 The existing `load_embedded` is unchanged; callers that do not need the mapping are unaffected.
 
@@ -158,8 +191,8 @@ The existing `load_embedded` is unchanged; callers that do not need the mapping 
 
 | File | Change |
 |---|---|
-| `src/sprite/editor_state.rs` | New — pure-Rust editor state, `to_json`, `to_clean_json`, `save_to_dir` |
-| `src/tray/sprite_editor.rs` | New — Win32 editor window (`show_sprite_editor`, `editor_wnd_proc`, `SpriteEditorCtx`) |
+| `src/sprite/editor_state.rs` | New — pure-Rust editor state, `to_json`, `to_clean_json`, `save_to_dir`, `is_saveable` |
+| `src/tray/sprite_editor.rs` | New — Win32 editor window (`show_sprite_editor`, `editor_wnd_proc`, `SpriteEditorCtx`, global `EDITOR_HWND`) |
 | `src/sprite/sheet.rs` | Add `load_with_tag_map` |
 | `src/tray/config_window.rs` | Add "Edit…" and "New from PNG…" buttons; call `show_sprite_editor` |
 | `src/tray/mod.rs` | Re-export `sprite_editor` if needed |
@@ -174,17 +207,24 @@ The existing `load_embedded` is unchanged; callers that do not need the mapping 
 | Test | Asserts |
 |---|---|
 | `frame_rect_uniform_grid` | 64×32, 2 cols 1 row → frame 0 = (0,0,32,32), frame 1 = (32,0,32,32) |
-| `to_json_produces_valid_aseprite` | `to_json()` output parses via `load_embedded` without error |
-| `clean_json_strips_tag_map` | `to_clean_json()` output has no `myPetTagMap` field |
-| `load_with_tag_map_round_trip` | Save JSON with mapping, reload via `load_with_tag_map`, assert fields match |
+| `to_json_produces_valid_aseprite` | `to_json()` parses via `load_embedded` without error AND parses via `load_with_tag_map` returning `Some(AnimTagMap)` with matching fields |
+| `clean_json_strips_tag_map` | `to_clean_json()` output has no `myPetTagMap` field; parses via `load_embedded` without error |
+| `direction_round_trip` | All four `TagDirection` variants serialise to the correct JSON string and round-trip through `parse_direction` unchanged |
+| `load_with_tag_map_round_trip` | Save JSON with full mapping, reload via `load_with_tag_map`, assert all populated `AnimTagMap` fields match |
+| `load_with_tag_map_missing_required_drops_map` | JSON with `myPetTagMap` present but `walk` key absent → returns `None` for the map |
+| `load_with_tag_map_empty_required_drops_map` | JSON with `myPetTagMap` where `idle` is `""` → returns `None` for the map |
+| `load_with_tag_map_bad_optional_ignored` | JSON with `myPetTagMap` where `run` is `42` (not a string) → returns `Some(AnimTagMap)` with `idle` and `walk` correct, `run` unset |
 | `tag_color_assignment` | 8+ tags each get a distinct color without panic |
+| `is_saveable_requires_idle_and_walk` | `is_saveable()` returns false until both `idle` and `walk` are set; true after both are assigned |
 
 ### Integration test (`tests/integration/test_sprite_editor.rs`)
 
 - Build `SpriteEditorState` from `test_pet.png`, 1×2 grid
-- Define tag "idle" covering frames 0–1
+- Define tag "idle" covering frames 0–1, map to `idle` behavior; define tag "walk" covering frames 0–1, map to `walk` behavior
+- Assert `is_saveable()` returns true
 - Call `save_to_dir(tempdir)` → JSON + PNG present
 - Reload via `load_embedded` → parses cleanly
+- Reload via `load_with_tag_map` → returns `Some(AnimTagMap)` with `idle = "idle"` and `walk = "walk"`
 
 ---
 
