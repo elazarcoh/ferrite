@@ -615,7 +615,15 @@ unsafe fn edit_selected_sprite(hwnd: HWND, ctx: &mut DialogCtx) {
         }
         SpriteKey::Installed(path) => {
             let png_path = path.with_extension("png");
-            let png_bytes = match std::fs::read(&png_path) { Ok(b) => b, Err(_) => return };
+            let png_bytes = match std::fs::read(&png_path) {
+                Ok(b) => b,
+                Err(e) => {
+                    let msg = wide(&format!("Could not read PNG: {e}"));
+                    let t = wide("Error");
+                    MessageBoxW(hwnd, msg.as_ptr(), t.as_ptr(), MB_ICONERROR | MB_OK);
+                    return;
+                }
+            };
             let image = match image::load_from_memory_with_format(png_bytes.as_slice(), image::ImageFormat::Png) {
                 Ok(img) => img.into_rgba8(),
                 Err(_) => return,
@@ -670,7 +678,15 @@ unsafe fn new_sprite_from_png(hwnd: HWND, _ctx: &mut DialogCtx) {
     let path = std::path::PathBuf::from(String::from_utf16_lossy(
         &file_buf[..file_buf.iter().position(|&c| c == 0).unwrap_or(0)],
     ));
-    let png_bytes = match std::fs::read(&path) { Ok(b) => b, Err(_) => return };
+    let png_bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            let msg = wide(&format!("Could not read file: {e}"));
+            let t = wide("Error");
+            MessageBoxW(hwnd, msg.as_ptr(), t.as_ptr(), MB_ICONERROR | MB_OK);
+            return;
+        }
+    };
     let image = match image::load_from_memory_with_format(&png_bytes, image::ImageFormat::Png) {
         Ok(img) => img.into_rgba8(),
         Err(e) => {
@@ -719,6 +735,7 @@ unsafe fn handle_command(hwnd: HWND, id: i32, notify: u16, ctx: &mut DialogCtx) 
                         populate_gallery_listbox(hwnd, &ctx.gallery);
                         let lb = GetDlgItem(hwnd, ID_LIST_GALLERY);
                         SendMessageW(lb, LB_SETCURSEL, new_idx, 0);
+                        EnableWindow(GetDlgItem(hwnd, ID_BTN_EDIT_SPRITE), 1);
                         let key = ctx.gallery.entries[new_idx].key.clone();
                         ctx.state.select_sprite(key);
                         load_preview_for_sprite(ctx);
