@@ -1,10 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-// EnableWindow lives in Win32_UI_Input_KeyboardAndMouse which is not in our feature set.
-#[link(name = "user32")]
-unsafe extern "system" {
-    fn EnableWindow(hwnd: HWND, enable: i32) -> i32;
-}
-
 // Re-export for backward compatibility with existing tests that import these from tray::config_window.
 pub use crate::config::dialog_state::{ConfigDialogState, DialogResult};
 use crate::config::dialog_state::SpriteKey;
