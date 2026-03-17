@@ -461,6 +461,7 @@ unsafe fn paint_preview(hdc: windows_sys::Win32::Graphics::Gdi::HDC,
     let frame_in_tag = ctx.preview_frame % total_tag_frames;
     let frame_idx = tag.from + frame_in_tag;
 
+    if ctx.state.cols == 0 || ctx.state.rows == 0 { return; }
     let (fx, fy, fw, fh) = ctx.state.frame_rect(frame_idx);
     if fw == 0 || fh == 0 { return; }
 
@@ -628,6 +629,7 @@ unsafe fn handle_editor_command(
             if name.is_empty() { return; }
             let from = read_u32_field(hwnd, ID_EDIT_TAG_FROM, 0, 9999).unwrap_or(0) as usize;
             let to   = read_u32_field(hwnd, ID_EDIT_TAG_TO,   0, 9999).unwrap_or(0) as usize;
+            let to = to.max(from); // ensure to >= from
             let dir_idx = SendMessageW(GetDlgItem(hwnd, ID_COMBO_DIR), CB_GETCURSEL, 0, 0) as usize;
             let direction = match dir_idx {
                 1 => TagDirection::Reverse,
@@ -717,6 +719,20 @@ fn set_behavior_mapping(
     behavior: &str,
     tag_name: &str,
 ) {
+    // Clear any previous slot that already maps to this tag name.
+    if tm.idle    == tag_name { tm.idle    = String::new(); }
+    if tm.walk    == tag_name { tm.walk    = String::new(); }
+    if tm.run.as_deref()     == Some(tag_name) { tm.run     = None; }
+    if tm.sit.as_deref()     == Some(tag_name) { tm.sit     = None; }
+    if tm.sleep.as_deref()   == Some(tag_name) { tm.sleep   = None; }
+    if tm.wake.as_deref()    == Some(tag_name) { tm.wake    = None; }
+    if tm.grabbed.as_deref() == Some(tag_name) { tm.grabbed = None; }
+    if tm.petted.as_deref()  == Some(tag_name) { tm.petted  = None; }
+    if tm.react.as_deref()   == Some(tag_name) { tm.react   = None; }
+    if tm.fall.as_deref()    == Some(tag_name) { tm.fall    = None; }
+    if tm.thrown.as_deref()  == Some(tag_name) { tm.thrown  = None; }
+
+    // Apply the new mapping.
     match behavior {
         "idle"    => tm.idle    = tag_name.to_string(),
         "walk"    => tm.walk    = tag_name.to_string(),
@@ -729,7 +745,7 @@ fn set_behavior_mapping(
         "react"   => tm.react   = Some(tag_name.to_string()),
         "fall"    => tm.fall    = Some(tag_name.to_string()),
         "thrown"  => tm.thrown  = Some(tag_name.to_string()),
-        _         => {} // "— not set —" → no-op
+        _         => {} // "— not set —" → no-op (old slot already cleared above)
     }
 }
 
