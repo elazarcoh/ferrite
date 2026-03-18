@@ -242,7 +242,8 @@ impl App {
         })
     }
 
-    /// Load a sprite sheet from a path string. Public for use by config window.
+    /// Load a sprite sheet from a path string. Public for use by config window (Task 3).
+    #[allow(dead_code)]
     pub fn load_sheet_for_config(path: &str) -> Result<SpriteSheet> {
         load_sheet(path)
     }
@@ -364,16 +365,16 @@ impl eframe::App for App {
         }
 
         // Show config viewport if open.
-        if let Some(state) = self.config_window_state.clone() {
+        if let Some(ref state) = self.config_window_state {
             open_config_viewport(ctx, state.clone());
-            // Check if it requested close.
             if state.lock().map(|s| s.should_close).unwrap_or(false) {
                 self.config_window_state = None;
             }
         }
 
         // Show sprite editor viewport if open.
-        if let Some(state) = self.sprite_editor_state.clone() {
+        // Note: sprite_editor_state is set by TrayOpenSpriteEditor — added in Task 4.
+        if let Some(ref state) = self.sprite_editor_state {
             open_sprite_editor_viewport(ctx, state.clone());
             if state.lock().map(|s| s.should_close).unwrap_or(false) {
                 self.sprite_editor_state = None;
