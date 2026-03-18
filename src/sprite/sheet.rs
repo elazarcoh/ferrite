@@ -14,12 +14,24 @@ pub struct Frame {
     pub duration_ms: u32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum TagDirection {
+    #[default]
     Forward,
     Reverse,
     PingPong,
     PingPongReverse,
+}
+
+impl TagDirection {
+    pub fn label(&self) -> &'static str {
+        match self {
+            TagDirection::Forward => "Forward",
+            TagDirection::Reverse => "Reverse",
+            TagDirection::PingPong => "PingPong",
+            TagDirection::PingPongReverse => "PingPongReverse",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

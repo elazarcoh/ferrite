@@ -372,6 +372,13 @@ impl eframe::App for App {
             }
         }
 
+        // Drain editor open requests (handled in Task 4).
+        if let Some(ref state) = self.config_window_state {
+            if let Ok(mut s) = state.lock() {
+                s.open_editor_request = None;
+            }
+        }
+
         // Show sprite editor viewport if open.
         // Note: sprite_editor_state is set by TrayOpenSpriteEditor — added in Task 4.
         if let Some(ref state) = self.sprite_editor_state {

@@ -9,7 +9,7 @@ use crate::sprite::sheet::TagDirection;
 
 // ─── Tag color palette (Win32 COLORREF: 0x00BBGGRR) ──────────────────────────
 
-const TAG_COLORS: &[u32] = &[
+pub const TAG_COLORS: &[u32] = &[
     0x0000ffff, // yellow
     0x00ffff00, // cyan
     0x00ff00ff, // magenta

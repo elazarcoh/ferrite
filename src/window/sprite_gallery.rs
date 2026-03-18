@@ -73,6 +73,11 @@ pub struct SpriteGallery {
     pub entries: Vec<GalleryEntry>,
 }
 
+// SAFETY: HBITMAP handles are plain integer handles that can be sent across threads.
+// The config window never uses the Win32 thumbnail fields — they stay None.
+unsafe impl Send for SpriteGallery {}
+unsafe impl Sync for SpriteGallery {}
+
 /// Sentinel last entry — not a real sprite.
 pub struct BrowseEntry;
 
