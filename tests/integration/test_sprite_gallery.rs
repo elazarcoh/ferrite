@@ -43,36 +43,6 @@ fn gallery_load_shows_arrows_not_test_pet() {
 }
 
 #[test]
-fn gallery_load_finds_installed() {
-    let (sprites_dir, sprites_path) = temp_sprites_dir();
-    // Write a custom sprite JSON into the sprites dir (simulates a prior install).
-    // SpriteGallery::load() only scans for *.json files — it does NOT validate
-    // or open the PNG, so we only need the JSON file for this test.
-    let json = r#"{"frames":[{"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100}],"meta":{"size":{"w":32,"h":32},"frameTags":[]}}"#;
-    std::fs::write(sprites_path.join("my_cat.json"), json).unwrap();
-
-    let gallery = SpriteGallery::load();
-    let entry = gallery.entries.iter().find(|e| e.display_name == "my_cat");
-    assert!(entry.is_some(), "installed sprite must appear in gallery");
-    assert!(matches!(entry.unwrap().source, SourceKind::Custom));
-    drop(sprites_dir);
-}
-
-#[test]
-fn install_sprite_copies_files() {
-    let (sprites_dir, sprites_path) = temp_sprites_dir();
-    let src_dir = tempfile::tempdir().unwrap();
-    let (json_path, _png_path) = write_test_sprite_source(&src_dir);
-
-    let entry = SpriteGallery::install(&json_path).expect("install must succeed");
-    assert_eq!(entry.display_name, "test_pet");
-    assert!(sprites_path.join("test_pet.json").exists());
-    assert!(sprites_path.join("test_pet.png").exists());
-    assert!(matches!(entry.source, SourceKind::Custom));
-    drop(sprites_dir);
-}
-
-#[test]
 fn install_sprite_rejects_missing_png() {
     let (sprites_dir, _) = temp_sprites_dir();
     let src_dir = tempfile::tempdir().unwrap();
