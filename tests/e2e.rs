@@ -7,9 +7,6 @@ mod interaction_e2e {
 mod config_e2e {
     include!("e2e/test_config_e2e.rs");
 }
-mod config_dialog_e2e {
-    include!("e2e/test_config_dialog_e2e.rs");
-}
 mod surfaces_e2e {
     include!("e2e/test_surfaces_e2e.rs");
 }

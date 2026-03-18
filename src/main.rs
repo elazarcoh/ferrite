@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
 
 mod app;
 mod assets;
@@ -8,15 +8,29 @@ mod sprite;
 mod tray;
 mod window;
 
-use anyhow::Result;
-
-fn main() -> Result<()> {
-    #[cfg(debug_assertions)]
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Debug)
-        .init();
-    #[cfg(not(debug_assertions))]
+fn main() {
     env_logger::init();
-    let mut application = app::App::new()?;
-    application.run()
+
+    let app = match app::App::new() {
+        Ok(a) => a,
+        Err(e) => {
+            log::error!("startup failed: {e}");
+            return;
+        }
+    };
+
+    let native_options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_visible(false)
+            .with_taskbar(false),
+        ..Default::default()
+    };
+
+    if let Err(e) = eframe::run_native(
+        "my-pet",
+        native_options,
+        Box::new(|_cc| Ok(Box::new(app))),
+    ) {
+        log::error!("eframe error: {e}");
+    }
 }

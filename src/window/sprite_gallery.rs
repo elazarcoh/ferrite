@@ -4,10 +4,39 @@
 //! from the Win32 thread. All other methods are pure Rust.
 
 use crate::assets::{self, Assets};
-use crate::config::dialog_state::SpriteKey;
 use crate::sprite::sheet::load_embedded;
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
+
+// ─── SpriteKey ────────────────────────────────────────────────────────────────
+
+/// Identifies a sprite in the gallery.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SpriteKey {
+    /// A sprite bundled with the app, referenced by its asset stem (e.g. "esheep").
+    Embedded(String),
+    /// A user-installed sprite, referenced by absolute path to its .json file.
+    Installed(PathBuf),
+}
+
+impl SpriteKey {
+    /// Returns the `sheet_path` string stored in `PetConfig`.
+    pub fn to_sheet_path(&self) -> String {
+        match self {
+            SpriteKey::Embedded(stem) => format!("embedded://{stem}"),
+            SpriteKey::Installed(p) => p.to_string_lossy().into_owned(),
+        }
+    }
+
+    /// Parses a `sheet_path` string back into a `SpriteKey`.
+    pub fn from_sheet_path(s: &str) -> Self {
+        if let Some(stem) = s.strip_prefix("embedded://") {
+            SpriteKey::Embedded(stem.to_string())
+        } else {
+            SpriteKey::Installed(PathBuf::from(s))
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Graphics::Gdi::{

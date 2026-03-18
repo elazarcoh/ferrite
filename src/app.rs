@@ -7,18 +7,25 @@ use crate::{
         behavior::{BehaviorAi, BehaviorState, Facing},
         sheet::{self, SpriteSheet},
     },
-    tray::SystemTray,
+    tray::{
+        config_window::{open_config_viewport, ConfigWindowState},
+        sprite_editor::{open_sprite_editor_viewport, SpriteEditorViewport},
+        SystemTray,
+    },
     window::pet_window::PetWindow,
 };
 use anyhow::{Context, Result};
 use crossbeam_channel::{bounded, Receiver, Sender};
-use std::collections::HashMap;
+use eframe::egui;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use windows_sys::Win32::{
     Foundation::RECT,
     UI::WindowsAndMessaging::*,
 };
-
-const TIMER_MS: u32 = 16;
 
 // ─── Per-pet runtime state ────────────────────────────────────────────────────
 
@@ -111,7 +118,7 @@ impl PetInstance {
                 self.ai.state = BehaviorState::Fall { vy: 0.0 };
                 self.ai.reset_idle();
             } else {
-                // Snap to surface (handles small steps up/down between windows).
+                // Snap to surface (handles small steps up/down between windows)
                 self.y = new_floor;
             }
         }
@@ -197,9 +204,9 @@ pub struct App {
     _tray: SystemTray,
     _watcher: notify::RecommendedWatcher,
     last_tick_ms: std::time::Instant,
-    /// Actual timer ID returned by SetTimer (may differ from what we passed).
-    timer_id: usize,
-    config_dialog_hwnd: windows_sys::Win32::Foundation::HWND,
+    config_window_state: Option<Arc<Mutex<ConfigWindowState>>>,
+    sprite_editor_state: Option<Arc<Mutex<SpriteEditorViewport>>>,
+    should_quit: bool,
 }
 
 impl App {
@@ -229,59 +236,21 @@ impl App {
             _tray: tray,
             _watcher: watcher,
             last_tick_ms: std::time::Instant::now(),
-            timer_id: 0, // set in run()
-            config_dialog_hwnd: std::ptr::null_mut(),
+            config_window_state: None,
+            sprite_editor_state: None,
+            should_quit: false,
         })
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        // RC-fix: capture the actual timer ID returned by SetTimer.
-        // With hWnd=NULL Windows may assign a different ID than what we pass.
-        self.timer_id = unsafe {
-            SetTimer(std::ptr::null_mut(), 1, TIMER_MS, None) as usize
-        };
-        log::debug!("timer_id = {}", self.timer_id);
-
-        let mut msg: MSG = unsafe { std::mem::zeroed() };
-        loop {
-            while let Ok(ev) = self.rx.try_recv() {
-                if self.handle_event(ev)? {
-                    return Ok(());
-                }
-            }
-
-            unsafe {
-                if PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                    if msg.message == WM_QUIT {
-                        return Ok(());
-                    }
-                    // RC-fix: compare against the captured timer_id, not a
-                    // hardcoded constant.
-                    if msg.message == WM_TIMER && msg.wParam == self.timer_id {
-                        let now = std::time::Instant::now();
-                        let delta = now.duration_since(self.last_tick_ms);
-                        self.last_tick_ms = now;
-                        let delta_ms = delta.as_millis().min(200) as u32;
-                        for pet in self.pets.values_mut() {
-                            if let Err(e) = pet.tick(delta_ms) {
-                                log::warn!("pet tick error: {e}");
-                            }
-                        }
-                    }
-                    TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                } else {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                }
-            }
-        }
+    /// Load a sprite sheet from a path string. Public for use by config window.
+    pub fn load_sheet_for_config(path: &str) -> Result<SpriteSheet> {
+        load_sheet(path)
     }
 
-    fn handle_event(&mut self, ev: AppEvent) -> Result<bool> {
+    fn handle_event(&mut self, ev: AppEvent, ctx: &egui::Context) -> Result<()> {
         match ev {
             AppEvent::Quit | AppEvent::TrayQuit => {
-                unsafe { PostQuitMessage(0) };
-                return Ok(true);
+                self.should_quit = true;
             }
             AppEvent::TrayAddPet => {
                 let id = format!("pet_{}", self.pets.len());
@@ -295,21 +264,16 @@ impl App {
                 self.pets.remove(&pet_id);
             }
             AppEvent::TrayOpenConfig => {
-                unsafe {
-                    if !self.config_dialog_hwnd.is_null()
-                        && windows_sys::Win32::UI::WindowsAndMessaging::IsWindow(self.config_dialog_hwnd) != 0
-                    {
-                        windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(
-                            self.config_dialog_hwnd,
-                        );
-                    } else {
-                        let current = config::load(&config::config_path()).unwrap_or_default();
-                        self.config_dialog_hwnd = crate::tray::config_window::show_config_dialog(
-                            std::ptr::null_mut(),
-                            &current,
-                            self.tx.clone(),
-                        );
-                    }
+                if let Some(ref state) = self.config_window_state {
+                    let _ = state; // already open — focus handled via viewport command
+                    ctx.send_viewport_cmd_to(
+                        egui::ViewportId::from_hash_of("config_window"),
+                        egui::ViewportCommand::Focus,
+                    );
+                } else {
+                    let current = config::load(&config::config_path()).unwrap_or_default();
+                    let state = Arc::new(Mutex::new(ConfigWindowState::new(current, self.tx.clone())));
+                    self.config_window_state = Some(state);
                 }
             }
             AppEvent::ConfigReloaded(new_cfg) => {
@@ -345,7 +309,7 @@ impl App {
             }
             AppEvent::Tick(_) => {}
         }
-        Ok(false)
+        Ok(())
     }
 
     fn apply_config(&mut self, new_cfg: crate::config::schema::Config) -> Result<()> {
@@ -364,6 +328,59 @@ impl App {
             }
         }
         Ok(())
+    }
+}
+
+impl eframe::App for App {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.should_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        // Drain events from channel.
+        let events: Vec<AppEvent> = std::iter::from_fn(|| self.rx.try_recv().ok()).collect();
+        for ev in events {
+            if let Err(e) = self.handle_event(ev, ctx) {
+                log::warn!("event error: {e}");
+            }
+        }
+
+        if self.should_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        // Compute delta_ms for this tick.
+        let now = std::time::Instant::now();
+        let delta_ms = now.duration_since(self.last_tick_ms).as_millis().min(200) as u32;
+        self.last_tick_ms = now;
+
+        // Tick all pets.
+        for pet in self.pets.values_mut() {
+            if let Err(e) = pet.tick(delta_ms) {
+                log::warn!("pet tick error: {e}");
+            }
+        }
+
+        // Show config viewport if open.
+        if let Some(state) = self.config_window_state.clone() {
+            open_config_viewport(ctx, state.clone());
+            // Check if it requested close.
+            if state.lock().map(|s| s.should_close).unwrap_or(false) {
+                self.config_window_state = None;
+            }
+        }
+
+        // Show sprite editor viewport if open.
+        if let Some(state) = self.sprite_editor_state.clone() {
+            open_sprite_editor_viewport(ctx, state.clone());
+            if state.lock().map(|s| s.should_close).unwrap_or(false) {
+                self.sprite_editor_state = None;
+            }
+        }
+
+        ctx.request_repaint_after(Duration::from_millis(16));
     }
 }
 
