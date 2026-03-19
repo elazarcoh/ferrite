@@ -85,7 +85,7 @@ pub fn open_sprite_editor_viewport(
             let size = [image.width() as usize, image.height() as usize];
             let pixels = image.as_raw();
             let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels);
-            s.texture = Some(ctx.load_texture("sprite_sheet", color_image, Default::default()));
+            s.texture = Some(ctx.load_texture("sprite_sheet", color_image, egui::TextureOptions::NEAREST));
         }
 
         // Build preview sheet if missing.
@@ -161,6 +161,7 @@ pub fn open_sprite_editor_viewport(
                 }
                 if let Some(i) = clicked_idx {
                     s.selected_tag_idx = Some(i);
+                    s.state.selected_tag = Some(i);
                     let tag_name = s.state.tags[i].name.clone();
                     s.anim.set_tag(tag_name);
                 }
@@ -207,8 +208,7 @@ pub fn open_sprite_editor_viewport(
                                     TagDirection::PingPong,
                                     TagDirection::PingPongReverse,
                                 ] {
-                                    if ui.selectable_value(&mut new_dir, d.clone(), d.label()).clicked() {
-                                    }
+                                    ui.selectable_value(&mut new_dir, d.clone(), d.label());
                                 }
                             });
                         if new_dir != current_dir {
@@ -220,11 +220,13 @@ pub fn open_sprite_editor_viewport(
 
                     if ui.button("Delete Tag").clicked() {
                         s.state.tags.remove(tag_idx);
-                        s.selected_tag_idx = if s.state.tags.is_empty() {
+                        let new_idx = if s.state.tags.is_empty() {
                             None
                         } else {
                             Some(tag_idx.min(s.state.tags.len() - 1))
                         };
+                        s.selected_tag_idx = new_idx;
+                        s.state.selected_tag = new_idx;
                         s.dirty = true;
                         s.preview_sheet = None;
                     }
@@ -291,7 +293,7 @@ pub fn open_sprite_editor_viewport(
             // We need to split borrows: tick the anim with the preview sheet,
             // then read the frame data.
             let preview_frame_data = if let Some(sheet) = s.preview_sheet.take() {
-                let delta_ms = (ctx.input(|i| i.unstable_dt) * 1000.0) as u32;
+                let delta_ms = (ctx.input(|i| i.unstable_dt) * 1000.0).min(200.0) as u32;
                 s.anim.tick(&sheet, delta_ms);
                 let abs = s.anim.absolute_frame(&sheet);
                 let frame = sheet.frames.get(abs).cloned();

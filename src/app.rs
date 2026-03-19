@@ -258,6 +258,10 @@ impl App {
         // Infer grid from first frame size
         let (cols, rows) = if let Some(f) = sheet.frames.first() {
             if f.w > 0 && f.h > 0 {
+                if sheet.image.width() % f.w != 0 || sheet.image.height() % f.h != 0 {
+                    log::warn!("non-uniform sheet '{sheet_path}': image {}x{} not divisible by frame {}x{} — grid may be wrong",
+                        sheet.image.width(), sheet.image.height(), f.w, f.h);
+                }
                 (sheet.image.width() / f.w, sheet.image.height() / f.h)
             } else {
                 (1, 1)
