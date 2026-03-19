@@ -134,7 +134,8 @@ pub fn open_config_viewport(
                         }
                     });
 
-                    if ui.button("New from PNG\u{2026}").clicked() {
+                    let pick_in_progress = s.pending_png_pick.is_some();
+                    if ui.add_enabled(!pick_in_progress, egui::Button::new("New from PNG\u{2026}")).clicked() {
                         let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
                         std::thread::spawn(move || {
                             let result = rfd::FileDialog::new()
