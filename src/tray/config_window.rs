@@ -18,6 +18,7 @@ pub struct ConfigWindowState {
     // internal: cached loaded sheet for tag ComboBoxes
     loaded_sheet: Option<SpriteSheet>,
     loaded_sheet_path: String,
+    pending_png_pick: Option<crossbeam_channel::Receiver<Option<std::path::PathBuf>>>,
 }
 
 pub enum OpenEditorRequest {
@@ -38,7 +39,12 @@ impl ConfigWindowState {
             open_editor_request: None,
             loaded_sheet: None,
             loaded_sheet_path: String::new(),
+            pending_png_pick: None,
         }
+    }
+
+    pub fn refresh_gallery(&mut self) {
+        self.gallery = SpriteGallery::load();
     }
 }
 
@@ -61,6 +67,16 @@ pub fn open_config_viewport(
 
             if ctx.input(|i| i.viewport().close_requested()) {
                 s.should_close = true;
+            }
+
+            // Poll pending PNG file pick
+            if let Some(ref rx) = s.pending_png_pick {
+                if let Ok(maybe_path) = rx.try_recv() {
+                    s.pending_png_pick = None;
+                    if let Some(path) = maybe_path {
+                        s.open_editor_request = Some(OpenEditorRequest::New(path));
+                    }
+                }
             }
 
             // Left panel: pet list
@@ -119,12 +135,14 @@ pub fn open_config_viewport(
                     });
 
                     if ui.button("New from PNG\u{2026}").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("PNG", &["png"])
-                            .pick_file()
-                        {
-                            s.open_editor_request = Some(OpenEditorRequest::New(path));
-                        }
+                        let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
+                        std::thread::spawn(move || {
+                            let result = rfd::FileDialog::new()
+                                .add_filter("PNG", &["png"])
+                                .pick_file();
+                            tx_pick.send(result).ok();
+                        });
+                        s.pending_png_pick = Some(rx_pick);
                     }
                 });
 
@@ -169,7 +187,7 @@ pub fn open_config_viewport(
 
                         ui.horizontal(|ui| {
                             ui.label("Sheet:");
-                            egui::ComboBox::from_id_salt("sheet_combo")
+                            egui::ComboBox::from_id_salt(("sheet_combo", idx))
                                 .selected_text(&current_label)
                                 .show_ui(ui, |ui| {
                                     for entry in &s.gallery.entries {
@@ -267,6 +285,7 @@ pub fn open_config_viewport(
                             ui,
                             "idle (required)",
                             "tag_idle",
+                            idx,
                             &mut s.config.pets[idx].tag_map.idle,
                             &tag_names,
                         );
@@ -274,45 +293,46 @@ pub fn open_config_viewport(
                             ui,
                             "walk (required)",
                             "tag_walk",
+                            idx,
                             &mut s.config.pets[idx].tag_map.walk,
                             &tag_names,
                         );
 
                         // Optional tags
                         changed |= optional_tag_combo(
-                            ui, "run", "tag_run",
+                            ui, "run", "tag_run", idx,
                             &mut s.config.pets[idx].tag_map.run, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "sit", "tag_sit",
+                            ui, "sit", "tag_sit", idx,
                             &mut s.config.pets[idx].tag_map.sit, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "sleep", "tag_sleep",
+                            ui, "sleep", "tag_sleep", idx,
                             &mut s.config.pets[idx].tag_map.sleep, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "wake", "tag_wake",
+                            ui, "wake", "tag_wake", idx,
                             &mut s.config.pets[idx].tag_map.wake, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "grabbed", "tag_grabbed",
+                            ui, "grabbed", "tag_grabbed", idx,
                             &mut s.config.pets[idx].tag_map.grabbed, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "petted", "tag_petted",
+                            ui, "petted", "tag_petted", idx,
                             &mut s.config.pets[idx].tag_map.petted, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "react", "tag_react",
+                            ui, "react", "tag_react", idx,
                             &mut s.config.pets[idx].tag_map.react, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "fall", "tag_fall",
+                            ui, "fall", "tag_fall", idx,
                             &mut s.config.pets[idx].tag_map.fall, &tag_names,
                         );
                         changed |= optional_tag_combo(
-                            ui, "thrown", "tag_thrown",
+                            ui, "thrown", "tag_thrown", idx,
                             &mut s.config.pets[idx].tag_map.thrown, &tag_names,
                         );
 
@@ -333,6 +353,7 @@ fn required_tag_combo(
     ui: &mut egui::Ui,
     label: &str,
     id: &str,
+    idx: usize,
     value: &mut String,
     tag_names: &[String],
 ) -> bool {
@@ -344,7 +365,7 @@ fn required_tag_combo(
         } else {
             value.as_str()
         };
-        egui::ComboBox::from_id_salt(id)
+        egui::ComboBox::from_id_salt((id, idx))
             .selected_text(display)
             .show_ui(ui, |ui| {
                 for name in tag_names {
@@ -363,6 +384,7 @@ fn optional_tag_combo(
     ui: &mut egui::Ui,
     label: &str,
     id: &str,
+    idx: usize,
     value: &mut Option<String>,
     tag_names: &[String],
 ) -> bool {
@@ -372,7 +394,7 @@ fn optional_tag_combo(
         let display = value
             .as_deref()
             .unwrap_or("\u{2014} not set \u{2014}");
-        egui::ComboBox::from_id_salt(id)
+        egui::ComboBox::from_id_salt((id, idx))
             .selected_text(display)
             .show_ui(ui, |ui| {
                 // "not set" option
