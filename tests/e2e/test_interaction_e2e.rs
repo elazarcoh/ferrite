@@ -55,11 +55,12 @@ fn petted_state_resolves_back_to_idle() {
     // Land the pet and wait for Idle specifically — if we stop at Walk,
     // pet() stores Walk as previous state and the pet can fall off the screen
     // edge after Petted resolves, producing Fall instead of Idle.
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..500 {
         if matches!(pet.ai.state, BehaviorState::Idle) {
             break;
         }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
     assert!(
         matches!(pet.ai.state, BehaviorState::Idle),
@@ -74,8 +75,9 @@ fn petted_state_resolves_back_to_idle() {
     pet.ai.state = BehaviorState::Idle;
     pet.ai.reset_idle();
     pet.ai.pet();
+    let mut cache2 = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..50 {
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache2).unwrap();
     }
     assert!(
         matches!(pet.ai.state, BehaviorState::Idle),

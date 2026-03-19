@@ -68,7 +68,7 @@ impl PetInstance {
         Ok(inst)
     }
 
-    pub fn tick(&mut self, delta_ms: u32) -> Result<()> {
+    pub fn tick(&mut self, delta_ms: u32, cache: &mut crate::window::surfaces::SurfaceCache) -> Result<()> {
         let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
         let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
         let pet_w = self.window.width as i32;
@@ -87,7 +87,7 @@ impl PetInstance {
         // Compute the nearest walkable surface below the pet before the AI tick
         // (used by Fall/Thrown physics for landing termination).
         let floor_y = crate::window::surfaces::find_floor(
-            self.x, self.y, pet_w, pet_h, screen_w, screen_h,
+            self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
         );
 
         let tag = self.ai.tick(
@@ -110,7 +110,7 @@ impl PetInstance {
             BehaviorState::Fall { .. } | BehaviorState::Thrown { .. } | BehaviorState::Grabbed { .. }
         ) {
             let new_floor = crate::window::surfaces::find_floor(
-                self.x, self.y, pet_w, pet_h, screen_w, screen_h,
+                self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
             );
             // If the floor dropped more than one pet height, the pet walked
             // off a window edge — start falling.
@@ -207,6 +207,7 @@ pub struct App {
     config_window_state: Option<Arc<Mutex<ConfigWindowState>>>,
     sprite_editor_state: Option<Arc<Mutex<SpriteEditorViewport>>>,
     should_quit: bool,
+    surface_cache: crate::window::surfaces::SurfaceCache,
 }
 
 impl App {
@@ -239,6 +240,7 @@ impl App {
             config_window_state: None,
             sprite_editor_state: None,
             should_quit: false,
+            surface_cache: crate::window::surfaces::SurfaceCache::default(),
         })
     }
 
@@ -412,7 +414,7 @@ impl eframe::App for App {
 
         // Tick all pets.
         for pet in self.pets.values_mut() {
-            if let Err(e) = pet.tick(delta_ms) {
+            if let Err(e) = pet.tick(delta_ms, &mut self.surface_cache) {
                 log::warn!("pet tick error: {e}");
             }
         }
