@@ -248,6 +248,57 @@ impl App {
         load_sheet(path)
     }
 
+    /// Load a SpriteEditorState from an existing sheet JSON path.
+    fn load_editor_state_from_sheet(sheet_path: &str) -> Result<crate::sprite::editor_state::SpriteEditorState> {
+        use crate::sprite::editor_state::{EditorTag, SpriteEditorState};
+        let sheet = load_sheet(sheet_path)?;
+        let json_path = std::path::Path::new(sheet_path);
+        let png_path = json_path.with_extension("png");
+
+        // Infer grid from first frame size
+        let (cols, rows) = if let Some(f) = sheet.frames.first() {
+            if f.w > 0 && f.h > 0 {
+                (sheet.image.width() / f.w, sheet.image.height() / f.h)
+            } else {
+                (1, 1)
+            }
+        } else {
+            (1, 1)
+        };
+
+        let tags: Vec<EditorTag> = sheet.tags.iter().enumerate().map(|(i, t)| {
+            EditorTag {
+                name: t.name.clone(),
+                from: t.from,
+                to: t.to,
+                direction: t.direction.clone(),
+                color: SpriteEditorState::assign_color(i),
+            }
+        }).collect();
+
+        // Try to load the tag map from JSON
+        let json_bytes = std::fs::read(sheet_path)?;
+        let tag_map = crate::sprite::sheet::load_with_tag_map(&json_bytes, &std::fs::read(&png_path)?)?
+            .1
+            .unwrap_or_default();
+
+        let mut state = SpriteEditorState::new(png_path, sheet.image);
+        state.rows = rows;
+        state.cols = cols;
+        state.tags = tags;
+        state.tag_map = tag_map;
+        Ok(state)
+    }
+
+    /// Create a SpriteEditorState from a raw PNG file (new sprite sheet).
+    fn new_editor_state_from_png(png_path: &std::path::Path) -> Result<crate::sprite::editor_state::SpriteEditorState> {
+        let png = std::fs::read(png_path).context("read PNG")?;
+        let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
+            .context("decode PNG")?
+            .into_rgba8();
+        Ok(crate::sprite::editor_state::SpriteEditorState::new(png_path.to_path_buf(), image))
+    }
+
     fn handle_event(&mut self, ev: AppEvent, ctx: &egui::Context) -> Result<()> {
         match ev {
             AppEvent::Quit | AppEvent::TrayQuit => {
@@ -372,10 +423,25 @@ impl eframe::App for App {
             }
         }
 
-        // Drain editor open requests (handled in Task 4).
+        // Handle editor open requests from the config window.
         if let Some(ref state) = self.config_window_state {
-            if let Ok(mut s) = state.lock() {
-                s.open_editor_request = None;
+            let req = state.lock().ok().and_then(|mut s| s.open_editor_request.take());
+            if let Some(req) = req {
+                if self.sprite_editor_state.is_none() {
+                    let editor_state = match req {
+                        crate::tray::config_window::OpenEditorRequest::Edit(sheet_path) => {
+                            Self::load_editor_state_from_sheet(&sheet_path).ok()
+                        }
+                        crate::tray::config_window::OpenEditorRequest::New(png_path) => {
+                            Self::new_editor_state_from_png(&png_path).ok()
+                        }
+                    };
+                    if let Some(es) = editor_state {
+                        let viewport = SpriteEditorViewport::new(es);
+                        self.sprite_editor_state =
+                            Some(Arc::new(Mutex::new(viewport)));
+                    }
+                }
             }
         }
 
