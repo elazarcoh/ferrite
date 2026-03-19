@@ -39,6 +39,9 @@ env_logger = "0.11"
 eframe = { version = "0.33", default-features = false, features = [
     "default_fonts", "wgpu",
 ] }
+# Explicitly enable wgpu backends — eframe pulls wgpu with default-features=false
+# so no backends compile in unless we force them here via feature unification.
+wgpu = { version = "27", features = ["dx12", "vulkan"] }
 rfd = "0.17"
 
 [dev-dependencies]

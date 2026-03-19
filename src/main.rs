@@ -1,4 +1,6 @@
-#![windows_subsystem = "windows"]
+// Hide the console window only in release builds. In debug builds the console
+// stays open so logs and panic messages are visible.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
 mod assets;
@@ -9,12 +11,12 @@ mod tray;
 mod window;
 
 fn main() {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
     let app = match app::App::new() {
         Ok(a) => a,
         Err(e) => {
-            log::error!("startup failed: {e}");
+            fatal(&format!("Startup failed:\n\n{e:#}"));
             return;
         }
     };
@@ -31,6 +33,24 @@ fn main() {
         native_options,
         Box::new(|_cc| Ok(Box::new(app))),
     ) {
-        log::error!("eframe error: {e}");
+        fatal(&format!("eframe failed:\n\n{e}"));
+    }
+}
+
+/// Show a modal error message box and log the error.
+/// In debug builds the message also goes to the console.
+fn fatal(msg: &str) {
+    log::error!("{msg}");
+    // Show a Windows message box so the error is visible even without a console.
+    let wide: Vec<u16> = msg.encode_utf16().chain(std::iter::once(0)).collect();
+    let caption: Vec<u16> = "my-pet — fatal error\0".encode_utf16().collect();
+    unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
+            std::ptr::null_mut() as _,
+            wide.as_ptr(),
+            caption.as_ptr(),
+            windows_sys::Win32::UI::WindowsAndMessaging::MB_OK
+                | windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONERROR,
+        );
     }
 }
