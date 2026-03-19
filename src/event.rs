@@ -2,9 +2,6 @@ use crate::config::schema::Config;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
-    /// Milliseconds since last tick. Retained for compatibility; eframe drives
-    /// timing via `request_repaint_after` so this variant is never sent.
-    Tick(u32),
     /// Config file changed on disk.
     ConfigReloaded(Config),
     /// Config changed via the config dialog (live apply).

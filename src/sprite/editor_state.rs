@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use crate::sprite::behavior::AnimTagMap;
 use crate::sprite::sheet::TagDirection;
 
-// ─── Tag color palette (Win32 COLORREF: 0x00BBGGRR) ──────────────────────────
+// ─── Tag color palette ────────────────────────────────────────────────────────
+// Stored as 0x00BBGGRR (Win32 COLORREF format) for historical reasons.
+// In the egui sprite editor these are converted to egui::Color32 before display.
+// Pending: tag-colored labels in the editor left panel.
 
 pub const TAG_COLORS: &[u32] = &[
     0x0000ffff, // yellow
@@ -27,7 +30,7 @@ pub struct EditorTag {
     pub from: usize,
     pub to: usize,
     pub direction: TagDirection,
-    /// Win32 COLORREF (0x00BBGGRR) assigned from TAG_COLORS.
+    /// COLORREF (0x00BBGGRR) from TAG_COLORS. Converted to egui::Color32 for rendering.
     pub color: u32,
 }
 

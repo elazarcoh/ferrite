@@ -1,7 +1,9 @@
 //! Gallery discovery, thumbnail loading, and custom sprite install.
 //!
-//! `load_thumbnail` and `destroy_thumbnails` use Win32 GDI and must be called
-//! from the Win32 thread. All other methods are pure Rust.
+//! `load_thumbnail` and `destroy_thumbnails` use Win32 GDI (HBITMAP handles)
+//! and must be called from a thread with a Win32 message queue. Under eframe,
+//! these are only called from the eframe render thread; thumbnails stay `None`
+//! in the egui config viewport. All other methods are pure Rust.
 
 use crate::assets::{self, Assets};
 use crate::sprite::sheet::load_embedded;
@@ -73,8 +75,10 @@ pub struct SpriteGallery {
     pub entries: Vec<GalleryEntry>,
 }
 
-// SAFETY: HBITMAP handles are plain integer handles that can be sent across threads.
-// The config window never uses the Win32 thumbnail fields — they stay None.
+// SAFETY: HBITMAP handles are plain Win32 integer handles; they can be moved across
+// threads as long as GDI calls only happen on a thread with a Win32 message queue.
+// The egui config viewport never calls load_thumbnail/destroy_thumbnails, so the
+// thumbnail fields remain None for the lifetime of the config window Arc.
 unsafe impl Send for SpriteGallery {}
 unsafe impl Sync for SpriteGallery {}
 

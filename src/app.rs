@@ -242,8 +242,7 @@ impl App {
         })
     }
 
-    /// Load a sprite sheet from a path string. Public for use by config window (Task 3).
-    #[allow(dead_code)]
+    /// Load a sprite sheet from a path string. Public for use by config window.
     pub fn load_sheet_for_config(path: &str) -> Result<SpriteSheet> {
         load_sheet(path)
     }
@@ -363,7 +362,6 @@ impl App {
                     p.ai.release(velocity);
                 }
             }
-            AppEvent::Tick(_) => {}
         }
         Ok(())
     }
@@ -450,7 +448,7 @@ impl eframe::App for App {
         }
 
         // Show sprite editor viewport if open.
-        // Note: sprite_editor_state is set by TrayOpenSpriteEditor — added in Task 4.
+        // Opened via ConfigWindowState::open_editor_request (Edit or New from PNG).
         if let Some(ref state) = self.sprite_editor_state {
             open_sprite_editor_viewport(ctx, state.clone());
             if state.lock().map(|s| s.should_close).unwrap_or(false) {
