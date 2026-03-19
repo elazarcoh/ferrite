@@ -20,6 +20,17 @@ pub struct PetWindow {
     pub height: u32,
     /// Last rendered frame buffer (premultiplied BGRA). Exposed for tests.
     pub frame_buf: Vec<u8>,
+    // ── GDI cache ──────────────────────────────────────────────────────────
+    // These are created once in `create()` and reused every `render_frame()`.
+    // Adding *mut u8 makes PetWindow automatically !Send + !Sync — correct for
+    // Win32 GDI objects which must stay on their creation thread.
+    mem_dc: HDC,
+    dib: HBITMAP,
+    /// Direct pointer into the DIB's pixel memory. Valid while `dib` is alive.
+    dib_bits: *mut u8,
+    /// Dimensions the GDI cache was allocated for. Used to detect size changes.
+    cached_w: u32,
+    cached_h: u32,
 }
 
 impl PetWindow {
@@ -78,8 +89,74 @@ impl PetWindow {
 
             ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 
-            Ok(PetWindow { hwnd, width, height, frame_buf: Vec::new() })
+            let mut win = PetWindow {
+                hwnd,
+                width,
+                height,
+                frame_buf: Vec::new(),
+                mem_dc: std::ptr::null_mut(),
+                dib: std::ptr::null_mut(),
+                dib_bits: std::ptr::null_mut(),
+                cached_w: 0,
+                cached_h: 0,
+            };
+            win.alloc_gdi_cache(width, height);
+            Ok(win)
         }
+    }
+
+    /// Allocate (or reallocate) the mem_dc + DIB for the given dimensions.
+    /// Destroys the previous objects if they exist (non-null).
+    /// Destruction order: deselect bitmap → delete DC → delete bitmap.
+    /// (A bitmap selected into a DC must be deselected before the DC is deleted,
+    /// and the DC must be deleted before the bitmap to avoid GDI handle leaks.)
+    unsafe fn alloc_gdi_cache(&mut self, w: u32, h: u32) {
+        // Destroy previous objects in the correct order.
+        if !self.mem_dc.is_null() {
+            // Deselect the bitmap by selecting a stock object, then delete the DC.
+            SelectObject(self.mem_dc, GetStockObject(BLACK_BRUSH as i32));
+            DeleteDC(self.mem_dc);
+            self.mem_dc = std::ptr::null_mut();
+        }
+        if !self.dib.is_null() {
+            DeleteObject(self.dib);
+            self.dib = std::ptr::null_mut();
+            self.dib_bits = std::ptr::null_mut();
+        }
+
+        let hdc_screen = GetDC(std::ptr::null_mut());
+        self.mem_dc = CreateCompatibleDC(hdc_screen);
+        ReleaseDC(std::ptr::null_mut(), hdc_screen);
+
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w as i32,
+                biHeight: -(h as i32), // top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD { rgbBlue: 0, rgbGreen: 0, rgbRed: 0, rgbReserved: 0 }],
+        };
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        self.dib = CreateDIBSection(
+            self.mem_dc,
+            &bmi,
+            DIB_RGB_COLORS,
+            &mut bits,
+            std::ptr::null_mut(),
+            0,
+        );
+        self.dib_bits = bits as *mut u8;
+        SelectObject(self.mem_dc, self.dib);
+        self.cached_w = w;
+        self.cached_h = h;
     }
 
     /// Render a frame from `src_image` at the given source rectangle, with
@@ -99,51 +176,27 @@ impl PetWindow {
         let dw = src_w * scale;
         let dh = src_h * scale;
 
+        // Reallocate GDI cache if dimensions changed (e.g. scale change).
+        if dw != self.cached_w || dh != self.cached_h {
+            unsafe { self.alloc_gdi_cache(dw, dh); }
+            self.width = dw;
+            self.height = dh;
+        }
+
+        anyhow::ensure!(!self.dib_bits.is_null(), "GDI cache not initialized");
+
         unsafe {
-            let hdc_screen = GetDC(std::ptr::null_mut());
-            let hdc_mem = CreateCompatibleDC(hdc_screen);
-
-            let bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: dw as i32,
-                    biHeight: -(dh as i32), // top-down
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB,
-                    biSizeImage: 0,
-                    biXPelsPerMeter: 0,
-                    biYPelsPerMeter: 0,
-                    biClrUsed: 0,
-                    biClrImportant: 0,
-                },
-                bmiColors: [RGBQUAD { rgbBlue: 0, rgbGreen: 0, rgbRed: 0, rgbReserved: 0 }],
-            };
-
-            let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-            let hbmp = CreateDIBSection(
-                hdc_mem,
-                &bmi,
-                DIB_RGB_COLORS,
-                &mut bits,
-                std::ptr::null_mut(),
-                0,
-            );
-            anyhow::ensure!(!hbmp.is_null(), "CreateDIBSection failed");
-
+            // Copy premultiplied BGRA pixels directly into the DIB's memory.
             std::ptr::copy_nonoverlapping(
                 self.frame_buf.as_ptr(),
-                bits as *mut u8,
+                self.dib_bits,
                 self.frame_buf.len(),
             );
-
-            let old_bmp = SelectObject(hdc_mem, hbmp);
 
             let mut rc: RECT = std::mem::zeroed();
             GetWindowRect(self.hwnd, &mut rc);
             let pt_dst = POINT { x: rc.left, y: rc.top };
             let pt_src = POINT { x: 0, y: 0 };
-
             let sz = SIZE { cx: dw as i32, cy: dh as i32 };
             let blend = BLENDFUNCTION {
                 BlendOp: AC_SRC_OVER as u8,
@@ -152,22 +205,18 @@ impl PetWindow {
                 AlphaFormat: AC_SRC_ALPHA as u8,
             };
 
-            UpdateLayeredWindow(
-                self.hwnd,
-                hdc_screen,
-                &pt_dst,
-                &sz,
-                hdc_mem,
-                &pt_src,
-                0,
-                &blend,
-                ULW_ALPHA,
+            let hdc_screen = GetDC(std::ptr::null_mut());
+            let ok = UpdateLayeredWindow(
+                self.hwnd, hdc_screen,
+                &pt_dst, &sz,
+                self.mem_dc, &pt_src,
+                0, &blend, ULW_ALPHA,
             );
-
-            SelectObject(hdc_mem, old_bmp);
-            DeleteObject(hbmp);
-            DeleteDC(hdc_mem);
             ReleaseDC(std::ptr::null_mut(), hdc_screen);
+            if ok == 0 {
+                // Can fail on headless/RDP sessions without desktop composition — log and continue.
+                log::warn!("UpdateLayeredWindow failed (err={})", windows_sys::Win32::Foundation::GetLastError());
+            }
         }
 
         // Update the per-pixel hit-test registry after rendering.
@@ -203,9 +252,13 @@ impl PetWindow {
 impl Drop for PetWindow {
     fn drop(&mut self) {
         unsafe {
-            if !self.hwnd.is_null() {
-                DestroyWindow(self.hwnd);
+            // Deselect bitmap → delete DC → delete bitmap (GDI required order).
+            if !self.mem_dc.is_null() {
+                SelectObject(self.mem_dc, GetStockObject(BLACK_BRUSH as i32));
+                DeleteDC(self.mem_dc);
             }
+            if !self.dib.is_null() { DeleteObject(self.dib); }
+            if !self.hwnd.is_null() { DestroyWindow(self.hwnd); }
         }
     }
 }
@@ -266,5 +319,22 @@ mod tests {
         let f = &sheet.frames[0];
         win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1, true)
             .expect("render flipped");
+    }
+
+    #[test]
+    fn render_frame_twice_same_result() {
+        let mut win = PetWindow::create(0, 0, 64, 64).expect("create");
+        let sheet = crate::sprite::sheet::load_embedded(
+            include_bytes!("../../assets/test_pet.json"),
+            include_bytes!("../../assets/test_pet.png"),
+        )
+        .unwrap();
+        let f = &sheet.frames[0];
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2, false)
+            .expect("first render");
+        let buf1 = win.frame_buf.clone();
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2, false)
+            .expect("second render");
+        assert_eq!(buf1, win.frame_buf, "frame buffer must be identical on repeated render");
     }
 }

@@ -28,7 +28,8 @@ fn animation_frame_advances_after_one_frame_duration() {
     pet.anim = AnimationState::new("idle");
     let start = pet.anim.absolute_frame(&pet.sheet);
     // Single tick longer than one idle frame duration (200 ms)
-    pet.tick(210).unwrap();
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    pet.tick(210, &mut cache).unwrap();
     let end = pet.anim.absolute_frame(&pet.sheet);
     assert_ne!(start, end, "frame must advance after 210ms (idle frame dur = 200ms)");
 }
@@ -38,8 +39,9 @@ fn animation_cycles_forward_over_multiple_ticks() {
     let mut pet = make_pet();
     // idle is pingpong with 200 ms frames: 0 → 1 → 0 in 400 ms total.
     // Accumulate 400ms via small ticks.
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..40 {
-        pet.tick(10).unwrap();
+        pet.tick(10, &mut cache).unwrap();
     }
     // After one full pingpong cycle (400 ms) the animation is back at frame 0.
     assert_eq!(pet.anim.frame_index, 0);
@@ -72,7 +74,8 @@ fn position_advances_when_walking_right() {
         remaining_px: 400.0,
     };
     let x0 = pet.x;
-    pet.tick(500).unwrap(); // 0.5 s × 200 px/s = 100 px
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    pet.tick(500, &mut cache).unwrap(); // 0.5 s × 200 px/s = 100 px
     assert!(pet.x > x0, "pet should move right: x={} → {}", x0, pet.x);
 }
 
@@ -85,7 +88,8 @@ fn position_retreats_when_walking_left() {
         facing: Facing::Left,
         remaining_px: 400.0,
     };
-    pet.tick(500).unwrap();
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    pet.tick(500, &mut cache).unwrap();
     assert!(pet.x < 500, "pet should move left");
 }
 
@@ -95,17 +99,18 @@ fn position_retreats_when_walking_left() {
 fn thrown_pet_lands_and_returns_to_idle() {
     let mut pet = make_pet();
     // Land the pet first so the real window y matches a grounded position.
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if matches!(pet.ai.state, BehaviorState::Idle | BehaviorState::Walk { .. } | BehaviorState::Sit) {
             break;
         }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
     // Now throw it with a high downward velocity; it should hit the floor quickly.
     pet.ai.state = BehaviorState::Thrown { vx: 50.0, vy: 1000.0 };
     for _ in 0..100 {
         if matches!(pet.ai.state, BehaviorState::Idle) { break; }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
     assert!(
         matches!(pet.ai.state, BehaviorState::Idle),

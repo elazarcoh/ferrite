@@ -75,11 +75,12 @@ fn nchittest_opaque_pixel_returns_htclient() {
 
     // Land pet so it has a rendered frame.
     let mut pet = make_pet();
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
             break;
         }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
 
     // Centre of the pet window — opaque green pixel.
@@ -103,11 +104,12 @@ fn click_sends_pet_clicked_event() {
 
     let mut pet = make_pet();
     // Land pet first.
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
             break;
         }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
 
     let hwnd = pet.window.hwnd;
@@ -136,11 +138,12 @@ fn drag_sends_drag_start_and_end_events() {
 
     let mut pet = make_pet();
     // Land pet first.
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
             break;
         }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
 
     let hwnd = pet.window.hwnd;
@@ -206,11 +209,12 @@ fn grab_then_slow_release_makes_fall_state() {
 fn alpha_buf_center_pixel_is_opaque_after_render() {
     let mut pet = make_pet();
     // Land pet so render_current_frame has been called.
+    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
             break;
         }
-        pet.tick(20).unwrap();
+        pet.tick(20, &mut cache).unwrap();
     }
 
     // The alpha buffer (1 byte/pixel) must have 255 at the center.

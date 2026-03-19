@@ -29,3 +29,7 @@ mod sprite_gallery {
 mod sprite_editor {
     include!("integration/test_sprite_editor.rs");
 }
+
+mod stress {
+    include!("integration/test_stress.rs");
+}
