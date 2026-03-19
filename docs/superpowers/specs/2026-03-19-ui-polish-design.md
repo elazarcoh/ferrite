@@ -34,15 +34,17 @@ New file. Three public functions:
 
 #### `apply_theme(ctx: &egui::Context, dark: bool)`
 
-Calls `ctx.set_visuals()` with a hand-tuned `Visuals` struct.
+Makes two calls: `ctx.set_visuals(...)` for colors and rounding, and `ctx.style_mut(|s| { ... })` for spacing. (`Visuals` and `Style` are separate in egui — spacing lives on `Style`, not `Visuals`.)
 
-**Both modes share:**
+**Visuals (both modes share):**
 - `window_rounding = Rounding::same(8.0)`
 - Widget rounding: `Rounding::same(4.0)` for interactive, `Rounding::same(6.0)` for noninteractive
+- Selected/active accent: `Color32::from_rgb(72, 200, 120)` (green)
+
+**Style spacing (both modes share):**
 - `style.spacing.item_spacing = vec2(8.0, 6.0)`
 - `style.spacing.button_padding = vec2(10.0, 5.0)`
 - `style.spacing.window_margin = Margin::same(12.0)`
-- Selected/active accent: `Color32::from_rgb(72, 200, 120)` (green)
 
 **Dark palette:**
 - Window background: `Color32::from_rgb(18, 18, 30)` (`#12121e`)
@@ -103,7 +105,14 @@ Renders a `☀` / `☾` button. On click: flips `*dark` and calls `apply_theme(c
 dark_mode: bool,   // default: true
 ```
 
-Both `ConfigWindowState` and `SpriteEditorViewport` gain a matching `dark_mode: bool` field. On each `App::update()` call, `dark_mode` is copied into both viewport states so a toggle in either dialog immediately propagates.
+Both `ConfigWindowState` and `SpriteEditorViewport` gain a matching `dark_mode: bool` field.
+
+**Sync pattern (two-way):**
+- `App::update()` copies `App::dark_mode` into both viewport states on every frame (App → viewport).
+- Each viewport state also gains `dark_mode_out: Option<bool>`. When the user clicks the toggle inside a viewport, the viewport sets `dark_mode_out = Some(new_value)` instead of (or in addition to) mutating its own `dark_mode`.
+- After each viewport `show()` call, `App::update()` checks `dark_mode_out`; if `Some(v)`, it writes `App::dark_mode = v` so the change propagates to both dialogs on the next frame.
+
+This pattern avoids the "toggle flicker" problem where `App` overwrites a viewport's change on the very next frame.
 
 `src/tray/mod.rs` gains `pub mod ui_theme;`.
 
@@ -118,7 +127,7 @@ The horizontal frame strip is **replaced** by:
 1. Draw the full sprite sheet texture scaled to fill the available central panel width, preserving aspect ratio.
 2. Over the texture, use `ui.painter()` to draw:
    - `(cols + 1)` vertical lines and `(rows + 1)` horizontal lines — semi-transparent (`Color32::from_rgba_premultiplied(200, 200, 200, 60)`).
-   - A rect stroke around the selected cell — green accent, 2px.
+   - A rect stroke around the selected cell — green accent, 2px. Use `painter.rect_stroke(cell_rect, 0.0, Stroke::new(2.0, accent_color), StrokeKind::Outside)` — `StrokeKind` is required by egui 0.29+ (match the existing `rect_stroke` call in `sprite_editor.rs`).
    - Frame index number in the top-left corner of each cell — small, semi-transparent.
 3. `ui.allocate_rect(image_rect, egui::Sense::click())` captures mouse clicks on the sheet area. On click:
    - `col = ((pos.x - rect.left()) / cell_w) as usize`
