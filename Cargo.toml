@@ -45,6 +45,9 @@ rfd = "0.17"
 tempfile = "3"
 
 [profile.release]
-opt-level = "s"
+opt-level = 3  # was "s" — speed over size
 lto = true
 strip = true
+
+[profile.dev.package."*"]
+opt-level = 2
