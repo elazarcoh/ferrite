@@ -1,5 +1,6 @@
 pub mod config_window;
 pub mod sprite_editor;
+pub mod ui_theme;
 
 use crate::event::AppEvent;
 use anyhow::Result;
