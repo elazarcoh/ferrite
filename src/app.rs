@@ -208,6 +208,7 @@ pub struct App {
     sprite_editor_state: Option<Arc<Mutex<SpriteEditorViewport>>>,
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
+    dark_mode: bool,
 }
 
 impl App {
@@ -241,6 +242,7 @@ impl App {
             sprite_editor_state: None,
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
+            dark_mode: true,
         })
     }
 
@@ -420,9 +422,23 @@ impl eframe::App for App {
         }
 
         // Show config viewport if open.
-        if let Some(ref state) = self.config_window_state {
-            open_config_viewport(ctx, state.clone());
-            if state.lock().map(|s| s.should_close).unwrap_or(false) {
+        {
+            let mut config_should_close = false;
+            if let Some(ref state) = self.config_window_state {
+                // Push dark_mode into viewport state before rendering.
+                if let Ok(mut s) = state.lock() {
+                    s.dark_mode = self.dark_mode;
+                }
+                open_config_viewport(ctx, state.clone());
+                // Read dark_mode_out back.
+                if let Ok(mut s) = state.lock() {
+                    if let Some(new_dark) = s.dark_mode_out.take() {
+                        self.dark_mode = new_dark;
+                    }
+                    config_should_close = s.should_close;
+                }
+            }
+            if config_should_close {
                 self.config_window_state = None;
             }
         }
@@ -451,9 +467,23 @@ impl eframe::App for App {
 
         // Show sprite editor viewport if open.
         // Opened via ConfigWindowState::open_editor_request (Edit or New from PNG).
-        if let Some(ref state) = self.sprite_editor_state {
-            open_sprite_editor_viewport(ctx, state.clone());
-            if state.lock().map(|s| s.should_close).unwrap_or(false) {
+        {
+            let mut editor_should_close = false;
+            if let Some(ref state) = self.sprite_editor_state {
+                // Push dark_mode into viewport state before rendering.
+                if let Ok(mut s) = state.lock() {
+                    s.dark_mode = self.dark_mode;
+                }
+                open_sprite_editor_viewport(ctx, state.clone());
+                // Read dark_mode_out back.
+                if let Ok(mut s) = state.lock() {
+                    if let Some(new_dark) = s.dark_mode_out.take() {
+                        self.dark_mode = new_dark;
+                    }
+                    editor_should_close = s.should_close;
+                }
+            }
+            if editor_should_close {
                 self.sprite_editor_state = None;
             }
         }

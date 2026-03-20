@@ -15,6 +15,8 @@ pub struct ConfigWindowState {
     pub tx: Sender<AppEvent>,
     pub should_close: bool,
     pub open_editor_request: Option<OpenEditorRequest>,
+    pub dark_mode: bool,        // synced from App each frame
+    pub dark_mode_out: Option<bool>,  // set by toggle, read by App
     // internal: cached loaded sheet for tag ComboBoxes
     loaded_sheet: Option<SpriteSheet>,
     loaded_sheet_path: String,
@@ -37,6 +39,8 @@ impl ConfigWindowState {
             tx,
             should_close: false,
             open_editor_request: None,
+            dark_mode: true,
+            dark_mode_out: None,
             loaded_sheet: None,
             loaded_sheet_path: String::new(),
             pending_png_pick: None,

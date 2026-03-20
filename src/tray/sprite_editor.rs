@@ -12,6 +12,8 @@ pub struct SpriteEditorViewport {
     pub anim: AnimationState,
     pub preview_sheet: Option<SpriteSheet>,
     pub should_close: bool,
+    pub dark_mode: bool,        // synced from App each frame
+    pub dark_mode_out: Option<bool>,  // set by toggle, read by App
     selected_tag_idx: Option<usize>,
     selected_frame_idx: usize,
     dirty: bool,
@@ -26,6 +28,8 @@ impl SpriteEditorViewport {
             anim: AnimationState::new(tag),
             preview_sheet: None,
             should_close: false,
+            dark_mode: true,
+            dark_mode_out: None,
             selected_tag_idx: None,
             selected_frame_idx: 0,
             dirty: false,
