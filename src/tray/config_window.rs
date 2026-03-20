@@ -73,6 +73,9 @@ pub fn open_config_viewport(
                 s.should_close = true;
             }
 
+            // Apply theme for this frame.
+            crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
+
             // Poll pending PNG file pick
             if let Some(ref rx) = s.pending_png_pick {
                 if let Ok(maybe_path) = rx.try_recv() {
@@ -87,7 +90,14 @@ pub fn open_config_viewport(
             egui::SidePanel::left("pet_list_panel")
                 .default_width(180.0)
                 .show(ctx, |ui| {
-                    ui.heading("Pets");
+                    ui.horizontal(|ui| {
+                        ui.heading("Pets");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
+                                s.dark_mode_out = Some(s.dark_mode);
+                            }
+                        });
+                    });
                     ui.separator();
 
                     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -192,6 +202,7 @@ pub fn open_config_viewport(
 
                         ui.horizontal(|ui| {
                             ui.label("Sheet:");
+                            crate::tray::ui_theme::help_icon(ui, "Choose a sprite sheet from your installed library, or use 'New from PNG' to import one.");
                             egui::ComboBox::from_id_salt(("sheet_combo", idx))
                                 .selected_text(&current_label)
                                 .show_ui(ui, |ui| {
@@ -230,6 +241,7 @@ pub fn open_config_viewport(
                             s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
                         }
                     });
+                    crate::tray::ui_theme::hint(ui, "Pixel upscale factor. 2× is recommended for 32px sprites.");
 
                     // Walk speed
                     ui.horizontal(|ui| {
@@ -247,6 +259,7 @@ pub fn open_config_viewport(
                             s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
                         }
                     });
+                    crate::tray::ui_theme::hint(ui, "How fast the pet walks across the screen (pixels/second).");
 
                     // X position
                     ui.horizontal(|ui| {
@@ -275,10 +288,14 @@ pub fn open_config_viewport(
                             s.config.pets[idx].flip_walk_left = flip;
                             s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
                         }
+                        crate::tray::ui_theme::hint(ui, "Mirror the sprite horizontally when walking left. Only needed if your sheet has no left-facing frames.");
                     }
 
                     ui.separator();
-                    ui.heading("Tag Map");
+                    ui.horizontal(|ui| {
+                        ui.heading("Tag Map");
+                        crate::tray::ui_theme::help_icon(ui, "Maps pet behaviors to your tag names. idle and walk are required; others fall back to idle if not set.");
+                    });
 
                     if let Some(ref sheet) = s.loaded_sheet {
                         let tag_names: Vec<String> =
