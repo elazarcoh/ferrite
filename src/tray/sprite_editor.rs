@@ -326,46 +326,99 @@ pub fn open_sprite_editor_viewport(
                 }
             }
 
-            // Frame strip (scrollable)
+            // Full PNG grid view (replaces the horizontal frame strip)
             ui.separator();
-            ui.label("Frames:");
-            egui::ScrollArea::horizontal().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if let Some(ref tex) = tex {
-                        let thumb_h = 64.0_f32;
-                        let tex_size = tex.size_vec2();
-                        for i in 0..total_frames {
-                            let (fx, fy, fw, fh) = s.state.frame_rect(i);
-                            if tex_size.x > 0.0 && tex_size.y > 0.0 && fw > 0 && fh > 0 {
-                                let uv = egui::Rect::from_min_max(
-                                    egui::pos2(fx as f32 / tex_size.x, fy as f32 / tex_size.y),
-                                    egui::pos2(
-                                        (fx + fw) as f32 / tex_size.x,
-                                        (fy + fh) as f32 / tex_size.y,
-                                    ),
-                                );
-                                let thumb_w = thumb_h * (fw as f32 / fh as f32);
-                                let (rect, resp) = ui.allocate_exact_size(
-                                    egui::vec2(thumb_w, thumb_h),
-                                    egui::Sense::click(),
-                                );
-                                ui.painter().image(tex.id(), rect, uv, egui::Color32::WHITE);
-                                if s.selected_frame_idx == i {
-                                    ui.painter().rect_stroke(
-                                        rect,
-                                        0.0,
-                                        egui::Stroke::new(2.0, egui::Color32::YELLOW),
-                                        egui::StrokeKind::Outside,
-                                    );
-                                }
-                                if resp.clicked() {
-                                    s.selected_frame_idx = i;
-                                }
-                            }
+            ui.label("Sheet:");
+            if let Some(ref tex) = tex {
+                let tex_size = tex.size_vec2();
+                let cols = s.state.cols as usize;
+                let rows = s.state.rows as usize;
+                if cols > 0 && rows > 0 && tex_size.x > 0.0 && tex_size.y > 0.0 {
+                    // Scale to fit available width, preserve aspect ratio.
+                    let avail_w = ui.available_width();
+                    let sheet_aspect = tex_size.x / tex_size.y;
+                    let display_w = avail_w;
+                    let display_h = display_w / sheet_aspect;
+
+                    let (image_rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(display_w, display_h),
+                        egui::Sense::click(),
+                    );
+
+                    // Draw full texture (UV covers entire image).
+                    ui.painter().image(
+                        tex.id(),
+                        image_rect,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+
+                    let cell_w = display_w / cols as f32;
+                    let cell_h = display_h / rows as f32;
+                    let painter = ui.painter();
+                    let grid_color = egui::Color32::from_rgba_premultiplied(200, 200, 200, 60);
+                    let accent = egui::Color32::from_rgb(72, 200, 120);
+
+                    // Vertical grid lines
+                    for c in 0..=cols {
+                        let x = image_rect.left() + c as f32 * cell_w;
+                        painter.line_segment(
+                            [egui::pos2(x, image_rect.top()), egui::pos2(x, image_rect.bottom())],
+                            egui::Stroke::new(1.0, grid_color),
+                        );
+                    }
+                    // Horizontal grid lines
+                    for r in 0..=rows {
+                        let y = image_rect.top() + r as f32 * cell_h;
+                        painter.line_segment(
+                            [egui::pos2(image_rect.left(), y), egui::pos2(image_rect.right(), y)],
+                            egui::Stroke::new(1.0, grid_color),
+                        );
+                    }
+
+                    // Per-cell: frame number label + selection highlight
+                    for i in 0..total_frames {
+                        let col = i % cols;
+                        let row = i / cols;
+                        let cell_rect = egui::Rect::from_min_size(
+                            egui::pos2(
+                                image_rect.left() + col as f32 * cell_w,
+                                image_rect.top() + row as f32 * cell_h,
+                            ),
+                            egui::vec2(cell_w, cell_h),
+                        );
+
+                        // Frame number in top-left corner
+                        painter.text(
+                            cell_rect.min + egui::vec2(3.0, 2.0),
+                            egui::Align2::LEFT_TOP,
+                            i.to_string(),
+                            egui::FontId::proportional(10.0),
+                            egui::Color32::from_rgba_premultiplied(200, 200, 200, 140),
+                        );
+
+                        // Green border on selected frame
+                        if s.selected_frame_idx == i {
+                            painter.rect_stroke(
+                                cell_rect,
+                                0.0,
+                                egui::Stroke::new(2.0, accent),
+                                egui::StrokeKind::Outside,
+                            );
                         }
                     }
-                });
-            });
+
+                    // Click → select frame
+                    if resp.clicked() {
+                        if let Some(pos) = resp.interact_pointer_pos() {
+                            let col = ((pos.x - image_rect.left()) / cell_w) as usize;
+                            let row = ((pos.y - image_rect.top()) / cell_h) as usize;
+                            let frame = (row * cols + col).min(total_frames - 1);
+                            s.selected_frame_idx = frame;
+                        }
+                    }
+                }
+            }
         });
 
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
