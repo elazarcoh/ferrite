@@ -83,6 +83,8 @@ pub fn open_sprite_editor_viewport(
 
         let Ok(mut s) = state.lock() else { return };
 
+        crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
+
         // Upload texture if not yet uploaded.
         if s.texture.is_none() {
             let image = &s.state.image;
@@ -102,6 +104,9 @@ pub fn open_sprite_editor_viewport(
             ui.horizontal(|ui| {
                 ui.label(format!("File: {}", s.state.png_path.display()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
+                        s.dark_mode_out = Some(s.dark_mode);
+                    }
                     if ui.button("Export PNG\u{2026}").clicked() {
                         let image_data = s.state.image.clone();
                         std::thread::spawn(move || {
@@ -128,33 +133,39 @@ pub fn open_sprite_editor_viewport(
         });
 
         // Left panel: tag list and grid settings
-        egui::SidePanel::left("tag_panel").min_width(180.0).show(ctx, |ui| {
-            ui.heading("Grid");
-            ui.horizontal(|ui| {
-                ui.label("Cols:");
-                let mut cols = s.state.cols;
-                if ui.add(egui::DragValue::new(&mut cols).range(1..=64)).changed() {
-                    s.state.cols = cols;
-                    s.dirty = true;
-                    s.preview_sheet = None; // force rebuild
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Rows:");
-                let mut rows = s.state.rows;
-                if ui.add(egui::DragValue::new(&mut rows).range(1..=64)).changed() {
-                    s.state.rows = rows;
-                    s.dirty = true;
-                    s.preview_sheet = None; // force rebuild
-                }
-            });
-            let total = s.total_frames();
-            ui.label(format!("{} frames", total));
+        egui::SidePanel::left("tag_panel").min_width(200.0).show(ctx, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.heading("Grid");
+                    crate::tray::ui_theme::help_icon(ui, "Sets how the PNG is divided into frames. Cols × Rows = total frame count.");
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Cols:");
+                    let mut cols = s.state.cols;
+                    if ui.add(egui::DragValue::new(&mut cols).range(1..=64)).changed() {
+                        s.state.cols = cols;
+                        s.dirty = true;
+                        s.preview_sheet = None; // force rebuild
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Rows:");
+                    let mut rows = s.state.rows;
+                    if ui.add(egui::DragValue::new(&mut rows).range(1..=64)).changed() {
+                        s.state.rows = rows;
+                        s.dirty = true;
+                        s.preview_sheet = None; // force rebuild
+                    }
+                });
+                let total = s.total_frames();
+                ui.label(format!("{} frames", total));
 
-            ui.separator();
-            ui.heading("Tags");
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.heading("Tags");
+                    crate::tray::ui_theme::help_icon(ui, "Tags group frames into named animations (e.g. 'idle', 'walk'). Select a tag to edit its frame range and direction.");
+                });
 
-            egui::ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
                 let mut clicked_idx = None;
                 for (i, tag) in s.state.tags.iter().enumerate() {
                     let selected = s.selected_tag_idx == Some(i);
@@ -169,104 +180,108 @@ pub fn open_sprite_editor_viewport(
                     let tag_name = s.state.tags[i].name.clone();
                     s.anim.set_tag(tag_name);
                 }
-            });
 
-            ui.separator();
+                ui.separator();
 
-            // Selected tag controls
-            if let Some(tag_idx) = s.selected_tag_idx {
-                if tag_idx < s.state.tags.len() {
-                    let total = s.total_frames();
+                // Selected tag controls
+                if let Some(tag_idx) = s.selected_tag_idx {
+                    if tag_idx < s.state.tags.len() {
+                        let total = s.total_frames();
 
-                    // From / To frame range
-                    ui.horizontal(|ui| {
-                        ui.label("From:");
-                        let mut from = s.state.tags[tag_idx].from;
-                        if ui.add(egui::DragValue::new(&mut from).range(0..=total.saturating_sub(1))).changed() {
-                            s.state.tags[tag_idx].from = from;
+                        // From / To frame range
+                        ui.horizontal(|ui| {
+                            ui.label("From:");
+                            let mut from = s.state.tags[tag_idx].from;
+                            if ui.add(egui::DragValue::new(&mut from).range(0..=total.saturating_sub(1))).changed() {
+                                s.state.tags[tag_idx].from = from;
+                                s.dirty = true;
+                                s.preview_sheet = None;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("To:");
+                            let mut to = s.state.tags[tag_idx].to;
+                            if ui.add(egui::DragValue::new(&mut to).range(0..=total.saturating_sub(1))).changed() {
+                                s.state.tags[tag_idx].to = to;
+                                s.dirty = true;
+                                s.preview_sheet = None;
+                            }
+                        });
+
+                        // Direction combobox
+                        ui.label("Direction:");
+                        {
+                            let current_dir = s.state.tags[tag_idx].direction.clone();
+                            let mut new_dir = current_dir.clone();
+                            egui::ComboBox::from_id_salt("tag_direction")
+                                .selected_text(current_dir.label())
+                                .show_ui(ui, |ui| {
+                                    for d in [
+                                        TagDirection::Forward,
+                                        TagDirection::Reverse,
+                                        TagDirection::PingPong,
+                                        TagDirection::PingPongReverse,
+                                    ] {
+                                        ui.selectable_value(&mut new_dir, d.clone(), d.label());
+                                    }
+                                });
+                            if new_dir != current_dir {
+                                s.state.tags[tag_idx].direction = new_dir;
+                                s.dirty = true;
+                                s.preview_sheet = None;
+                            }
+                        }
+                        crate::tray::ui_theme::hint(ui, "Forward plays frames left-to-right. PingPong bounces back and forth.");
+
+                        if ui.button("Delete Tag").clicked() {
+                            s.state.tags.remove(tag_idx);
+                            let new_idx = if s.state.tags.is_empty() {
+                                None
+                            } else {
+                                Some(tag_idx.min(s.state.tags.len() - 1))
+                            };
+                            s.selected_tag_idx = new_idx;
+                            s.state.selected_tag = new_idx;
                             s.dirty = true;
                             s.preview_sheet = None;
                         }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("To:");
-                        let mut to = s.state.tags[tag_idx].to;
-                        if ui.add(egui::DragValue::new(&mut to).range(0..=total.saturating_sub(1))).changed() {
-                            s.state.tags[tag_idx].to = to;
-                            s.dirty = true;
-                            s.preview_sheet = None;
-                        }
-                    });
-
-                    // Direction combobox
-                    ui.label("Direction:");
-                    {
-                        let current_dir = s.state.tags[tag_idx].direction.clone();
-                        let mut new_dir = current_dir.clone();
-                        egui::ComboBox::from_id_salt("tag_direction")
-                            .selected_text(current_dir.label())
-                            .show_ui(ui, |ui| {
-                                for d in [
-                                    TagDirection::Forward,
-                                    TagDirection::Reverse,
-                                    TagDirection::PingPong,
-                                    TagDirection::PingPongReverse,
-                                ] {
-                                    ui.selectable_value(&mut new_dir, d.clone(), d.label());
-                                }
-                            });
-                        if new_dir != current_dir {
-                            s.state.tags[tag_idx].direction = new_dir;
-                            s.dirty = true;
-                            s.preview_sheet = None;
-                        }
-                    }
-
-                    if ui.button("Delete Tag").clicked() {
-                        s.state.tags.remove(tag_idx);
-                        let new_idx = if s.state.tags.is_empty() {
-                            None
-                        } else {
-                            Some(tag_idx.min(s.state.tags.len() - 1))
-                        };
-                        s.selected_tag_idx = new_idx;
-                        s.state.selected_tag = new_idx;
-                        s.dirty = true;
-                        s.preview_sheet = None;
                     }
                 }
-            }
 
-            ui.separator();
-            ui.label("Add tag:");
-            let id = egui::Id::new("new_tag_name_editor");
-            let mut new_tag_name: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
-            let response = ui.text_edit_singleline(&mut new_tag_name);
-            if response.lost_focus()
-                && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                && !new_tag_name.is_empty()
-            {
-                let total = s.total_frames();
-                let color = crate::sprite::editor_state::SpriteEditorState::assign_color(s.state.tags.len());
-                s.state.tags.push(crate::sprite::editor_state::EditorTag {
-                    name: new_tag_name.clone(),
-                    from: 0,
-                    to: total.saturating_sub(1),
-                    direction: TagDirection::Forward,
-                    color,
+                ui.separator();
+                ui.label("Add tag:");
+                let id = egui::Id::new("new_tag_name_editor");
+                let mut new_tag_name: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
+                let response = ui.text_edit_singleline(&mut new_tag_name);
+                if response.lost_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    && !new_tag_name.is_empty()
+                {
+                    let total = s.total_frames();
+                    let color = crate::sprite::editor_state::SpriteEditorState::assign_color(s.state.tags.len());
+                    s.state.tags.push(crate::sprite::editor_state::EditorTag {
+                        name: new_tag_name.clone(),
+                        from: 0,
+                        to: total.saturating_sub(1),
+                        direction: TagDirection::Forward,
+                        color,
+                    });
+                    s.dirty = true;
+                    s.preview_sheet = None;
+                    new_tag_name.clear();
+                }
+                ui.data_mut(|d| d.insert_temp(id, new_tag_name));
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.heading("Tag Map");
+                    crate::tray::ui_theme::help_icon(ui, "Maps pet behaviors to your tag names. idle and walk are required; others fall back to idle if not set.");
                 });
-                s.dirty = true;
-                s.preview_sheet = None;
-                new_tag_name.clear();
-            }
-            ui.data_mut(|d| d.insert_temp(id, new_tag_name));
-
-            ui.separator();
-            ui.heading("Tag Map");
-            let tag_names: Vec<String> = s.state.tags.iter().map(|t| t.name.clone()).collect();
-            if tag_map_ui(ui, &mut s.state.tag_map, &tag_names) {
-                s.dirty = true;
-            }
+                let tag_names: Vec<String> = s.state.tags.iter().map(|t| t.name.clone()).collect();
+                if tag_map_ui(ui, &mut s.state.tag_map, &tag_names) {
+                    s.dirty = true;
+                }
+            }); // end ScrollArea
         });
 
         // Central panel: frame controls + preview
