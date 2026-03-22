@@ -407,7 +407,7 @@ pub fn open_sprite_editor_viewport(
                         let r = (t.color & 0xFF) as u8;
                         let g = ((t.color >> 8) & 0xFF) as u8;
                         let b = ((t.color >> 16) & 0xFF) as u8;
-                        (t.from, t.to, egui::Color32::from_rgba_premultiplied(r, g, b, 70))
+                        (t.from, t.to, egui::Color32::from_rgba_premultiplied(r, g, b, 35))
                     });
                     egui::ScrollArea::both()
                         .auto_shrink([false, false])
@@ -478,7 +478,7 @@ pub fn open_sprite_editor_viewport(
                                         // Brighten during an active drag.
                                         let fill = if live_range.is_some() {
                                             egui::Color32::from_rgba_premultiplied(
-                                                color.r(), color.g(), color.b(), 30)
+                                                color.r(), color.g(), color.b(), 15)
                                         } else {
                                             color
                                         };
@@ -493,7 +493,7 @@ pub fn open_sprite_editor_viewport(
                                                 cell_rect,
                                                 0.0,
                                                 egui::Color32::from_rgba_premultiplied(
-                                                    color.r(), color.g(), color.b(), 110),
+                                                    color.r(), color.g(), color.b(), 55),
                                             );
                                         }
                                     }
