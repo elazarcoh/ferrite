@@ -164,3 +164,67 @@ fn save_to_dir_writes_json_and_png() {
     assert_eq!(tm.idle, "idle");
     assert_eq!(tm.walk, "walk");
 }
+
+#[test]
+fn flip_h_true_round_trips_through_json() {
+    let (mut state, _tmp) = make_state();
+    state.rows = 1;
+    state.cols = 2;
+    state.tags.push(EditorTag {
+        name: "walk".into(),
+        from: 0, to: 1,
+        direction: TagDirection::Forward,
+        flip_h: true,
+        color: 0,
+    });
+    state.tag_map.idle = "idle".into();
+    state.tag_map.walk = "walk".into();
+
+    let json = state.to_json();
+    // "flipH" must appear in the serialised JSON
+    let text = std::str::from_utf8(&json).unwrap();
+    assert!(text.contains("\"flipH\": true"), "flip_h=true must be emitted as \"flipH\": true");
+
+    // Parse back: FrameTag.flip_h must be true
+    let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
+        .unwrap().into_rgba8();
+    let sheet = my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image).unwrap();
+    let walk_tag = sheet.tags.iter().find(|t| t.name == "walk").expect("walk tag present");
+    assert!(walk_tag.flip_h, "flip_h must survive JSON round-trip");
+}
+
+#[test]
+fn flip_h_false_omits_field_from_json() {
+    let (mut state, _tmp) = make_state();
+    state.rows = 1;
+    state.cols = 2;
+    state.tags.push(EditorTag {
+        name: "idle".into(),
+        from: 0, to: 1,
+        direction: TagDirection::Forward,
+        flip_h: false,
+        color: 0,
+    });
+    state.tag_map.idle = "idle".into();
+    state.tag_map.walk = "walk".into();
+
+    let json = state.to_json();
+    let text = std::str::from_utf8(&json).unwrap();
+    assert!(!text.contains("\"flipH\""), "flip_h=false must not emit \"flipH\"");
+}
+
+#[test]
+fn esheep_walk_and_run_tags_have_flip_h() {
+    let json_bytes = include_bytes!("../../assets/esheep.json");
+    let png_bytes = include_bytes!("../../assets/esheep.png");
+    let sheet = my_pet::sprite::sheet::load_embedded(json_bytes, png_bytes)
+        .expect("esheep sheet must load");
+
+    let walk = sheet.tags.iter().find(|t| t.name == "walk").expect("walk tag");
+    let run  = sheet.tags.iter().find(|t| t.name == "run").expect("run tag");
+    assert!(walk.flip_h, "esheep walk must have flip_h=true");
+    assert!(run.flip_h,  "esheep run must have flip_h=true");
+
+    let idle = sheet.tags.iter().find(|t| t.name == "idle").expect("idle tag");
+    assert!(!idle.flip_h, "esheep idle must have flip_h=false");
+}

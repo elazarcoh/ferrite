@@ -14,6 +14,8 @@ pub struct SpriteEditorViewport {
     pub should_close: bool,
     pub dark_mode: bool,        // synced from App each frame
     pub dark_mode_out: Option<bool>,  // set by toggle, read by App
+    /// Set to the saved JSON path after a successful save; App reads + clears to trigger hot-reload.
+    pub saved_json_path: Option<std::path::PathBuf>,
     selected_tag_idx: Option<usize>,
     selected_frame_idx: usize,
     dirty: bool,
@@ -32,6 +34,7 @@ impl SpriteEditorViewport {
             should_close: false,
             dark_mode: true,
             dark_mode_out: None,
+            saved_json_path: None,
             selected_tag_idx: None,
             selected_frame_idx: 0,
             dirty: false,
@@ -125,10 +128,15 @@ pub fn open_sprite_editor_viewport(
                     }
                     let save_btn = egui::Button::new("Save");
                     if ui.add_enabled(s.dirty, save_btn).clicked() {
-                        if let Some(dir) = s.state.png_path.parent() {
-                            if let Err(e) = s.state.save_to_dir(dir) {
+                        let save_dir = s.state.png_path.parent().map(|p| p.to_path_buf());
+                        if let Some(dir) = save_dir {
+                            if let Err(e) = s.state.save_to_dir(&dir) {
                                 log::warn!("save sprite editor: {e}");
                             } else {
+                                let stem = s.state.png_path.file_stem()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                s.saved_json_path = Some(dir.join(format!("{stem}.json")));
                                 s.dirty = false;
                             }
                         }
@@ -332,21 +340,25 @@ pub fn open_sprite_editor_viewport(
                 s.anim.tick(&sheet, delta_ms);
                 let abs = s.anim.absolute_frame(&sheet);
                 let frame = sheet.frames.get(abs).cloned();
+                let flip_h = sheet.tag(&s.anim.current_tag).map_or(false, |t| t.flip_h);
                 s.preview_sheet = Some(sheet);
-                frame
+                frame.map(|f| (f, flip_h))
             } else {
                 None
             };
-            if let (Some(tex), Some(f)) = (&tex, preview_frame_data) {
+            if let (Some(tex), Some((f, flip_h))) = (&tex, preview_frame_data) {
                 let tex_size = tex.size_vec2();
                 if tex_size.x > 0.0 && tex_size.y > 0.0 && f.w > 0 && f.h > 0 {
-                    let uv = egui::Rect::from_min_max(
-                        egui::pos2(f.x as f32 / tex_size.x, f.y as f32 / tex_size.y),
-                        egui::pos2(
-                            (f.x + f.w) as f32 / tex_size.x,
-                            (f.y + f.h) as f32 / tex_size.y,
-                        ),
-                    );
+                    let u0 = f.x as f32 / tex_size.x;
+                    let u1 = (f.x + f.w) as f32 / tex_size.x;
+                    let v0 = f.y as f32 / tex_size.y;
+                    let v1 = (f.y + f.h) as f32 / tex_size.y;
+                    // Swap U coordinates to mirror the sprite horizontally.
+                    let uv = if flip_h {
+                        egui::Rect::from_min_max(egui::pos2(u1, v0), egui::pos2(u0, v1))
+                    } else {
+                        egui::Rect::from_min_max(egui::pos2(u0, v0), egui::pos2(u1, v1))
+                    };
                     let aspect = f.w as f32 / f.h as f32;
                     let preview_w = preview_h * aspect;
                     let (rect, _resp) = ui.allocate_exact_size(

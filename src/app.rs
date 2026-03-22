@@ -310,6 +310,29 @@ impl App {
         Ok(crate::sprite::editor_state::SpriteEditorState::new(png_path.to_path_buf(), image))
     }
 
+    /// Reload the sheet for any live pet whose `sheet_path` resolves to `json_path`.
+    fn reload_pets_for_sheet(&mut self, json_path: &std::path::Path) {
+        for inst in self.pets.values_mut() {
+            let pet_json_path = match inst.cfg.sheet_path.strip_prefix("embedded://") {
+                Some(_) => None, // embedded sheets can't be reloaded from a file path
+                None => Some(std::path::Path::new(&inst.cfg.sheet_path)),
+            };
+            let matches = pet_json_path.map_or(false, |p| {
+                p == json_path
+                    || p.canonicalize().ok().as_deref() == json_path.canonicalize().ok().as_deref()
+            });
+            if matches {
+                match load_sheet(&inst.cfg.sheet_path) {
+                    Ok(new_sheet) => {
+                        inst.sheet = new_sheet;
+                        log::info!("hot-reloaded sheet for pet '{}'", inst.cfg.id);
+                    }
+                    Err(e) => log::warn!("sheet reload failed for '{}': {e}", inst.cfg.id),
+                }
+            }
+        }
+    }
+
     fn handle_event(&mut self, ev: AppEvent, ctx: &egui::Context) -> Result<()> {
         match ev {
             AppEvent::Quit | AppEvent::TrayQuit => {
@@ -473,19 +496,25 @@ impl eframe::App for App {
         // Opened via ConfigWindowState::open_editor_request (Edit or New from PNG).
         {
             let mut editor_should_close = false;
+            let mut saved_json_path: Option<std::path::PathBuf> = None;
             if let Some(ref state) = self.sprite_editor_state {
                 // Push dark_mode into viewport state before rendering.
                 if let Ok(mut s) = state.lock() {
                     s.dark_mode = self.dark_mode;
                 }
                 open_sprite_editor_viewport(ctx, state.clone());
-                // Read dark_mode_out back.
+                // Read dark_mode_out and saved_json_path back.
                 if let Ok(mut s) = state.lock() {
                     if let Some(new_dark) = s.dark_mode_out.take() {
                         self.dark_mode = new_dark;
                     }
                     editor_should_close = s.should_close;
+                    saved_json_path = s.saved_json_path.take();
                 }
+            }
+            // Reload sheets outside the sprite_editor_state borrow so &mut self is free.
+            if let Some(json_path) = saved_json_path {
+                self.reload_pets_for_sheet(&json_path);
             }
             if editor_should_close {
                 self.sprite_editor_state = None;
