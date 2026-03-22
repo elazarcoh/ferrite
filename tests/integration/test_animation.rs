@@ -69,6 +69,7 @@ fn ping_pong_reversal() {
         from: 0,
         to: 2,
         direction: TagDirection::PingPong,
+        flip_h: false,
     }];
     let sheet = SpriteSheet { image, frames, tags };
 

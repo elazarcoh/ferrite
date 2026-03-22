@@ -157,12 +157,15 @@ impl PetInstance {
     fn render_current_frame(&mut self) -> Result<()> {
         let abs = self.anim.absolute_frame(&self.sheet);
         let f = &self.sheet.frames[abs];
-        let flip = self.cfg.flip_walk_left
-            && matches!(
-                self.ai.state,
-                BehaviorState::Walk { ref facing, .. } | BehaviorState::Run { ref facing, .. }
-                    if *facing == Facing::Left
-            );
+        // Determine flip: the current tag's flip_h flag enables mirroring, but only
+        // when actually moving left (so the pet faces the right direction).
+        let facing_left = matches!(
+            self.ai.state,
+            BehaviorState::Walk { ref facing, .. } | BehaviorState::Run { ref facing, .. }
+                if *facing == Facing::Left
+        );
+        let tag_flip_h = self.sheet.tag(&self.anim.current_tag).map_or(false, |t| t.flip_h);
+        let flip = tag_flip_h && facing_left;
         self.window.render_frame(
             &self.sheet.image,
             f.x, f.y, f.w, f.h,
@@ -279,6 +282,7 @@ impl App {
                 from: t.from,
                 to: t.to,
                 direction: t.direction.clone(),
+                flip_h: t.flip_h,
                 color: SpriteEditorState::assign_color(i),
             }
         }).collect();

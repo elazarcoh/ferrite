@@ -281,16 +281,6 @@ pub fn open_config_viewport(
                         }
                     });
 
-                    // Flip walk left
-                    {
-                        let mut flip = s.config.pets[idx].flip_walk_left;
-                        if ui.checkbox(&mut flip, "Flip walk left").changed() {
-                            s.config.pets[idx].flip_walk_left = flip;
-                            s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
-                        }
-                        crate::tray::ui_theme::hint(ui, "Mirror the sprite horizontally when walking left. Only needed if your sheet has no left-facing frames.");
-                    }
-
                     ui.separator();
                     ui.horizontal(|ui| {
                         ui.heading("Tag Map");

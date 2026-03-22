@@ -23,8 +23,6 @@ pub struct PetConfig {
     pub scale: u32,
     /// Pixels per second for walk.
     pub walk_speed: f32,
-    /// Mirror the sprite when walking left (so only one direction is needed).
-    pub flip_walk_left: bool,
     pub tag_map: AnimTagMap,
 }
 
@@ -44,7 +42,6 @@ impl PetConfig {
             y: 800,
             scale: 2,
             walk_speed: 80.0,
-            flip_walk_left: true,
             tag_map: AnimTagMap {
                 idle:    "idle".into(),
                 walk:    "walk".into(),

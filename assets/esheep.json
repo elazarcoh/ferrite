@@ -1144,13 +1144,15 @@
         "name": "walk",
         "from": 2,
         "to": 3,
-        "direction": "forward"
+        "direction": "forward",
+        "flipH": true
       },
       {
         "name": "run",
         "from": 4,
         "to": 7,
-        "direction": "forward"
+        "direction": "forward",
+        "flipH": true
       },
       {
         "name": "sit",

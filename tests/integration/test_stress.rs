@@ -23,7 +23,6 @@ fn make_pet() -> PetInstance {
         x: 100,
         y: 100,
         walk_speed: 100.0,
-        flip_walk_left: false,
         tag_map: AnimTagMap {
             idle: "idle".into(),
             walk: "walk".into(),

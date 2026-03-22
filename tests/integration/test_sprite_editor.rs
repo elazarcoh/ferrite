@@ -40,6 +40,7 @@ fn to_json_produces_valid_aseprite() {
         from: 0,
         to: 1,
         direction: TagDirection::PingPong,
+        flip_h: false,
         color: 0,
     });
     state.tag_map.idle = "idle".into();
@@ -92,7 +93,7 @@ fn direction_round_trip() {
         let (mut state, _tmp) = make_state();
         state.rows = 1;
         state.cols = 2;
-        state.tags.push(EditorTag { name: "t".into(), from: 0, to: 1, direction: dir.clone(), color: 0 });
+        state.tags.push(EditorTag { name: "t".into(), from: 0, to: 1, direction: dir.clone(), flip_h: false, color: 0 });
         state.tag_map.idle = "idle".into();
         state.tag_map.walk = "walk".into();
         let json = state.to_json();
@@ -139,11 +140,11 @@ fn save_to_dir_writes_json_and_png() {
     state.cols = 2;
     state.tags.push(EditorTag {
         name: "idle".into(), from: 0, to: 1,
-        direction: TagDirection::PingPong, color: 0,
+        direction: TagDirection::PingPong, flip_h: false, color: 0,
     });
     state.tags.push(EditorTag {
         name: "walk".into(), from: 0, to: 1,
-        direction: TagDirection::Forward, color: 1,
+        direction: TagDirection::Forward, flip_h: true, color: 1,
     });
     state.tag_map.idle = "idle".into();
     state.tag_map.walk = "walk".into();

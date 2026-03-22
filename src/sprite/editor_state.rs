@@ -30,6 +30,8 @@ pub struct EditorTag {
     pub from: usize,
     pub to: usize,
     pub direction: TagDirection,
+    /// Mirror sprite horizontally when this tag plays.
+    pub flip_h: bool,
     /// COLORREF (0x00BBGGRR) from TAG_COLORS. Converted to egui::Color32 for rendering.
     pub color: u32,
 }
@@ -140,12 +142,18 @@ impl SpriteEditorState {
 
         let frame_tags: Vec<serde_json::Value> = self.tags
             .iter()
-            .map(|t| serde_json::json!({
-                "name": t.name,
-                "from": t.from,
-                "to": t.to,
-                "direction": direction_to_str(&t.direction),
-            }))
+            .map(|t| {
+                let mut obj = serde_json::json!({
+                    "name": t.name,
+                    "from": t.from,
+                    "to": t.to,
+                    "direction": direction_to_str(&t.direction),
+                });
+                if t.flip_h {
+                    obj["flipH"] = serde_json::Value::Bool(true);
+                }
+                obj
+            })
             .collect();
 
         if include_tag_map {

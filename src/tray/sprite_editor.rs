@@ -54,6 +54,7 @@ impl SpriteEditorViewport {
             from: t.from,
             to: t.to,
             direction: t.direction.clone(),
+            flip_h: t.flip_h,
         }).collect();
         self.preview_sheet = Some(SpriteSheet {
             image: self.state.image.clone(),
@@ -237,6 +238,16 @@ pub fn open_sprite_editor_viewport(
                         }
                         crate::tray::ui_theme::hint(ui, "Forward plays frames left-to-right. PingPong bounces back and forth.");
 
+                        // Flip H checkbox
+                        {
+                            let mut flip_h = s.state.tags[tag_idx].flip_h;
+                            if ui.checkbox(&mut flip_h, "Flip horizontal").on_hover_text("Mirror sprite horizontally when this tag plays. Use this if your walk frames face right but the pet needs to move left.").changed() {
+                                s.state.tags[tag_idx].flip_h = flip_h;
+                                s.dirty = true;
+                                s.preview_sheet = None;
+                            }
+                        }
+
                         if ui.button("Delete Tag").clicked() {
                             s.state.tags.remove(tag_idx);
                             let new_idx = if s.state.tags.is_empty() {
@@ -268,6 +279,7 @@ pub fn open_sprite_editor_viewport(
                         from: 0,
                         to: total.saturating_sub(1),
                         direction: TagDirection::Forward,
+                        flip_h: false,
                         color,
                     });
                     s.dirty = true;

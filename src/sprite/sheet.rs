@@ -40,6 +40,8 @@ pub struct FrameTag {
     pub from: usize,
     pub to: usize,
     pub direction: TagDirection,
+    /// Mirror sprite horizontally when this tag plays (e.g. walk faces right but pet moves left).
+    pub flip_h: bool,
 }
 
 #[derive(Debug)]
@@ -71,6 +73,8 @@ struct AseTag {
     from: usize,
     to: usize,
     direction: String,
+    #[serde(rename = "flipH", default)]
+    flip_h: bool,
 }
 
 // ─── Parsing ─────────────────────────────────────────────────────────────────
@@ -143,6 +147,7 @@ fn parse_tags(root: &Value) -> Result<Vec<FrameTag>> {
                 from: t.from,
                 to: t.to,
                 direction: parse_direction(&t.direction),
+                flip_h: t.flip_h,
             })
         })
         .collect()
