@@ -249,7 +249,9 @@ pub fn open_sprite_editor_viewport(
                         // Flip H checkbox
                         {
                             let mut flip_h = s.state.tags[tag_idx].flip_h;
-                            if ui.checkbox(&mut flip_h, "Flip horizontal").on_hover_text("Mirror sprite horizontally when this tag plays. Use this if your walk frames face right but the pet needs to move left.").changed() {
+                            let resp = ui.checkbox(&mut flip_h, "Flip H")
+                                .on_hover_text("Sprite frames face LEFT. Mirror when walking right so the pet faces its direction of travel.");
+                            if resp.changed() {
                                 s.state.tags[tag_idx].flip_h = flip_h;
                                 s.dirty = true;
                                 s.preview_sheet = None;
@@ -340,6 +342,7 @@ pub fn open_sprite_editor_viewport(
                 s.anim.tick(&sheet, delta_ms);
                 let abs = s.anim.absolute_frame(&sheet);
                 let frame = sheet.frames.get(abs).cloned();
+                // For the preview we always play forward, so treat flip_h as always-flip.
                 let flip_h = sheet.tag(&s.anim.current_tag).map_or(false, |t| t.flip_h);
                 s.preview_sheet = Some(sheet);
                 frame.map(|f| (f, flip_h))
@@ -663,3 +666,5 @@ fn optional_tag_combo_edit(
     });
     changed
 }
+
+

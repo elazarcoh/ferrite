@@ -159,14 +159,18 @@ impl PetInstance {
     }
 
     /// Returns whether the current frame should be rendered flipped horizontally.
+    /// `flip_h=false` (default) = sprite faces RIGHT. Flip when going LEFT.
+    /// `flip_h=true`            = sprite faces LEFT.  Flip when going RIGHT.
     pub fn compute_flip(&self) -> bool {
-        let facing_left = matches!(
-            self.ai.state,
-            BehaviorState::Walk { ref facing, .. } | BehaviorState::Run { ref facing, .. }
-                if *facing == Facing::Left
-        );
         let tag_flip_h = self.sheet.tag(&self.anim.current_tag).map_or(false, |t| t.flip_h);
-        tag_flip_h && facing_left
+        let facing = match &self.ai.state {
+            BehaviorState::Walk { facing, .. } | BehaviorState::Run { facing, .. } => facing,
+            _ => return false,
+        };
+        match facing {
+            Facing::Right => tag_flip_h,   // facing right, going right  → only flip if sprite faces left
+            Facing::Left  => !tag_flip_h,  // facing right, going left   → flip unless sprite already faces left
+        }
     }
 
     fn render_current_frame(&mut self) -> Result<()> {

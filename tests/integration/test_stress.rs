@@ -93,29 +93,39 @@ fn compute_flip_false_when_idle() {
 }
 
 #[test]
-fn compute_flip_false_when_walking_right() {
+fn compute_flip_true_when_walking_right_with_flip_h_tag() {
+    // flip_h=true means "sprite faces LEFT" — mirror when going RIGHT
     let mut pet = make_pet_with_flip_sheet();
     pet.ai.state = BehaviorState::Walk { facing: Facing::Right, remaining_px: 500.0 };
     pet.anim.set_tag("walk");
-    // tag has flip_h=true but facing is Right → no flip
-    assert!(!pet.compute_flip(), "flip must be false when facing right");
+    assert!(pet.compute_flip(), "flip must be true when facing right with flip_h tag");
 }
 
 #[test]
-fn compute_flip_true_when_walking_left_with_flip_h_tag() {
+fn compute_flip_false_when_walking_left_with_flip_h_tag() {
+    // Sprite faces LEFT naturally — no flip needed when going left
     let mut pet = make_pet_with_flip_sheet();
     pet.ai.state = BehaviorState::Walk { facing: Facing::Left, remaining_px: 500.0 };
     pet.anim.set_tag("walk");
-    assert!(pet.compute_flip(), "flip must be true when facing left with flip_h tag");
+    assert!(!pet.compute_flip(), "flip must be false when facing left with flip_h tag (sprite already faces left)");
 }
 
 #[test]
-fn compute_flip_false_when_walking_left_without_flip_h_tag() {
+fn compute_flip_false_when_walking_right_without_flip_h_tag() {
+    let mut pet = make_pet_with_flip_sheet();
+    pet.ai.state = BehaviorState::Walk { facing: Facing::Right, remaining_px: 500.0 };
+    // Idle tag has flip_h=false (sprite faces right) — no flip when going right
+    pet.anim.set_tag("idle");
+    assert!(!pet.compute_flip(), "flip must be false when tag has flip_h=false and going right");
+}
+
+#[test]
+fn compute_flip_true_when_walking_left_without_flip_h_tag() {
     let mut pet = make_pet_with_flip_sheet();
     pet.ai.state = BehaviorState::Walk { facing: Facing::Left, remaining_px: 500.0 };
-    // Idle tag has flip_h=false
+    // Idle tag has flip_h=false (sprite faces right) — must flip when going left
     pet.anim.set_tag("idle");
-    assert!(!pet.compute_flip(), "flip must be false when tag has flip_h=false");
+    assert!(pet.compute_flip(), "flip must be true when tag has flip_h=false and going left (arrows case)");
 }
 
 #[test]

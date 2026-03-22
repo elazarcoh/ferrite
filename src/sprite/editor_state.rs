@@ -30,7 +30,7 @@ pub struct EditorTag {
     pub from: usize,
     pub to: usize,
     pub direction: TagDirection,
-    /// Mirror sprite horizontally when this tag plays.
+    /// `true` = sprite faces LEFT in the sheet; mirror when walking RIGHT.
     pub flip_h: bool,
     /// COLORREF (0x00BBGGRR) from TAG_COLORS. Converted to egui::Color32 for rendering.
     pub color: u32,
@@ -150,7 +150,7 @@ impl SpriteEditorState {
                     "direction": direction_to_str(&t.direction),
                 });
                 if t.flip_h {
-                    obj["flipH"] = serde_json::Value::Bool(true);
+                    obj["flipH"] = true.into();
                 }
                 obj
             })

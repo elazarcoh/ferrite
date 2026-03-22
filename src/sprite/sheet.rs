@@ -40,7 +40,8 @@ pub struct FrameTag {
     pub from: usize,
     pub to: usize,
     pub direction: TagDirection,
-    /// Mirror sprite horizontally when this tag plays (e.g. walk faces right but pet moves left).
+    /// Sprite frames face LEFT in the sheet. Mirror when moving RIGHT so the pet
+    /// faces its direction of travel. Leave false if the sprite faces right (standard).
     pub flip_h: bool,
 }
 
@@ -73,6 +74,7 @@ struct AseTag {
     from: usize,
     to: usize,
     direction: String,
+    /// `true` = sprite faces LEFT in the sheet; mirror when walking RIGHT.
     #[serde(rename = "flipH", default)]
     flip_h: bool,
 }
