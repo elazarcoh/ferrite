@@ -17,7 +17,8 @@ pub struct SpriteEditorViewport {
     selected_tag_idx: Option<usize>,
     selected_frame_idx: usize,
     dirty: bool,
-    sheet_zoom: f32, // 1.0 = fit to panel; >1.0 = magnified
+    sheet_zoom: f32,             // 1.0 = fit to panel; >1.0 = magnified
+    tag_drag_start: Option<usize>, // frame index where a tag-range drag began
 }
 
 impl SpriteEditorViewport {
@@ -35,6 +36,7 @@ impl SpriteEditorViewport {
             selected_frame_idx: 0,
             dirty: false,
             sheet_zoom: 1.0,
+            tag_drag_start: None,
         }
     }
 
@@ -400,27 +402,46 @@ pub fn open_sprite_editor_viewport(
                     let display_w = (fit_w * s.sheet_zoom).max(1.0);
                     let display_h = (fit_h * s.sheet_zoom).max(1.0);
 
+                    // Resolve selected tag info for highlighting/drag.
+                    let sel_tag = s.selected_tag_idx.and_then(|idx| s.state.tags.get(idx)).map(|t| {
+                        let r = (t.color & 0xFF) as u8;
+                        let g = ((t.color >> 8) & 0xFF) as u8;
+                        let b = ((t.color >> 16) & 0xFF) as u8;
+                        (t.from, t.to, egui::Color32::from_rgba_premultiplied(r, g, b, 70))
+                    });
                     egui::ScrollArea::both()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             let (image_rect, resp) = ui.allocate_exact_size(
                                 egui::vec2(display_w, display_h),
-                                egui::Sense::click(),
+                                egui::Sense::click_and_drag(),
                             );
 
-                            // Draw full texture (UV covers entire image).
+                            let cell_w = display_w / cols as f32;
+                            let cell_h = display_h / rows as f32;
+
+                            // Helper: pixel pos → clamped frame index.
+                            let frame_at = |pos: egui::Pos2| -> usize {
+                                let c = ((pos.x - image_rect.left()) / cell_w).floor() as usize;
+                                let r = ((pos.y - image_rect.top()) / cell_h).floor() as usize;
+                                (r.min(rows - 1) * cols + c.min(cols - 1)).min(total_frames - 1)
+                            };
+
+                            // Draw full texture.
                             ui.painter().image(
                                 tex.id(),
                                 image_rect,
                                 egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                                 egui::Color32::WHITE,
                             );
-
-                            let cell_w = display_w / cols as f32;
-                            let cell_h = display_h / rows as f32;
                             let painter = ui.painter();
                             let grid_color = egui::Color32::from_rgba_premultiplied(200, 200, 200, 60);
                             let accent = egui::Color32::from_rgb(72, 200, 120);
+
+                            // Compute live drag range for preview.
+                            let live_range: Option<(usize, usize)> =
+                                s.tag_drag_start.zip(resp.interact_pointer_pos().map(|p| frame_at(p)))
+                                .map(|(a, b)| (a.min(b), a.max(b)));
 
                             // Vertical grid lines
                             for c in 0..=cols {
@@ -439,7 +460,7 @@ pub fn open_sprite_editor_viewport(
                                 );
                             }
 
-                            // Per-cell: frame number label + selection highlight
+                            // Per-cell overlays, labels, borders
                             for i in 0..total_frames {
                                 let col = i % cols;
                                 let row = i / cols;
@@ -451,6 +472,33 @@ pub fn open_sprite_editor_viewport(
                                     egui::vec2(cell_w, cell_h),
                                 );
 
+                                // Tag range highlight (committed range)
+                                if let Some((from, to, color)) = sel_tag {
+                                    if i >= from && i <= to {
+                                        // Brighten during an active drag.
+                                        let fill = if live_range.is_some() {
+                                            egui::Color32::from_rgba_premultiplied(
+                                                color.r(), color.g(), color.b(), 30)
+                                        } else {
+                                            color
+                                        };
+                                        painter.rect_filled(cell_rect, 0.0, fill);
+                                    }
+                                }
+                                // Live drag preview
+                                if let Some((from, to)) = live_range {
+                                    if i >= from && i <= to {
+                                        if let Some((_, _, color)) = sel_tag {
+                                            painter.rect_filled(
+                                                cell_rect,
+                                                0.0,
+                                                egui::Color32::from_rgba_premultiplied(
+                                                    color.r(), color.g(), color.b(), 110),
+                                            );
+                                        }
+                                    }
+                                }
+
                                 // Frame number in top-left corner
                                 painter.text(
                                     cell_rect.min + egui::vec2(3.0, 2.0),
@@ -460,7 +508,7 @@ pub fn open_sprite_editor_viewport(
                                     egui::Color32::from_rgba_premultiplied(200, 200, 200, 140),
                                 );
 
-                                // Green border on selected frame
+                                // Green border on selected frame for preview
                                 if s.selected_frame_idx == i {
                                     painter.rect_stroke(
                                         cell_rect,
@@ -471,13 +519,37 @@ pub fn open_sprite_editor_viewport(
                                 }
                             }
 
-                            // Click → select frame
+                            // Drag → set tag range
+                            if s.selected_tag_idx.map_or(false, |idx| idx < s.state.tags.len()) {
+                                if resp.drag_started() {
+                                    if let Some(pos) = resp.interact_pointer_pos() {
+                                        s.tag_drag_start = Some(frame_at(pos));
+                                    }
+                                }
+                                if resp.dragged() {
+                                    // live_range already drives the visual; nothing extra needed
+                                }
+                                if resp.drag_stopped() {
+                                    if let (Some(start), Some(pos)) = (s.tag_drag_start, resp.interact_pointer_pos()) {
+                                        let end = frame_at(pos);
+                                        let tag_idx = s.selected_tag_idx.unwrap();
+                                        s.state.tags[tag_idx].from = start.min(end);
+                                        s.state.tags[tag_idx].to = start.max(end);
+                                        s.dirty = true;
+                                        s.preview_sheet = None;
+                                    }
+                                    s.tag_drag_start = None;
+                                }
+                                // Crosshair cursor to hint the sheet is editable
+                                if resp.hovered() {
+                                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
+                                }
+                            }
+
+                            // Click (no drag) → select frame for preview
                             if resp.clicked() {
                                 if let Some(pos) = resp.interact_pointer_pos() {
-                                    let col = ((pos.x - image_rect.left()) / cell_w) as usize;
-                                    let row = ((pos.y - image_rect.top()) / cell_h) as usize;
-                                    let frame = (row * cols + col).min(total_frames - 1);
-                                    s.selected_frame_idx = frame;
+                                    s.selected_frame_idx = frame_at(pos);
                                 }
                             }
                         });
