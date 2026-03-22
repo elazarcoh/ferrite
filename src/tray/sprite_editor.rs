@@ -353,14 +353,20 @@ pub fn open_sprite_editor_viewport(
                     // Zoom toolbar
                     ui.horizontal(|ui| {
                         ui.label("Sheet:");
-                        if ui.small_button("Fit").clicked() {
-                            s.sheet_zoom = 1.0;
+                        if ui.small_button("−").on_hover_text("Zoom out").clicked() {
+                            s.sheet_zoom = (s.sheet_zoom / 1.5).clamp(0.25, 8.0);
                         }
                         ui.label(format!("{:.0}%", s.sheet_zoom * 100.0));
+                        if ui.small_button("+").on_hover_text("Zoom in").clicked() {
+                            s.sheet_zoom = (s.sheet_zoom * 1.5).clamp(0.25, 8.0);
+                        }
+                        if ui.small_button("Fit").on_hover_text("Reset to fit").clicked() {
+                            s.sheet_zoom = 1.0;
+                        }
                         crate::tray::ui_theme::hint(ui, "Ctrl+scroll to zoom");
                     });
 
-                    // Intercept Ctrl+scroll for zoom before ScrollArea consumes it.
+                    // Ctrl+scroll to zoom (consumes the event before ScrollArea can pan with it).
                     let scroll_zoom = ui.input_mut(|i| {
                         if i.modifiers.ctrl {
                             let delta = i.smooth_scroll_delta.y;
@@ -373,6 +379,12 @@ pub fn open_sprite_editor_viewport(
                     });
                     if scroll_zoom != 0.0 {
                         s.sheet_zoom = (s.sheet_zoom * (1.0 + scroll_zoom * 0.005)).clamp(0.25, 8.0);
+                    }
+
+                    // Pinch-to-zoom from touchpad gestures.
+                    let pinch = ui.input(|i| i.zoom_delta());
+                    if pinch != 1.0 {
+                        s.sheet_zoom = (s.sheet_zoom * pinch).clamp(0.25, 8.0);
                     }
 
                     // Compute fit size (fit within available width and height).
