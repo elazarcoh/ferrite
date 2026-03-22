@@ -17,6 +17,7 @@ pub struct SpriteEditorViewport {
     selected_tag_idx: Option<usize>,
     selected_frame_idx: usize,
     dirty: bool,
+    sheet_zoom: f32, // 1.0 = fit to panel; >1.0 = magnified
 }
 
 impl SpriteEditorViewport {
@@ -33,6 +34,7 @@ impl SpriteEditorViewport {
             selected_tag_idx: None,
             selected_frame_idx: 0,
             dirty: false,
+            sheet_zoom: 1.0,
         }
     }
 
@@ -341,97 +343,132 @@ pub fn open_sprite_editor_viewport(
                 }
             }
 
-            // Full PNG grid view (replaces the horizontal frame strip)
+            // Full PNG grid view with zoom + scroll
             ui.separator();
-            ui.label("Sheet:");
             if let Some(ref tex) = tex {
                 let tex_size = tex.size_vec2();
                 let cols = s.state.cols as usize;
                 let rows = s.state.rows as usize;
                 if cols > 0 && rows > 0 && tex_size.x > 0.0 && tex_size.y > 0.0 {
-                    // Scale to fit available width, preserve aspect ratio.
-                    let avail_w = ui.available_width();
+                    // Zoom toolbar
+                    ui.horizontal(|ui| {
+                        ui.label("Sheet:");
+                        if ui.small_button("Fit").clicked() {
+                            s.sheet_zoom = 1.0;
+                        }
+                        ui.label(format!("{:.0}%", s.sheet_zoom * 100.0));
+                        crate::tray::ui_theme::hint(ui, "Ctrl+scroll to zoom");
+                    });
+
+                    // Intercept Ctrl+scroll for zoom before ScrollArea consumes it.
+                    let scroll_zoom = ui.input_mut(|i| {
+                        if i.modifiers.ctrl {
+                            let delta = i.smooth_scroll_delta.y;
+                            i.smooth_scroll_delta = egui::Vec2::ZERO;
+                            i.raw_scroll_delta = egui::Vec2::ZERO;
+                            delta
+                        } else {
+                            0.0
+                        }
+                    });
+                    if scroll_zoom != 0.0 {
+                        s.sheet_zoom = (s.sheet_zoom * (1.0 + scroll_zoom * 0.005)).clamp(0.25, 8.0);
+                    }
+
+                    // Compute fit size (fit within available width and height).
                     let sheet_aspect = tex_size.x / tex_size.y;
-                    let display_w = avail_w;
-                    let display_h = display_w / sheet_aspect;
+                    let avail_w = ui.available_width();
+                    let avail_h = ui.available_height().max(100.0);
+                    let fit_h_for_w = avail_w / sheet_aspect;
+                    let (fit_w, fit_h) = if fit_h_for_w <= avail_h {
+                        (avail_w, fit_h_for_w)
+                    } else {
+                        (avail_h * sheet_aspect, avail_h)
+                    };
+                    let display_w = (fit_w * s.sheet_zoom).max(1.0);
+                    let display_h = (fit_h * s.sheet_zoom).max(1.0);
 
-                    let (image_rect, resp) = ui.allocate_exact_size(
-                        egui::vec2(display_w, display_h),
-                        egui::Sense::click(),
-                    );
-
-                    // Draw full texture (UV covers entire image).
-                    ui.painter().image(
-                        tex.id(),
-                        image_rect,
-                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
-                    );
-
-                    let cell_w = display_w / cols as f32;
-                    let cell_h = display_h / rows as f32;
-                    let painter = ui.painter();
-                    let grid_color = egui::Color32::from_rgba_premultiplied(200, 200, 200, 60);
-                    let accent = egui::Color32::from_rgb(72, 200, 120);
-
-                    // Vertical grid lines
-                    for c in 0..=cols {
-                        let x = image_rect.left() + c as f32 * cell_w;
-                        painter.line_segment(
-                            [egui::pos2(x, image_rect.top()), egui::pos2(x, image_rect.bottom())],
-                            egui::Stroke::new(1.0, grid_color),
-                        );
-                    }
-                    // Horizontal grid lines
-                    for r in 0..=rows {
-                        let y = image_rect.top() + r as f32 * cell_h;
-                        painter.line_segment(
-                            [egui::pos2(image_rect.left(), y), egui::pos2(image_rect.right(), y)],
-                            egui::Stroke::new(1.0, grid_color),
-                        );
-                    }
-
-                    // Per-cell: frame number label + selection highlight
-                    for i in 0..total_frames {
-                        let col = i % cols;
-                        let row = i / cols;
-                        let cell_rect = egui::Rect::from_min_size(
-                            egui::pos2(
-                                image_rect.left() + col as f32 * cell_w,
-                                image_rect.top() + row as f32 * cell_h,
-                            ),
-                            egui::vec2(cell_w, cell_h),
-                        );
-
-                        // Frame number in top-left corner
-                        painter.text(
-                            cell_rect.min + egui::vec2(3.0, 2.0),
-                            egui::Align2::LEFT_TOP,
-                            i.to_string(),
-                            egui::FontId::proportional(10.0),
-                            egui::Color32::from_rgba_premultiplied(200, 200, 200, 140),
-                        );
-
-                        // Green border on selected frame
-                        if s.selected_frame_idx == i {
-                            painter.rect_stroke(
-                                cell_rect,
-                                0.0,
-                                egui::Stroke::new(2.0, accent),
-                                egui::StrokeKind::Outside,
+                    egui::ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            let (image_rect, resp) = ui.allocate_exact_size(
+                                egui::vec2(display_w, display_h),
+                                egui::Sense::click(),
                             );
-                        }
-                    }
 
-                    // Click → select frame
-                    if resp.clicked() {
-                        if let Some(pos) = resp.interact_pointer_pos() {
-                            let col = ((pos.x - image_rect.left()) / cell_w) as usize;
-                            let row = ((pos.y - image_rect.top()) / cell_h) as usize;
-                            let frame = (row * cols + col).min(total_frames - 1);
-                            s.selected_frame_idx = frame;
-                        }
-                    }
+                            // Draw full texture (UV covers entire image).
+                            ui.painter().image(
+                                tex.id(),
+                                image_rect,
+                                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                                egui::Color32::WHITE,
+                            );
+
+                            let cell_w = display_w / cols as f32;
+                            let cell_h = display_h / rows as f32;
+                            let painter = ui.painter();
+                            let grid_color = egui::Color32::from_rgba_premultiplied(200, 200, 200, 60);
+                            let accent = egui::Color32::from_rgb(72, 200, 120);
+
+                            // Vertical grid lines
+                            for c in 0..=cols {
+                                let x = image_rect.left() + c as f32 * cell_w;
+                                painter.line_segment(
+                                    [egui::pos2(x, image_rect.top()), egui::pos2(x, image_rect.bottom())],
+                                    egui::Stroke::new(1.0, grid_color),
+                                );
+                            }
+                            // Horizontal grid lines
+                            for r in 0..=rows {
+                                let y = image_rect.top() + r as f32 * cell_h;
+                                painter.line_segment(
+                                    [egui::pos2(image_rect.left(), y), egui::pos2(image_rect.right(), y)],
+                                    egui::Stroke::new(1.0, grid_color),
+                                );
+                            }
+
+                            // Per-cell: frame number label + selection highlight
+                            for i in 0..total_frames {
+                                let col = i % cols;
+                                let row = i / cols;
+                                let cell_rect = egui::Rect::from_min_size(
+                                    egui::pos2(
+                                        image_rect.left() + col as f32 * cell_w,
+                                        image_rect.top() + row as f32 * cell_h,
+                                    ),
+                                    egui::vec2(cell_w, cell_h),
+                                );
+
+                                // Frame number in top-left corner
+                                painter.text(
+                                    cell_rect.min + egui::vec2(3.0, 2.0),
+                                    egui::Align2::LEFT_TOP,
+                                    i.to_string(),
+                                    egui::FontId::proportional(10.0),
+                                    egui::Color32::from_rgba_premultiplied(200, 200, 200, 140),
+                                );
+
+                                // Green border on selected frame
+                                if s.selected_frame_idx == i {
+                                    painter.rect_stroke(
+                                        cell_rect,
+                                        0.0,
+                                        egui::Stroke::new(2.0, accent),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                            }
+
+                            // Click → select frame
+                            if resp.clicked() {
+                                if let Some(pos) = resp.interact_pointer_pos() {
+                                    let col = ((pos.x - image_rect.left()) / cell_w) as usize;
+                                    let row = ((pos.y - image_rect.top()) / cell_h) as usize;
+                                    let frame = (row * cols + col).min(total_frames - 1);
+                                    s.selected_frame_idx = frame;
+                                }
+                            }
+                        });
                 }
             }
         });
