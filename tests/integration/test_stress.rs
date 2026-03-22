@@ -5,7 +5,10 @@
 use my_pet::{
     app::PetInstance,
     config::schema::PetConfig,
-    sprite::{behavior::AnimTagMap, sheet::load_embedded},
+    sprite::{
+        behavior::{AnimTagMap, BehaviorState, Facing},
+        sheet::load_embedded,
+    },
     window::{pet_window::PetWindow, surfaces::SurfaceCache},
 };
 use std::time::Instant;
@@ -38,6 +41,81 @@ fn make_pet() -> PetInstance {
         },
     };
     PetInstance::new(cfg, sheet).expect("create PetInstance")
+}
+
+/// Build a sheet whose "walk" tag has flip_h=true, "idle" has flip_h=false.
+fn make_flip_sheet() -> my_pet::sprite::sheet::SpriteSheet {
+    let json = r#"{
+        "frames": [
+            {"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100},
+            {"frame":{"x":32,"y":0,"w":32,"h":32},"duration":100},
+            {"frame":{"x":64,"y":0,"w":32,"h":32},"duration":100},
+            {"frame":{"x":96,"y":0,"w":32,"h":32},"duration":100}
+        ],
+        "meta": {
+            "frameTags": [
+                {"name":"idle","from":0,"to":1,"direction":"forward"},
+                {"name":"walk","from":2,"to":3,"direction":"forward","flipH":true}
+            ]
+        }
+    }"#;
+    let png = include_bytes!("../../assets/test_pet.png");
+    let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .unwrap()
+        .into_rgba8();
+    my_pet::sprite::sheet::SpriteSheet::from_json_and_image(json.as_bytes(), image).unwrap()
+}
+
+fn make_pet_with_flip_sheet() -> PetInstance {
+    let sheet = make_flip_sheet();
+    let cfg = PetConfig {
+        id: "flip_pet".into(),
+        sheet_path: "embedded://test".into(),
+        scale: 1,
+        x: 100,
+        y: 100,
+        walk_speed: 100.0,
+        tag_map: AnimTagMap {
+            idle: "idle".into(),
+            walk: "walk".into(),
+            run: None, sit: None, sleep: None, wake: None,
+            grabbed: None, petted: None, react: None, fall: None, thrown: None,
+        },
+    };
+    PetInstance::new(cfg, sheet).expect("create flip PetInstance")
+}
+
+#[test]
+fn compute_flip_false_when_idle() {
+    let pet = make_pet_with_flip_sheet();
+    // Default state is Fall (spawning), which is not Walk → no flip.
+    assert!(!pet.compute_flip(), "flip must be false when not walking");
+}
+
+#[test]
+fn compute_flip_false_when_walking_right() {
+    let mut pet = make_pet_with_flip_sheet();
+    pet.ai.state = BehaviorState::Walk { facing: Facing::Right, remaining_px: 500.0 };
+    pet.anim.set_tag("walk");
+    // tag has flip_h=true but facing is Right → no flip
+    assert!(!pet.compute_flip(), "flip must be false when facing right");
+}
+
+#[test]
+fn compute_flip_true_when_walking_left_with_flip_h_tag() {
+    let mut pet = make_pet_with_flip_sheet();
+    pet.ai.state = BehaviorState::Walk { facing: Facing::Left, remaining_px: 500.0 };
+    pet.anim.set_tag("walk");
+    assert!(pet.compute_flip(), "flip must be true when facing left with flip_h tag");
+}
+
+#[test]
+fn compute_flip_false_when_walking_left_without_flip_h_tag() {
+    let mut pet = make_pet_with_flip_sheet();
+    pet.ai.state = BehaviorState::Walk { facing: Facing::Left, remaining_px: 500.0 };
+    // Idle tag has flip_h=false
+    pet.anim.set_tag("idle");
+    assert!(!pet.compute_flip(), "flip must be false when tag has flip_h=false");
 }
 
 #[test]

@@ -41,6 +41,9 @@ pub struct PetInstance {
     /// Milliseconds the pet has spent on an elevated surface (above virtual ground).
     /// Reset when grounded; forces Fall when it exceeds the drop threshold.
     elevated_ms: u32,
+    /// Flip state from the last rendered frame. Re-render when this changes so
+    /// direction changes take effect immediately, independent of frame timing.
+    last_flip: bool,
 }
 
 impl PetInstance {
@@ -60,7 +63,7 @@ impl PetInstance {
         let mut ai = BehaviorAi::new();
         ai.state = BehaviorState::Fall { vy: 0.0 };
 
-        let mut inst = PetInstance { x: cfg.x, y: spawn_y, cfg, sheet, window, anim, ai, elevated_ms: 0 };
+        let mut inst = PetInstance { x: cfg.x, y: spawn_y, cfg, sheet, window, anim, ai, elevated_ms: 0, last_flip: false };
 
         inst.render_current_frame()?;
 
@@ -148,24 +151,29 @@ impl PetInstance {
         self.window.move_to(self.x, self.y);
 
         let frame_changed = self.anim.tick(&self.sheet, delta_ms);
-        if frame_changed {
+        let current_flip = self.compute_flip();
+        if frame_changed || current_flip != self.last_flip {
             self.render_current_frame()?;
         }
         Ok(())
     }
 
-    fn render_current_frame(&mut self) -> Result<()> {
-        let abs = self.anim.absolute_frame(&self.sheet);
-        let f = &self.sheet.frames[abs];
-        // Determine flip: the current tag's flip_h flag enables mirroring, but only
-        // when actually moving left (so the pet faces the right direction).
+    /// Returns whether the current frame should be rendered flipped horizontally.
+    pub fn compute_flip(&self) -> bool {
         let facing_left = matches!(
             self.ai.state,
             BehaviorState::Walk { ref facing, .. } | BehaviorState::Run { ref facing, .. }
                 if *facing == Facing::Left
         );
         let tag_flip_h = self.sheet.tag(&self.anim.current_tag).map_or(false, |t| t.flip_h);
-        let flip = tag_flip_h && facing_left;
+        tag_flip_h && facing_left
+    }
+
+    fn render_current_frame(&mut self) -> Result<()> {
+        let abs = self.anim.absolute_frame(&self.sheet);
+        let f = &self.sheet.frames[abs];
+        let flip = self.compute_flip();
+        self.last_flip = flip;
         self.window.render_frame(
             &self.sheet.image,
             f.x, f.y, f.w, f.h,
