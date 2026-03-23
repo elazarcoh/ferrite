@@ -1,4 +1,5 @@
 pub mod config_window;
+pub mod sm_editor;
 pub mod sprite_editor;
 pub mod ui_theme;
 
