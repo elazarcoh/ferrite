@@ -26,4 +26,10 @@ pub enum AppEvent {
     SMImported { name: String },
     /// The active state machine for a pet was changed.
     SMChanged { pet_id: String, sm_name: String },
+    /// Tray: user requested to import a bundle (open file dialog).
+    TrayImportBundle,
+    /// A .petbundle was successfully imported (sprite + optional SM saved to disk).
+    BundleImported { sprite_id: String, sm_name: Option<String> },
+    /// The SM collection on disk changed (e.g. after bundle import).
+    SMCollectionChanged,
 }

@@ -219,6 +219,8 @@ pub struct App {
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
     dark_mode: bool,
+    /// Pending bundle file-picker result (Some while dialog is open).
+    pending_bundle_pick: Option<crossbeam_channel::Receiver<Option<std::path::PathBuf>>>,
 }
 
 impl App {
@@ -253,6 +255,7 @@ impl App {
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
+            pending_bundle_pick: None,
         })
     }
 
@@ -333,6 +336,63 @@ impl App {
         }
     }
 
+    fn import_bundle(&mut self, path: &std::path::Path) {
+        match std::fs::read(path) {
+            Ok(data) => {
+                match crate::bundle::import(&data) {
+                    Ok(contents) => {
+                        // Get base dir (where config.toml is)
+                        let base_dir = config::config_path()
+                            .parent()
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+                        // Save sprite files
+                        let sprites_dir = base_dir.join("sprites");
+                        let _ = std::fs::create_dir_all(&sprites_dir);
+
+                        let sprite_id = sanitize_id(&contents.bundle_name);
+                        let json_filename = format!("{}.json", sprite_id);
+                        let png_filename = format!("{}.png", sprite_id);
+
+                        let _ = std::fs::write(sprites_dir.join(&json_filename), contents.sprite_json.as_bytes());
+                        let _ = std::fs::write(sprites_dir.join(&png_filename), &contents.sprite_png);
+
+                        // Save SM if present
+                        let sm_name = if let Some(sm_source) = &contents.sm_source {
+                            let mut gallery = crate::sprite::sm_gallery::SmGallery::load(&base_dir);
+                            let sm_name = contents.recommended_sm.clone()
+                                .unwrap_or_else(|| contents.bundle_name.clone());
+                            let _ = gallery.save(&sm_name, sm_source);
+                            Some(sm_name)
+                        } else {
+                            None
+                        };
+
+                        // Update sprite gallery
+                        let mut sprite_gallery = crate::sprite::sprite_gallery::SpriteGallery::load(&base_dir);
+                        let entry = crate::sprite::sprite_gallery::SpriteEntry {
+                            id: sprite_id.clone(),
+                            json_path: format!("sprites/{}", json_filename),
+                            png_path: format!("sprites/{}", png_filename),
+                            recommended_sm: sm_name.clone(),
+                        };
+                        let _ = sprite_gallery.add(entry);
+
+                        log::info!("Bundle imported: {} (SM: {:?})", sprite_id, sm_name);
+                        let _ = self.tx.send(AppEvent::BundleImported { sprite_id, sm_name });
+                    }
+                    Err(e) => {
+                        log::error!("Bundle import failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to read bundle file: {}", e);
+            }
+        }
+    }
+
     fn handle_event(&mut self, ev: AppEvent, ctx: &egui::Context) -> Result<()> {
         match ev {
             AppEvent::Quit | AppEvent::TrayQuit => {
@@ -397,6 +457,23 @@ impl App {
             AppEvent::SMImported { .. } | AppEvent::SMChanged { .. } => {
                 // TODO(Plan-2): handle SM import and per-pet SM switching
             }
+            AppEvent::TrayImportBundle => {
+                let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
+                std::thread::spawn(move || {
+                    let result = rfd::FileDialog::new()
+                        .add_filter("Pet Bundle", &["petbundle"])
+                        .pick_file();
+                    tx_pick.send(result).ok();
+                });
+                self.pending_bundle_pick = Some(rx_pick);
+            }
+            AppEvent::BundleImported { sprite_id, sm_name } => {
+                log::info!("Bundle imported: sprite={}, sm={:?}", sprite_id, sm_name);
+                // TODO(Plan-3): update config dialog to show new sprite/SM
+            }
+            AppEvent::SMCollectionChanged => {
+                // TODO(Plan-3): refresh SM lists in open UI windows
+            }
         }
         Ok(())
     }
@@ -438,6 +515,18 @@ impl eframe::App for App {
         if self.should_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
+        }
+
+        // Check for pending bundle file-picker result.
+        let bundle_path = self.pending_bundle_pick
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok())
+            .flatten();
+        if bundle_path.is_some() {
+            self.pending_bundle_pick = None;
+        }
+        if let Some(path) = bundle_path {
+            self.import_bundle(&path);
         }
 
         // Compute delta_ms for this tick.
@@ -530,6 +619,12 @@ impl eframe::App for App {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+fn sanitize_id(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
+        .collect()
+}
 
 fn compute_flip(runner: &SMRunner, sheet: &SpriteSheet) -> bool {
     use crate::sprite::sm_runner::Facing;

@@ -1,5 +1,6 @@
 pub mod app;
 pub mod assets;
+pub mod bundle;
 pub mod config;
 pub mod event;
 pub mod sprite;
