@@ -71,7 +71,7 @@ fn ping_pong_reversal() {
         direction: TagDirection::PingPong,
         flip_h: false,
     }];
-    let sheet = SpriteSheet { image, frames, tags };
+    let sheet = SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new() };
 
     let mut anim = AnimationState::new("bounce");
     anim.tick(&sheet, 100); // → 1

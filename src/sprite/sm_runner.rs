@@ -258,9 +258,7 @@ impl SMRunner {
         }
 
         // 6. Resolve and store tag name, then return reference to stored field
-        let tag = self.resolve_tag(sheet);
-        self.current_tag = tag;
-        self.current_tag.as_str()
+        self.resolve_tag(sheet)
     }
 
     fn execute_action(&mut self, dt: f32, x: &mut i32, y: &mut i32, screen_w: i32, pet_w: i32, _pet_h: i32, floor_y: i32) {
@@ -611,24 +609,30 @@ impl SMRunner {
         self.enter_state(target);
     }
 
-    fn resolve_tag(&self, sheet: &SpriteSheet) -> String {
-        // For composite states, display the current step's tag name.
-        // For atomic/physics states, use the state name directly.
-        let display_name = self.active_display_state_name();
+    fn resolve_tag(&mut self, sheet: &SpriteSheet) -> &str {
+        let sm_name = self.sm.name.clone();
+        let display_name = self.active_display_state_name().to_string();
 
-        if sheet.tags.iter().any(|t| t.name == display_name) {
-            return display_name.to_string();
-        }
-        // fall back to default_fallback state name
-        let fallback = &self.sm.default_fallback;
-        if sheet.tags.iter().any(|t| &t.name == fallback) {
-            return fallback.clone();
-        }
-        // ultimate fallback: first tag
-        if let Some(first) = sheet.tags.first() {
-            return first.name.clone();
-        }
-        "idle".to_string()
+        let mut candidate = display_name;
+        let resolved = loop {
+            if let Some(tag) = sheet.resolve_tag(&sm_name, &candidate) {
+                break tag.to_string();
+            }
+            let fallback_opt = self.sm.states.get(&candidate)
+                .and_then(|s| s.fallback.clone());
+            if let Some(fb) = fallback_opt {
+                candidate = fb;
+                continue;
+            }
+            let default_fb = self.sm.default_fallback.clone();
+            if let Some(tag) = sheet.resolve_tag(&sm_name, &default_fb) {
+                break tag.to_string();
+            }
+            break default_fb;
+        };
+
+        self.current_tag = resolved;
+        self.current_tag.as_str()
     }
 }
 
@@ -659,7 +663,7 @@ mod tests {
             FrameTag { name: "grabbed".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
             FrameTag { name: "petted".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
         ];
-        SpriteSheet { image, frames, tags }
+        SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new() }
     }
 
     #[test]

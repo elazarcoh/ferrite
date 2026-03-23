@@ -63,6 +63,7 @@ impl SpriteEditorViewport {
             image: self.state.image.clone(),
             frames,
             tags,
+            sm_mappings: std::collections::HashMap::new(),
         });
     }
 

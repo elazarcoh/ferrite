@@ -50,6 +50,7 @@ pub struct SpriteSheet {
     pub image: RgbaImage,
     pub frames: Vec<Frame>,
     pub tags: Vec<FrameTag>,
+    pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 // ─── Aseprite JSON serde helpers ─────────────────────────────────────────────
@@ -88,13 +89,30 @@ impl SpriteSheet {
 
         let frames = parse_frames(&root).context("parse frames")?;
         let tags = parse_tags(&root).context("parse tags")?;
+        let sm_mappings = parse_sm_mappings(&root);
 
-        Ok(SpriteSheet { image, frames, tags })
+        Ok(SpriteSheet { image, frames, tags, sm_mappings })
     }
 
     /// Find a tag by name (case-sensitive).
     pub fn tag(&self, name: &str) -> Option<&FrameTag> {
         self.tags.iter().find(|t| t.name == name)
+    }
+
+    /// Resolve SM state name to a sprite tag name.
+    /// Resolution order: smMappings[sm_name][state_name] → auto-match by name → None
+    pub fn resolve_tag<'a>(&'a self, sm_name: &str, state_name: &str) -> Option<&'a str> {
+        // 1. Explicit alias
+        if let Some(mapping) = self.sm_mappings.get(sm_name) {
+            if let Some(tag) = mapping.get(state_name) {
+                return Some(tag.as_str());
+            }
+        }
+        // 2. Auto-match: tag with same name exists
+        if let Some(t) = self.tags.iter().find(|t| t.name == state_name) {
+            return Some(t.name.as_str());
+        }
+        None
     }
 }
 
@@ -155,6 +173,25 @@ fn parse_tags(root: &Value) -> Result<Vec<FrameTag>> {
         .collect()
 }
 
+fn parse_sm_mappings(root: &Value) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
+    let mut result = std::collections::HashMap::new();
+    let Some(obj) = root.pointer("/meta/smMappings").and_then(|v| v.as_object()) else {
+        return result;
+    };
+    for (sm_name, mappings_val) in obj {
+        if let Some(mappings_obj) = mappings_val.as_object() {
+            let mut inner = std::collections::HashMap::new();
+            for (state, tag) in mappings_obj {
+                if let Some(tag_str) = tag.as_str() {
+                    inner.insert(state.clone(), tag_str.to_string());
+                }
+            }
+            result.insert(sm_name.clone(), inner);
+        }
+    }
+    result
+}
+
 fn ase_to_frame(f: AseFrame) -> Frame {
     Frame { x: f.frame.x, y: f.frame.y, w: f.frame.w, h: f.frame.h, duration_ms: f.duration }
 }
@@ -196,6 +233,45 @@ pub fn load_embedded(json_bytes: &[u8], png_bytes: &[u8]) -> Result<SpriteSheet>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn sheet_with_tags(names: &[&str]) -> SpriteSheet {
+        SpriteSheet {
+            image: image::RgbaImage::new(1, 1),
+            frames: vec![],
+            tags: names.iter().map(|n| FrameTag {
+                name: n.to_string(),
+                from: 0,
+                to: 0,
+                direction: TagDirection::Forward,
+                flip_h: false,
+            }).collect(),
+            sm_mappings: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_tag_auto_match() {
+        let sheet = sheet_with_tags(&["idle", "walk"]);
+        assert_eq!(sheet.resolve_tag("Any SM", "idle"), Some("idle"));
+    }
+
+    #[test]
+    fn resolve_tag_explicit_alias() {
+        let mut sheet = sheet_with_tags(&["idle_cycle"]);
+        sheet.sm_mappings.insert("MyPet".into(), {
+            let mut m = HashMap::new();
+            m.insert("idle".into(), "idle_cycle".into());
+            m
+        });
+        assert_eq!(sheet.resolve_tag("MyPet", "idle"), Some("idle_cycle"));
+    }
+
+    #[test]
+    fn resolve_tag_not_found() {
+        let sheet = sheet_with_tags(&["idle"]);
+        assert_eq!(sheet.resolve_tag("SM", "missing"), None);
+    }
 
     fn test_json() -> &'static [u8] {
         include_bytes!("../../assets/test_pet.json")
