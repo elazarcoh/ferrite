@@ -25,10 +25,10 @@ pub struct TransitionLogEntry {
 
 pub struct SMRunner {
     pub sm: Arc<CompiledSM>,
-    active: ActiveState,
-    previous_named: Option<String>,
+    pub active: ActiveState,
+    pub previous_named: Option<String>,
     state_time_ms: u32,
-    step_index: usize,
+    pub step_index: usize,
     walk_remaining_px: f32,
     facing: Facing,
     walk_speed: f32,
@@ -83,6 +83,24 @@ impl SMRunner {
         }
     }
 
+    /// For a composite state, returns the name of the current step.
+    /// For atomic or physics states, returns the same as current_state_name().
+    fn active_display_state_name(&self) -> &str {
+        if let ActiveState::Named(composite_name) = &self.active {
+            if let Some(state) = self.sm.states.get(composite_name.as_str()) {
+                use crate::sprite::sm_compiler::StateKind;
+                if let StateKind::Composite { steps, .. } = &state.kind {
+                    if let Some(step_name) = steps.get(self.step_index) {
+                        return step_name.as_str();
+                    }
+                }
+            }
+            composite_name.as_str()
+        } else {
+            self.current_state_name()
+        }
+    }
+
     /// Returns the last captured condition variables (updated every tick).
     pub fn last_condition_vars(&self) -> &ConditionVars {
         &self.last_vars
@@ -115,6 +133,7 @@ impl SMRunner {
                             self.grab(offset);
                             return;
                         }
+                        // set_previous_from_current records the composite name (not the step)
                         self.set_previous_from_current();
                         let from = self.current_state_name().to_string();
                         self.enter_state(&target.clone());
@@ -156,6 +175,8 @@ impl SMRunner {
     }
 
     fn set_previous_from_current(&mut self) {
+        // Always records the composite state name (not the sub-step), since
+        // active is Named(composite_name) during composite execution.
         if let ActiveState::Named(name) = &self.active {
             self.previous_named = Some(name.clone());
         }
@@ -235,7 +256,22 @@ impl SMRunner {
     fn execute_action(&mut self, dt: f32, x: &mut i32, y: &mut i32, screen_w: i32, pet_w: i32, _pet_h: i32, floor_y: i32) {
         match self.active.clone() {
             ActiveState::Named(name) => {
-                let state = match self.sm.states.get(name.as_str()) {
+                // Determine the effective state name to use for action lookup.
+                // For a composite state, we execute the current step's action.
+                let effective_name = {
+                    use crate::sprite::sm_compiler::StateKind;
+                    if let Some(state) = self.sm.states.get(name.as_str()) {
+                        if let StateKind::Composite { steps, .. } = &state.kind {
+                            steps.get(self.step_index).cloned().unwrap_or(name.clone())
+                        } else {
+                            name.clone()
+                        }
+                    } else {
+                        name.clone()
+                    }
+                };
+
+                let state = match self.sm.states.get(effective_name.as_str()) {
                     Some(s) => s.clone(),
                     None => return,
                 };
@@ -339,8 +375,8 @@ impl SMRunner {
         }
     }
 
-    fn try_transitions(&mut self, _screen_w: i32, _pet_w: i32, _pet_h: i32, _floor_y: i32) {
-        // Only atomic Named states have data-driven transitions
+    fn try_transitions(&mut self, screen_w: i32, pet_w: i32, pet_h: i32, floor_y: i32) {
+        // Only Named states have data-driven transitions
         let state_name = match &self.active {
             ActiveState::Named(n) => n.clone(),
             _ => return, // physics states transition via execute_action
@@ -352,11 +388,97 @@ impl SMRunner {
         };
 
         use crate::sprite::sm_compiler::StateKind;
-        let transitions = match &state.kind {
-            StateKind::Atomic { transitions, .. } => transitions.clone(),
-            StateKind::Composite { transitions, .. } => transitions.clone(),
-        };
+        match &state.kind {
+            StateKind::Composite { steps, transitions } => {
+                let steps = steps.clone();
+                let composite_transitions = transitions.clone();
 
+                // Get the current step
+                if let Some(step_name) = steps.get(self.step_index) {
+                    let step_name = step_name.clone();
+                    let step = match self.sm.states.get(step_name.as_str()) {
+                        Some(s) => s.clone(),
+                        None => {
+                            // Step doesn't exist, advance to next step
+                            self.step_index += 1;
+                            self.state_time_ms = 0;
+                            self.next_transition_ms = 0;
+                            return;
+                        }
+                    };
+
+                    // Check if the step's duration has elapsed
+                    let step_done = if let StateKind::Atomic { params, .. } = &step.kind {
+                        if let Some(dur) = params.duration_ms {
+                            self.state_time_ms >= dur
+                        } else {
+                            false // no duration — step runs until composite is interrupted
+                        }
+                    } else {
+                        false
+                    };
+
+                    if step_done {
+                        self.step_index += 1;
+                        self.state_time_ms = 0;
+                        self.next_transition_ms = 0;
+
+                        if self.step_index >= steps.len() {
+                            // All steps done — fire composite's own transitions
+                            for t in &composite_transitions {
+                                let after_ok = match (t.after_min_ms, t.after_max_ms) {
+                                    (None, None) => true,
+                                    (Some(min), _) => self.state_time_ms >= min,
+                                    (None, Some(max)) => self.state_time_ms >= max,
+                                };
+                                if !after_ok { continue; }
+                                let cond_ok = if let Some(cond) = &t.condition {
+                                    crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
+                                } else {
+                                    true
+                                };
+                                if cond_ok {
+                                    let goto = self.resolve_goto(&t.goto);
+                                    self.transition_to(&goto, "composite_done");
+                                    return;
+                                }
+                            }
+                            // No transition fired — go to default_fallback
+                            let fallback = self.sm.default_fallback.clone();
+                            self.transition_to(&fallback, "composite_done_fallback");
+                        }
+                        // else: step advanced, continue in next tick
+                    }
+                } else {
+                    // step_index out of range — fire composite transitions immediately
+                    for t in &composite_transitions {
+                        let cond_ok = if let Some(cond) = &t.condition {
+                            crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
+                        } else {
+                            true
+                        };
+                        if cond_ok {
+                            let goto = self.resolve_goto(&t.goto);
+                            self.transition_to(&goto, "composite_done");
+                            return;
+                        }
+                    }
+                    let fallback = self.sm.default_fallback.clone();
+                    self.transition_to(&fallback, "composite_done_fallback");
+                }
+            }
+
+            StateKind::Atomic { transitions, .. } => {
+                let transitions = transitions.clone();
+                self.try_atomic_transitions(&transitions);
+            }
+        }
+
+        let _ = (screen_w, pet_w, pet_h, floor_y); // suppress unused warnings
+    }
+
+    /// Process sequential or weighted transitions for an atomic state.
+    fn try_atomic_transitions(&mut self, transitions: &[crate::sprite::sm_compiler::CompiledTransition]) {
         if transitions.is_empty() { return; }
 
         // Separate weighted and unweighted transitions
@@ -364,7 +486,6 @@ impl SMRunner {
 
         if has_weights {
             // Weighted random: pick one whose after/condition is satisfied
-            // First check if any "after" timer has elapsed
             let eligible: Vec<_> = transitions.iter().filter(|t| {
                 let after_ok = match (t.after_min_ms, t.after_max_ms) {
                     (None, None) => true,
@@ -372,7 +493,6 @@ impl SMRunner {
                     (None, Some(max)) => self.state_time_ms >= max,
                 };
                 if !after_ok { return false; }
-                // Check condition
                 if let Some(cond) = &t.condition {
                     crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
                 } else {
@@ -384,7 +504,6 @@ impl SMRunner {
 
             // Compute threshold for this state (randomize once when entering)
             if self.next_transition_ms == 0 {
-                // Use random after_min if available
                 if let (Some(min), Some(max)) = (eligible[0].after_min_ms, eligible[0].after_max_ms) {
                     self.next_transition_ms = self.rand_range(min, max);
                 } else {
@@ -408,8 +527,7 @@ impl SMRunner {
             }
         } else {
             // Sequential: first satisfied transition wins
-            for t in &transitions {
-                // Check after timer
+            for t in transitions {
                 let after_ok = match (t.after_min_ms, t.after_max_ms) {
                     (None, None) => true,
                     (Some(min), _) => {
@@ -426,7 +544,6 @@ impl SMRunner {
                 };
                 if !after_ok { continue; }
 
-                // Check condition
                 let cond_ok = if let Some(cond) = &t.condition {
                     crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
                 } else {
@@ -485,9 +602,12 @@ impl SMRunner {
     }
 
     fn resolve_tag(&self, sheet: &SpriteSheet) -> String {
-        let state_name = self.current_state_name();
-        if sheet.tags.iter().any(|t| t.name == state_name) {
-            return state_name.to_string();
+        // For composite states, display the current step's tag name.
+        // For atomic/physics states, use the state name directly.
+        let display_name = self.active_display_state_name();
+
+        if sheet.tags.iter().any(|t| t.name == display_name) {
+            return display_name.to_string();
         }
         // fall back to default_fallback state name
         let fallback = &self.sm.default_fallback;
@@ -525,6 +645,7 @@ mod tests {
         let tags = vec![
             FrameTag { name: "idle".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
             FrameTag { name: "walk".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
+            FrameTag { name: "sit".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
             FrameTag { name: "grabbed".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
             FrameTag { name: "petted".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
         ];
@@ -557,5 +678,83 @@ mod tests {
         let mut r = make_runner();
         r.interrupt("petted", None);
         assert!(matches!(&r.active, ActiveState::Named(n) if n == "petted"));
+    }
+
+    #[test]
+    fn composite_runs_steps_in_order() {
+        let toml_str = r#"
+[meta]
+name = "T"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+required = true
+action = "idle"
+transitions = []
+
+[states.grabbed]
+required = true
+action = "grabbed"
+transitions = []
+
+[states.fall]
+required = true
+action = "fall"
+transitions = []
+
+[states.thrown]
+required = true
+action = "thrown"
+transitions = []
+
+[states.step_a]
+action = "idle"
+duration = "100ms"
+
+[states.step_b]
+action = "sit"
+duration = "100ms"
+
+[states.routine]
+steps = ["step_a", "step_b"]
+transitions = [{ goto = "idle" }]
+"#;
+        let file: SmFile = toml::from_str(toml_str).unwrap();
+        let compiled = compile(&file).unwrap();
+        let mut r = SMRunner::new(compiled, 80.0);
+
+        // Force into routine
+        r.force_state = Some("routine".to_string());
+        let sheet = mock_sheet();
+        let mut x = 0;
+        let mut y = 800;
+
+        // Tick once to process force (1ms delta — not enough to expire step)
+        r.tick(1, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "routine"), "should be in routine");
+        assert_eq!(r.step_index, 0, "should be on step 0");
+
+        // Tick past step_a duration (100ms)
+        r.tick(110, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
+        assert_eq!(r.step_index, 1, "should advance to step 1");
+
+        // Tick past step_b duration (100ms)
+        r.tick(110, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
+        // After all steps done, should go to idle
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"), "should return to idle");
+    }
+
+    #[test]
+    fn previous_returns_to_interrupted_named_state() {
+        let mut r = make_runner();
+        // Start in idle
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"));
+        // Trigger petted interrupt
+        r.interrupt("petted", None);
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "petted"));
+        // previous_named should be "idle"
+        assert_eq!(r.previous_named.as_deref(), Some("idle"));
     }
 }
