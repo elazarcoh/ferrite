@@ -8,6 +8,7 @@ mod config;
 mod event;
 mod sprite;
 mod tray;
+mod version;
 mod window;
 
 fn main() {
