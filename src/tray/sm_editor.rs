@@ -48,6 +48,7 @@ pub struct SmEditorViewport {
     pub is_dirty: bool,
     pub dark_mode: bool,
     pub config_dir: PathBuf,
+    pub cached_gallery: Option<SmGallery>,
 }
 
 const MINIMAL_TEMPLATE: &str = r#"[meta]
@@ -113,6 +114,7 @@ impl SmEditorViewport {
             is_dirty: false,
             dark_mode,
             config_dir,
+            cached_gallery: None,
         }))
     }
 }
@@ -135,9 +137,23 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
 
         crate::tray::ui_theme::apply_theme(ctx, vp.dark_mode);
 
-        // Load gallery fresh from disk on each frame (cheap local file read).
-        let config_dir = vp.config_dir.clone();
-        let gallery = SmGallery::load(&config_dir);
+        // Lazy-load the gallery once; set cached_gallery = None to trigger reload.
+        if vp.cached_gallery.is_none() {
+            let config_dir = vp.config_dir.clone();
+            vp.cached_gallery = Some(SmGallery::load(&config_dir));
+        }
+        // Collect data from the gallery into owned Vecs so the borrow ends before
+        // the egui closures need &mut vp.
+        let (valid_entries, draft_entries): (Vec<(String, String)>, Vec<(String, String)>) = {
+            let g = vp.cached_gallery.as_ref().unwrap();
+            let valid = g.valid_names().into_iter()
+                .map(|n| (n.to_string(), g.source(n).unwrap_or("").to_string()))
+                .collect();
+            let drafts = g.draft_names().into_iter()
+                .map(|n| (n.to_string(), g.draft_source(n).unwrap_or("").to_string()))
+                .collect();
+            (valid, drafts)
+        };
 
         // ── Left browser panel ──────────────────────────────────────────────
         egui::SidePanel::left("sm_browser")
@@ -148,13 +164,11 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 ui.add_space(4.0);
 
                 // Valid SMs
-                for name in gallery.valid_names() {
-                    let selected = vp.selected_sm.as_deref() == Some(name);
-                    if ui.selectable_label(selected, name).clicked() && !selected {
-                        if let Some(src) = gallery.source(name) {
-                            vp.editor_text = src.to_string();
-                        }
-                        vp.selected_sm = Some(name.to_string());
+                for (name, src) in &valid_entries {
+                    let selected = vp.selected_sm.as_deref() == Some(name.as_str());
+                    if ui.selectable_label(selected, name.as_str()).clicked() && !selected {
+                        vp.editor_text = src.clone();
+                        vp.selected_sm = Some(name.clone());
                         vp.is_dirty = false;
                     }
                 }
@@ -164,14 +178,12 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 // Drafts section header
                 ui.colored_label(egui::Color32::GRAY, "Drafts");
 
-                for name in gallery.draft_names() {
-                    let selected = vp.selected_sm.as_deref() == Some(name);
-                    let label = egui::RichText::new(name).color(egui::Color32::GRAY);
+                for (name, src) in &draft_entries {
+                    let selected = vp.selected_sm.as_deref() == Some(name.as_str());
+                    let label = egui::RichText::new(name.as_str()).color(egui::Color32::GRAY);
                     if ui.selectable_label(selected, label).clicked() && !selected {
-                        if let Some(src) = gallery.draft_source(name) {
-                            vp.editor_text = src.to_string();
-                        }
-                        vp.selected_sm = Some(name.to_string());
+                        vp.editor_text = src.clone();
+                        vp.selected_sm = Some(name.clone());
                         vp.is_dirty = false;
                     }
                 }
@@ -195,7 +207,7 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
         egui::TopBottomPanel::bottom("sm_errors")
             .min_height(24.0)
             .show(ctx, |ui| {
-                ui.label(""); // placeholder — errors rendered in T5
+                ui.label("No errors."); // placeholder — errors rendered in T5
             });
 
         // ── Central panel: save button + text editor placeholder ────────────
@@ -203,7 +215,6 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
             let save_label = if vp.is_dirty { "💾 Save*" } else { "💾 Save" };
             if ui.button(save_label).clicked() {
                 // Save logic implemented in T5
-                let _ = save_label; // suppress unused warning intent
             }
             ui.add_space(4.0);
             // Text editor implemented in T4
