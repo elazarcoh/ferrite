@@ -1,8 +1,7 @@
 // Integration tests for SpriteEditorState — pure Rust, no Win32.
 
 use my_pet::sprite::editor_state::{EditorTag, SpriteEditorState};
-use my_pet::sprite::sheet::{load_with_tag_map, TagDirection};
-use my_pet::sprite::behavior::AnimTagMap;
+use my_pet::sprite::sheet::TagDirection;
 use tempfile::{tempdir, TempDir};
 
 fn test_png_bytes() -> &'static [u8] {
@@ -53,11 +52,11 @@ fn to_json_produces_valid_aseprite() {
         .into_rgba8();
     my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image)
         .expect("to_json must produce valid Aseprite JSON");
-    // Must also round-trip through load_with_tag_map
-    let (_, tag_map) = load_with_tag_map(&json, test_png_bytes()).unwrap();
-    let tm = tag_map.expect("to_json must embed myPetTagMap");
-    assert_eq!(tm.idle, "idle");
-    assert_eq!(tm.walk, "walk");
+    // Must also embed myPetTagMap in JSON
+    let parsed: serde_json::Value = serde_json::from_slice(&json).unwrap();
+    let tm = parsed.pointer("/meta/myPetTagMap").expect("to_json must embed myPetTagMap");
+    assert_eq!(tm["idle"], "idle");
+    assert_eq!(tm["walk"], "walk");
 }
 
 #[test]
@@ -156,13 +155,12 @@ fn save_to_dir_writes_json_and_png() {
     assert!(json_path.exists(), "JSON must be written");
     assert!(png_path.exists(), "PNG must be copied");
 
-    // Reload via load_with_tag_map → parses cleanly and tag map round-trips
+    // Reload and verify myPetTagMap is present in saved JSON
     let json_bytes = std::fs::read(&json_path).unwrap();
-    let png_bytes = std::fs::read(&png_path).unwrap();
-    let (_, tag_map) = load_with_tag_map(&json_bytes, &png_bytes).unwrap();
-    let tm = tag_map.expect("saved JSON must contain myPetTagMap");
-    assert_eq!(tm.idle, "idle");
-    assert_eq!(tm.walk, "walk");
+    let parsed: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
+    let tm = parsed.pointer("/meta/myPetTagMap").expect("saved JSON must contain myPetTagMap");
+    assert_eq!(tm["idle"], "idle");
+    assert_eq!(tm["walk"], "walk");
 }
 
 #[test]

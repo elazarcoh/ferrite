@@ -190,42 +190,6 @@ pub fn load_embedded(json_bytes: &[u8], png_bytes: &[u8]) -> Result<SpriteSheet>
     SpriteSheet::from_json_and_image(json_bytes, image)
 }
 
-/// Load a spritesheet and, if present, the `myPetTagMap` behavior mapping.
-/// Returns `(sheet, None)` if `myPetTagMap` is absent or has missing/empty
-/// required fields (`idle` or `walk`). Optional fields that are non-strings
-/// are silently ignored.
-pub fn load_with_tag_map(
-    json_bytes: &[u8],
-    png_bytes: &[u8],
-) -> Result<(SpriteSheet, Option<crate::sprite::behavior::AnimTagMap>)> {
-    let sheet = load_embedded(json_bytes, png_bytes)?;
-    let root: Value = serde_json::from_slice(json_bytes)
-        .context("re-parse JSON for myPetTagMap")?;
-    let tag_map = parse_my_pet_tag_map(&root);
-    Ok((sheet, tag_map))
-}
-
-fn parse_my_pet_tag_map(
-    root: &Value,
-) -> Option<crate::sprite::behavior::AnimTagMap> {
-    let map = root.pointer("/meta/myPetTagMap")?.as_object()?;
-    let idle = map.get("idle")?.as_str().filter(|s| !s.is_empty())?.to_string();
-    let walk = map.get("walk")?.as_str().filter(|s| !s.is_empty())?.to_string();
-    let opt = |key: &str| map.get(key).and_then(|v| v.as_str()).map(str::to_string);
-    Some(crate::sprite::behavior::AnimTagMap {
-        idle,
-        walk,
-        run:     opt("run"),
-        sit:     opt("sit"),
-        sleep:   opt("sleep"),
-        wake:    opt("wake"),
-        grabbed: opt("grabbed"),
-        petted:  opt("petted"),
-        react:   opt("react"),
-        fall:    opt("fall"),
-        thrown:  opt("thrown"),
-    })
-}
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -285,66 +249,4 @@ mod tests {
         assert_eq!(tag.direction, TagDirection::PingPong);
     }
 
-    use crate::sprite::behavior::AnimTagMap;
-
-    #[test]
-    fn load_with_tag_map_absent_returns_none() {
-        // test_pet.json has no myPetTagMap field
-        let (_, tag_map) = load_with_tag_map(test_json(), test_png()).unwrap();
-        assert!(tag_map.is_none(), "no myPetTagMap → None");
-    }
-
-    #[test]
-    fn load_with_tag_map_round_trip() {
-        let json = r#"{
-            "frames": [
-                {"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100},
-                {"frame":{"x":32,"y":0,"w":32,"h":32},"duration":100}
-            ],
-            "meta": {
-                "frameTags": [{"name":"idle","from":0,"to":1,"direction":"forward"}],
-                "myPetTagMap": {"idle":"idle_loop","walk":"walk_cycle","run":"run_fast"}
-            }
-        }"#;
-        let (sheet, tag_map) = load_with_tag_map(json.as_bytes(), test_png()).unwrap();
-        assert_eq!(sheet.frames.len(), 2);
-        let tm = tag_map.expect("should have tag map");
-        assert_eq!(tm.idle, "idle_loop");
-        assert_eq!(tm.walk, "walk_cycle");
-        assert_eq!(tm.run, Some("run_fast".into()));
-        assert_eq!(tm.sit, None);
-    }
-
-    #[test]
-    fn load_with_tag_map_missing_required_drops_map() {
-        let json = r#"{
-            "frames": [{"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100}],
-            "meta": {"frameTags": [], "myPetTagMap": {"idle":"idle"}}
-        }"#;
-        let (_, tag_map) = load_with_tag_map(json.as_bytes(), test_png()).unwrap();
-        assert!(tag_map.is_none(), "missing walk → None");
-    }
-
-    #[test]
-    fn load_with_tag_map_empty_required_drops_map() {
-        let json = r#"{
-            "frames": [{"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100}],
-            "meta": {"frameTags": [], "myPetTagMap": {"idle":"","walk":"walk"}}
-        }"#;
-        let (_, tag_map) = load_with_tag_map(json.as_bytes(), test_png()).unwrap();
-        assert!(tag_map.is_none(), "empty idle → None");
-    }
-
-    #[test]
-    fn load_with_tag_map_bad_optional_ignored() {
-        let json = r#"{
-            "frames": [{"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100}],
-            "meta": {"frameTags": [], "myPetTagMap": {"idle":"idle","walk":"walk","run":42}}
-        }"#;
-        let (_, tag_map) = load_with_tag_map(json.as_bytes(), test_png()).unwrap();
-        let tm = tag_map.expect("map returned despite bad optional");
-        assert_eq!(tm.idle, "idle");
-        assert_eq!(tm.walk, "walk");
-        assert_eq!(tm.run, None, "non-string run silently ignored");
-    }
 }

@@ -302,11 +302,7 @@ impl App {
             }
         }).collect();
 
-        // Try to load the tag map from JSON
-        let json_bytes = std::fs::read(sheet_path)?;
-        let tag_map = crate::sprite::sheet::load_with_tag_map(&json_bytes, &std::fs::read(&png_path)?)?
-            .1
-            .unwrap_or_default();
+        let tag_map = crate::sprite::behavior::AnimTagMap::default();
 
         let mut state = SpriteEditorState::new(png_path, sheet.image);
         state.rows = rows;
