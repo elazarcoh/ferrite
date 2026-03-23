@@ -499,10 +499,145 @@ pub fn parse(src: &str) -> Result<Expr, String> {
     Ok(expr)
 }
 
+// ─── Evaluator ───────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+enum Value {
+    Number(f32),
+    Bool(bool),
+    Str(String),
+}
+
+fn eval_value(expr: &Expr, vars: &ConditionVars) -> Result<Value, String> {
+    match expr {
+        Expr::Literal(Literal::Number(n)) => Ok(Value::Number(*n)),
+        Expr::Literal(Literal::DurationMs(ms)) => Ok(Value::Number(*ms as f32)),
+        Expr::Literal(Literal::Bool(b)) => Ok(Value::Bool(*b)),
+        Expr::Literal(Literal::Str(s)) => Ok(Value::Str(s.clone())),
+
+        Expr::Var(v) => match v {
+            Var::CursorDist => Ok(Value::Number(vars.cursor_dist)),
+            Var::StateTime => Ok(Value::Number(vars.state_time_ms as f32)),
+            Var::OnSurface => Ok(Value::Bool(vars.on_surface)),
+            Var::PetX => Ok(Value::Number(vars.pet_x)),
+            Var::PetY => Ok(Value::Number(vars.pet_y)),
+            Var::PetVx => Ok(Value::Number(vars.pet_vx)),
+            Var::PetVy => Ok(Value::Number(vars.pet_vy)),
+            Var::PetV => Ok(Value::Number(vars.pet_v)),
+            Var::ScreenW => Ok(Value::Number(vars.screen_w)),
+            Var::ScreenH => Ok(Value::Number(vars.screen_h)),
+            Var::Hour => Ok(Value::Number(vars.hour as f32)),
+            Var::FocusedApp => Ok(Value::Str(vars.focused_app.clone())),
+            Var::NearEdge { axis, threshold_px } => {
+                let t = *threshold_px;
+                let result = match axis {
+                    None => {
+                        vars.pet_x < t
+                            || vars.pet_x + vars.pet_w > vars.screen_w - t
+                            || vars.pet_y < t
+                            || vars.pet_y + vars.pet_h > vars.screen_h - t
+                    }
+                    Some(Axis::X) => {
+                        vars.pet_x < t || vars.pet_x + vars.pet_w > vars.screen_w - t
+                    }
+                    Some(Axis::Y) => {
+                        vars.pet_y < t || vars.pet_y + vars.pet_h > vars.screen_h - t
+                    }
+                };
+                Ok(Value::Bool(result))
+            }
+        },
+
+        Expr::UnaryNot(inner) => {
+            let b = eval(inner, vars)?;
+            Ok(Value::Bool(!b))
+        }
+
+        Expr::BinOp { op: BinOp::And, left, right } => {
+            if !eval(left, vars)? {
+                return Ok(Value::Bool(false));
+            }
+            Ok(Value::Bool(eval(right, vars)?))
+        }
+
+        Expr::BinOp { op: BinOp::Or, left, right } => {
+            if eval(left, vars)? {
+                return Ok(Value::Bool(true));
+            }
+            Ok(Value::Bool(eval(right, vars)?))
+        }
+
+        Expr::BinOp { op, left, right } => {
+            let lv = eval_value(left, vars)?;
+            let rv = eval_value(right, vars)?;
+            let result = match (lv, rv) {
+                (Value::Number(l), Value::Number(r)) => match op {
+                    BinOp::Lt => l < r,
+                    BinOp::Gt => l > r,
+                    BinOp::Le => l <= r,
+                    BinOp::Ge => l >= r,
+                    BinOp::Eq => l == r,
+                    BinOp::Ne => l != r,
+                    _ => unreachable!("And/Or handled above"),
+                },
+                (Value::Str(l), Value::Str(r)) => match op {
+                    BinOp::Eq => l == r,
+                    BinOp::Ne => l != r,
+                    _ => return Err("only == and != are valid for string comparison".to_string()),
+                },
+                (Value::Bool(l), Value::Bool(r)) => match op {
+                    BinOp::Eq => l == r,
+                    BinOp::Ne => l != r,
+                    _ => return Err("only == and != are valid for bool comparison".to_string()),
+                },
+                _ => return Err("type mismatch in comparison".to_string()),
+            };
+            Ok(Value::Bool(result))
+        }
+
+        Expr::Call { name, args } => match name.as_str() {
+            "abs" => {
+                if args.len() != 1 {
+                    return Err(format!("abs expects 1 argument, got {}", args.len()));
+                }
+                let v = eval_as_number(&args[0], vars)?;
+                Ok(Value::Number(v.abs()))
+            }
+            "min" => {
+                if args.len() != 2 {
+                    return Err(format!("min expects 2 arguments, got {}", args.len()));
+                }
+                let a = eval_as_number(&args[0], vars)?;
+                let b = eval_as_number(&args[1], vars)?;
+                Ok(Value::Number(a.min(b)))
+            }
+            "max" => {
+                if args.len() != 2 {
+                    return Err(format!("max expects 2 arguments, got {}", args.len()));
+                }
+                let a = eval_as_number(&args[0], vars)?;
+                let b = eval_as_number(&args[1], vars)?;
+                Ok(Value::Number(a.max(b)))
+            }
+            _ => Err(format!("unknown function: {}", name)),
+        },
+    }
+}
+
+fn eval_as_number(expr: &Expr, vars: &ConditionVars) -> Result<f32, String> {
+    match eval_value(expr, vars)? {
+        Value::Number(n) => Ok(n),
+        other => Err(format!("expected number, got {:?}", other)),
+    }
+}
+
 /// Evaluate a compiled expression against a context snapshot.
-/// NOTE: stub — full implementation is in Task 4.
-pub fn eval(_expr: &Expr, _vars: &ConditionVars) -> Result<bool, String> {
-    Ok(false)
+pub fn eval(expr: &Expr, vars: &ConditionVars) -> Result<bool, String> {
+    match eval_value(expr, vars)? {
+        Value::Bool(b) => Ok(b),
+        Value::Number(n) => Ok(n != 0.0),
+        Value::Str(_) => Err("expression must evaluate to bool".to_string()),
+    }
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -561,5 +696,60 @@ mod tests {
     #[test]
     fn parse_string_literal() {
         assert!(parse(r#"input.focused_app == "code.exe""#).is_ok());
+    }
+
+    #[test]
+    fn eval_cursor_near() {
+        let expr = parse("cursor_dist < 150").unwrap();
+        let mut v = ConditionVars::default();
+        v.cursor_dist = 100.0;
+        assert!(eval(&expr, &v).unwrap());
+        v.cursor_dist = 200.0;
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_state_time_duration() {
+        let expr = parse("state_time > 3s").unwrap();
+        let mut v = ConditionVars::default();
+        v.state_time_ms = 5000;
+        assert!(eval(&expr, &v).unwrap());
+        v.state_time_ms = 2000;
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_near_edge_x() {
+        let expr = parse("near_edge.x.70px").unwrap();
+        let mut v = ConditionVars { pet_x: 30.0, screen_w: 1920.0, pet_w: 32.0, ..Default::default() };
+        assert!(eval(&expr, &v).unwrap()); // 30 < 70
+        v.pet_x = 500.0;
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_pet_velocity() {
+        let expr = parse("pet.v > 100").unwrap();
+        let mut v = ConditionVars::default();
+        v.pet_v = 150.0;
+        assert!(eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_abs_function() {
+        let expr = parse("abs(pet.vx) > 50").unwrap();
+        let mut v = ConditionVars::default();
+        v.pet_vx = -80.0;
+        assert!(eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_focused_app() {
+        let expr = parse(r#"input.focused_app == "code.exe""#).unwrap();
+        let mut v = ConditionVars::default();
+        v.focused_app = "code.exe".to_string();
+        assert!(eval(&expr, &v).unwrap());
+        v.focused_app = "other.exe".to_string();
+        assert!(!eval(&expr, &v).unwrap());
     }
 }
