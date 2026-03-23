@@ -9,7 +9,7 @@ use crate::{
     },
     tray::{
         config_window::{open_config_viewport, ConfigWindowState},
-        sm_editor::SmEditorViewport,
+        sm_editor::{open_sm_editor_viewport, SmEditorViewport},
         sprite_editor::{open_sprite_editor_viewport, SpriteEditorViewport},
         SystemTray,
     },
@@ -491,7 +491,11 @@ impl App {
                         egui::ViewportCommand::Focus,
                     );
                 } else {
-                    self.sm_editor = Some(SmEditorViewport::new(self.dark_mode));
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    self.sm_editor = Some(SmEditorViewport::new(self.dark_mode, config_dir));
                 }
             }
         }
@@ -690,6 +694,11 @@ impl eframe::App for App {
                         }
                     }
                 }
+            }
+
+            // Open (or keep open) the SM editor deferred viewport.
+            if let Some(ref viewport) = self.sm_editor {
+                open_sm_editor_viewport(ctx, viewport.clone());
             }
 
             // Handle saved SM (hot-reload) outside the viewport borrow
