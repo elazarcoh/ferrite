@@ -217,8 +217,25 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 // Save logic implemented in T5
             }
             ui.add_space(4.0);
-            // Text editor implemented in T4
-            ui.label(&vp.editor_text);
+            // Status bar
+            ui.horizontal(|ui| {
+                if vp.from_app.validation_errors.is_empty() {
+                    ui.colored_label(egui::Color32::GREEN, "✅ Valid");
+                } else {
+                    let n = vp.from_app.validation_errors.len();
+                    ui.colored_label(egui::Color32::RED, format!("❌ {} error(s)", n));
+                }
+            });
+            ui.add_space(4.0);
+            // Monospace multiline text editor
+            let response = egui::TextEdit::multiline(&mut vp.editor_text)
+                .font(egui::TextStyle::Monospace)
+                .desired_width(f32::INFINITY)
+                .desired_rows(20)
+                .show(ui);
+            if response.response.changed() {
+                vp.is_dirty = true;
+            }
         });
     });
 }
