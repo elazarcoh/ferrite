@@ -9,6 +9,7 @@ use crate::{
     },
     tray::{
         config_window::{open_config_viewport, ConfigWindowState},
+        sm_editor::SmEditorViewport,
         sprite_editor::{open_sprite_editor_viewport, SpriteEditorViewport},
         SystemTray,
     },
@@ -221,6 +222,7 @@ pub struct App {
     last_tick_ms: std::time::Instant,
     config_window_state: Option<Arc<Mutex<ConfigWindowState>>>,
     sprite_editor_state: Option<Arc<Mutex<SpriteEditorViewport>>>,
+    sm_editor: Option<Arc<Mutex<SmEditorViewport>>>,
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
     dark_mode: bool,
@@ -257,6 +259,7 @@ impl App {
             last_tick_ms: std::time::Instant::now(),
             config_window_state: None,
             sprite_editor_state: None,
+            sm_editor: None,
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
@@ -480,6 +483,17 @@ impl App {
             AppEvent::SMCollectionChanged => {
                 // TODO(Plan-3): refresh SM lists in open UI windows
             }
+            AppEvent::TrayOpenSmEditor => {
+                if let Some(ref vp) = self.sm_editor {
+                    let _ = vp; // already open
+                    ctx.send_viewport_cmd_to(
+                        egui::ViewportId::from_hash_of("sm_editor"),
+                        egui::ViewportCommand::Focus,
+                    );
+                } else {
+                    self.sm_editor = Some(SmEditorViewport::new(self.dark_mode));
+                }
+            }
         }
         Ok(())
     }
@@ -617,6 +631,85 @@ impl eframe::App for App {
             }
             if editor_should_close {
                 self.sprite_editor_state = None;
+            }
+        }
+
+        // Poll SM editor viewport state each frame.
+        {
+            let mut sm_editor_should_close = false;
+            let mut sm_saved_name: Option<String> = None;
+            if let Some(ref viewport) = self.sm_editor {
+                if let Ok(mut vp) = viewport.try_lock() {
+                    // Push live state to editor
+                    if let Some(pet) = self.pets.values().next() {
+                        vp.from_app.active_state = Some(pet.runner.current_state_name().to_string());
+                        let cvars = pet.runner.last_condition_vars();
+                        vp.from_app.var_snapshot = crate::tray::sm_editor::VarSnapshot {
+                            cursor_dist: cvars.cursor_dist,
+                            state_time_ms: cvars.state_time_ms,
+                            on_surface: cvars.on_surface,
+                            near_edge: false, // TODO: compute
+                            pet_x: cvars.pet_x,
+                            pet_y: cvars.pet_y,
+                            pet_vx: cvars.pet_vx,
+                            pet_vy: cvars.pet_vy,
+                            pet_v: cvars.pet_v,
+                            hour: cvars.hour,
+                            focused_app: cvars.focused_app.clone(),
+                        };
+                        vp.from_app.transition_log = pet.runner.transition_log().to_vec();
+                        vp.from_app.is_forced = pet.runner.force_state.is_some();
+                    }
+
+                    // Consume debug commands
+                    let force_state = vp.from_ui.force_state.take();
+                    let release_force = vp.from_ui.release_force;
+                    let step_mode = vp.from_ui.step_mode;
+                    let step_advance = vp.from_ui.step_advance;
+                    if release_force { vp.from_ui.release_force = false; }
+                    if step_advance { vp.from_ui.step_advance = false; }
+                    sm_saved_name = vp.from_ui.saved_sm_name.take();
+                    sm_editor_should_close = vp.from_ui.should_close;
+
+                    drop(vp);
+
+                    if let Some(state_name) = force_state {
+                        if let Some(pet) = self.pets.values_mut().next() {
+                            pet.runner.force_state = Some(state_name);
+                        }
+                    }
+                    if release_force {
+                        if let Some(pet) = self.pets.values_mut().next() {
+                            pet.runner.release_force = true;
+                        }
+                    }
+                    if let Some(pet) = self.pets.values_mut().next() {
+                        pet.runner.step_mode = step_mode;
+                        if step_advance {
+                            pet.runner.step_advance = true;
+                        }
+                    }
+                }
+            }
+
+            // Handle saved SM (hot-reload) outside the viewport borrow
+            if let Some(sm_name) = sm_saved_name {
+                let config_dir = config::config_path()
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                if let Some(sm) = gallery.get(&sm_name) {
+                    for pet in self.pets.values_mut() {
+                        if pet.runner.sm.name == sm_name {
+                            pet.runner.sm = sm.clone();
+                        }
+                    }
+                }
+            }
+
+            if sm_editor_should_close {
+                self.sm_editor = None;
             }
         }
 

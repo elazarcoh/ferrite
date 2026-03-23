@@ -32,4 +32,6 @@ pub enum AppEvent {
     BundleImported { sprite_id: String, sm_name: Option<String> },
     /// The SM collection on disk changed (e.g. after bundle import).
     SMCollectionChanged,
+    /// Tray: open the SM editor dialog.
+    TrayOpenSmEditor,
 }
