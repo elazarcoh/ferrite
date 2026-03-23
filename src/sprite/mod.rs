@@ -6,3 +6,4 @@ pub mod sm_expr;
 pub mod sm_format;
 pub mod sm_gallery;
 pub mod sm_runner;
+pub mod sprite_gallery;
