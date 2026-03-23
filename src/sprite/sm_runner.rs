@@ -2,8 +2,18 @@ use std::sync::Arc;
 use crate::sprite::sm_compiler::{CompiledSM, ActionType, Direction};
 use crate::sprite::sm_expr::ConditionVars;
 use crate::sprite::sheet::SpriteSheet;
+use crate::sprite::sm_format::SmFile;
+use crate::sprite::sm_compiler::compile;
 
 const GRAVITY: f32 = 980.0;
+
+pub const DEFAULT_SM_TOML: &str = include_str!("../../assets/default.petstate");
+
+pub fn load_default_sm() -> Arc<CompiledSM> {
+    let file: SmFile = toml::from_str(DEFAULT_SM_TOML)
+        .expect("default.petstate must parse");
+    compile(&file).expect("default.petstate must compile")
+}
 
 #[derive(Debug, Clone)]
 pub enum ActiveState {
@@ -744,6 +754,11 @@ transitions = [{ goto = "idle" }]
         r.tick(110, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
         // After all steps done, should go to idle
         assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"), "should return to idle");
+    }
+
+    #[test]
+    fn default_sm_compiles() {
+        let _ = load_default_sm(); // panics if invalid
     }
 
     #[test]

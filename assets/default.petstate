@@ -14,33 +14,36 @@ action   = "idle"
 transitions = [
   { goto = "walk",  weight = 45, after = "1s-3s" },
   { goto = "sit",   weight = 20, after = "1s-3s" },
-  { goto = "sleep", weight = 15, after = "15s" },
+  { goto = "sleep", weight = 15, after = "1s-3s" },
   { goto = "idle",  weight = 20, after = "1s-3s" },
 ]
 
 [states.walk]
 action = "walk"
 dir    = "random"
-distance = "200px-800px"
 transitions = [{ goto = "idle" }]
 
 [states.run]
-action = "run"
-dir    = "random"
-distance = "200px-800px"
+fallback = "idle"
+action   = "run"
+dir      = "random"
 transitions = [{ goto = "idle" }]
 
 [states.sit]
-action = "sit"
+fallback = "idle"
+action   = "sit"
 transitions = [{ goto = "idle", after = "1.5s-4s" }]
 
 [states.sleep]
-action = "idle"
-transitions = []
+fallback = "idle"
+action   = "idle"
+transitions = [{ goto = "wake", condition = "state_time > 15s" }]
 
-[states.petted]
-action = "idle"
-transitions = [{ goto = "$previous", after = "600ms" }]
+[states.wake]
+fallback = "idle"
+action   = "idle"
+duration = "800ms"
+transitions = [{ goto = "idle" }]
 
 [states.grabbed]
 required = true
@@ -56,3 +59,15 @@ transitions = [{ goto = "idle", condition = "on_surface" }]
 required = true
 action   = "thrown"
 transitions = [{ goto = "fall", condition = "on_surface" }]
+
+[states.petted]
+fallback = "idle"
+action   = "idle"
+duration = "600ms"
+transitions = [{ goto = "$previous" }]
+
+[states.react]
+fallback = "idle"
+action   = "idle"
+duration = "600ms"
+transitions = [{ goto = "$previous" }]
