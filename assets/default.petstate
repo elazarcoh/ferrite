@@ -1,0 +1,58 @@
+[meta]
+name               = "Default Pet"
+version            = "1.0"
+engine_min_version = "1.0"
+default_fallback   = "idle"
+
+[interrupts]
+grabbed = { goto = "grabbed" }
+petted  = { goto = "petted" }
+
+[states.idle]
+required = true
+action   = "idle"
+transitions = [
+  { goto = "walk",  weight = 45, after = "1s-3s" },
+  { goto = "sit",   weight = 20, after = "1s-3s" },
+  { goto = "sleep", weight = 15, after = "15s" },
+  { goto = "idle",  weight = 20, after = "1s-3s" },
+]
+
+[states.walk]
+action = "walk"
+dir    = "random"
+distance = "200px-800px"
+transitions = [{ goto = "idle" }]
+
+[states.run]
+action = "run"
+dir    = "random"
+distance = "200px-800px"
+transitions = [{ goto = "idle" }]
+
+[states.sit]
+action = "sit"
+transitions = [{ goto = "idle", after = "1.5s-4s" }]
+
+[states.sleep]
+action = "idle"
+transitions = []
+
+[states.petted]
+action = "idle"
+transitions = [{ goto = "$previous", after = "600ms" }]
+
+[states.grabbed]
+required = true
+action   = "grabbed"
+transitions = []
+
+[states.fall]
+required = true
+action   = "fall"
+transitions = [{ goto = "idle", condition = "on_surface" }]
+
+[states.thrown]
+required = true
+action   = "thrown"
+transitions = [{ goto = "fall", condition = "on_surface" }]
