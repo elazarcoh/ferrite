@@ -1,8 +1,10 @@
 use crate::sprite::sm_expr::parse as parse_expr;
+use crate::sprite::sm_expr::Expr;
 use crate::sprite::sm_format::SmFile;
 use crate::version::ENGINE_VERSION;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -213,6 +215,231 @@ pub fn validate(sm: &SmFile) -> Vec<CompileError> {
     errors
 }
 
+// ─── Compiled types ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct CompiledSM {
+    pub name: String,
+    pub default_fallback: String,
+    pub global_interrupts: Vec<CompiledInterrupt>,
+    pub states: HashMap<String, CompiledState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CompiledState {
+    pub required: bool,
+    pub fallback: Option<String>,
+    pub kind: StateKind,
+    pub per_state_interrupts: Vec<CompiledInterrupt>,
+}
+
+#[derive(Debug, Clone)]
+pub enum StateKind {
+    Atomic {
+        action: ActionType,
+        params: ActionParams,
+        transitions: Vec<CompiledTransition>,
+    },
+    Composite {
+        steps: Vec<String>,
+        transitions: Vec<CompiledTransition>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct ActionParams {
+    pub dir: Option<Direction>,
+    pub speed_override: Option<f32>,
+    pub distance_min_px: Option<f32>,
+    pub distance_max_px: Option<f32>,
+    pub gravity_scale: f32,
+    pub duration_ms: Option<u32>,
+}
+
+impl Default for ActionParams {
+    fn default() -> Self {
+        Self {
+            dir: None,
+            speed_override: None,
+            distance_min_px: None,
+            distance_max_px: None,
+            gravity_scale: 1.0,
+            duration_ms: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActionType {
+    Idle, Walk, Run, Sit, Jump, Float, FollowCursor, FleeCursor,
+    Grabbed, Fall, Thrown,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Direction { Left, Right, Random }
+
+#[derive(Debug, Clone)]
+pub struct CompiledTransition {
+    pub goto: Goto,
+    pub weight: Option<u32>,
+    pub after_min_ms: Option<u32>,
+    pub after_max_ms: Option<u32>,
+    pub condition: Option<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Goto { State(String), Previous }
+
+#[derive(Debug, Clone)]
+pub struct CompiledInterrupt {
+    pub event: String,
+    pub def: InterruptEffect,
+}
+
+#[derive(Debug, Clone)]
+pub enum InterruptEffect {
+    Goto { target: String, condition: Option<Expr> },
+    Ignore,
+}
+
+// ─── Compiler ────────────────────────────────────────────────────────────────
+
+/// Validate and compile. Returns Err with all validation errors if any.
+pub fn compile(sm: &SmFile) -> Result<Arc<CompiledSM>, Vec<CompileError>> {
+    let errors = validate(sm);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let mut states = HashMap::new();
+
+    for (name, state_def) in &sm.states {
+        let required = state_def.required.unwrap_or(false);
+        let fallback = state_def.fallback.clone();
+
+        // Compile per-state interrupts
+        let per_state_interrupts = compile_interrupts(&state_def.interrupts);
+
+        let kind = if let Some(steps) = &state_def.steps {
+            // Composite state
+            let transitions = compile_transitions(state_def.transitions.as_deref().unwrap_or(&[]));
+            StateKind::Composite { steps: steps.clone(), transitions }
+        } else {
+            // Atomic state
+            let action_str = state_def.action.as_deref().unwrap_or("idle");
+            let action = parse_action_type(action_str);
+            let params = compile_params(state_def);
+            let transitions = compile_transitions(state_def.transitions.as_deref().unwrap_or(&[]));
+            StateKind::Atomic { action, params, transitions }
+        };
+
+        states.insert(name.clone(), CompiledState { required, fallback, kind, per_state_interrupts });
+    }
+
+    let global_interrupts = compile_interrupts(&sm.interrupts);
+
+    Ok(Arc::new(CompiledSM {
+        name: sm.meta.name.clone(),
+        default_fallback: sm.meta.default_fallback.clone(),
+        global_interrupts,
+        states,
+    }))
+}
+
+fn parse_action_type(s: &str) -> ActionType {
+    match s {
+        "idle"          => ActionType::Idle,
+        "walk"          => ActionType::Walk,
+        "run"           => ActionType::Run,
+        "sit"           => ActionType::Sit,
+        "jump"          => ActionType::Jump,
+        "float"         => ActionType::Float,
+        "follow_cursor" => ActionType::FollowCursor,
+        "flee_cursor"   => ActionType::FleeCursor,
+        "grabbed"       => ActionType::Grabbed,
+        "fall"          => ActionType::Fall,
+        "thrown"        => ActionType::Thrown,
+        _               => ActionType::Idle, // validation already caught unknown actions
+    }
+}
+
+fn compile_params(state_def: &crate::sprite::sm_format::SmStateDef) -> ActionParams {
+    let dir = state_def.dir.as_deref().map(|d| match d {
+        "left"   => Direction::Left,
+        "right"  => Direction::Right,
+        _        => Direction::Random,
+    });
+
+    // Parse duration string like "500ms", "3s", "2.5s" → ms
+    let duration_ms = state_def.duration.as_deref().and_then(|s| parse_duration_str(s));
+
+    ActionParams {
+        dir,
+        speed_override: state_def.speed,
+        distance_min_px: None, // TODO: parse distance field if needed
+        distance_max_px: None,
+        gravity_scale: state_def.gravity_scale.unwrap_or(1.0),
+        duration_ms,
+    }
+}
+
+fn parse_duration_str(s: &str) -> Option<u32> {
+    if let Some(ms_str) = s.strip_suffix("ms") {
+        ms_str.trim().parse::<u32>().ok()
+    } else if let Some(s_str) = s.strip_suffix('s') {
+        s_str.trim().parse::<f32>().ok().map(|f| (f * 1000.0) as u32)
+    } else {
+        None
+    }
+}
+
+fn compile_transitions(transitions: &[crate::sprite::sm_format::SmTransitionDef]) -> Vec<CompiledTransition> {
+    transitions.iter().map(|t| {
+        let goto = if t.goto == "$previous" {
+            Goto::Previous
+        } else {
+            Goto::State(t.goto.clone())
+        };
+
+        // Parse after field: "500ms" or "1s-3s" (range) or "2s"
+        let (after_min_ms, after_max_ms) = parse_after_field(t.after.as_deref());
+
+        let condition = t.condition.as_deref().and_then(|c| parse_expr(c).ok());
+
+        CompiledTransition { goto, weight: t.weight, after_min_ms, after_max_ms, condition }
+    }).collect()
+}
+
+fn parse_after_field(s: Option<&str>) -> (Option<u32>, Option<u32>) {
+    let s = match s { Some(s) => s, None => return (None, None) };
+
+    // Try range format: "1s-3s" or "500ms-2000ms"
+    if let Some(dash_pos) = s.find('-') {
+        let min_str = &s[..dash_pos];
+        let max_str = &s[dash_pos+1..];
+        let min = parse_duration_str(min_str.trim());
+        let max = parse_duration_str(max_str.trim());
+        return (min, max);
+    }
+
+    // Single value
+    let val = parse_duration_str(s);
+    (val, val)
+}
+
+fn compile_interrupts(interrupts: &HashMap<String, crate::sprite::sm_format::SmInterruptDef>) -> Vec<CompiledInterrupt> {
+    interrupts.iter().map(|(event, def)| {
+        let effect = if def.ignore.unwrap_or(false) {
+            InterruptEffect::Ignore
+        } else {
+            let target = def.goto.clone().unwrap_or_default();
+            let condition = def.condition.as_deref().and_then(|c| parse_expr(c).ok());
+            InterruptEffect::Goto { target, condition }
+        };
+        CompiledInterrupt { event: event.clone(), def: effect }
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +625,35 @@ steps = ["a"]
         let sm: crate::sprite::sm_format::SmFile = toml::from_str(toml_str).unwrap();
         let errs = validate(&sm);
         assert!(errs.iter().any(|e| matches!(e, CompileError::StepsCycle(_))));
+    }
+
+    #[test]
+    fn compile_valid_sm_succeeds() {
+        let sm: crate::sprite::sm_format::SmFile = toml::from_str(minimal_valid()).unwrap();
+        assert!(compile(&sm).is_ok());
+    }
+
+    #[test]
+    fn compiled_states_indexed() {
+        let sm: crate::sprite::sm_format::SmFile = toml::from_str(minimal_valid()).unwrap();
+        let compiled = compile(&sm).unwrap();
+        assert!(compiled.states.contains_key("idle"));
+        assert!(compiled.states.contains_key("grabbed"));
+    }
+
+    #[test]
+    fn compile_invalid_sm_returns_errors() {
+        let bad_toml = r#"
+[meta]
+name = "T"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+action = "idle"
+"#;
+        let sm: crate::sprite::sm_format::SmFile = toml::from_str(bad_toml).unwrap();
+        assert!(compile(&sm).is_err());
     }
 }
