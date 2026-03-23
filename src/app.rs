@@ -58,7 +58,8 @@ impl PetInstance {
         // Register this window for per-pixel hit testing.
         crate::window::wndproc::register_hwnd(window.hwnd, cfg.id.clone());
 
-        let fall_tag = cfg.tag_map.fall.as_deref().unwrap_or(&cfg.tag_map.idle).to_string();
+        // TODO(Task-13): derive fall_tag from SM runner instead of tag_map
+        let fall_tag = "fall".to_string();
         let anim = AnimationState::new(fall_tag);
         let mut ai = BehaviorAi::new();
         ai.state = BehaviorState::Fall { vy: 0.0 };
@@ -93,7 +94,8 @@ impl PetInstance {
             self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
         );
 
-        let tag = self.ai.tick(
+        // TODO(Task-13): restore runner.tick() — replace BehaviorAi with SMRunner
+        let _tag_unused = self.ai.tick(
             delta_ms,
             &mut self.x,
             &mut self.y,
@@ -102,9 +104,10 @@ impl PetInstance {
             pet_h,
             self.cfg.walk_speed,
             floor_y,
-            &self.cfg.tag_map,
+            &crate::sprite::behavior::AnimTagMap::default(),
         );
-        self.anim.set_tag(tag);
+        let tag = "idle"; // TODO(Task-13): get tag from SMRunner
+        self.anim.set_tag(tag.to_string());
 
         // After the AI has potentially moved x (Walk), recompute floor at
         // the new position and apply surface snapping / edge-fall logic.

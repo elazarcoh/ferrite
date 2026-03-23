@@ -1,4 +1,3 @@
-use crate::sprite::behavior::AnimTagMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -17,44 +16,26 @@ pub struct PetConfig {
     pub id: String,
     /// Absolute path to the `.json` spritesheet, or `"embedded://<stem>"` for bundled sheets.
     pub sheet_path: String,
+    /// Path to state machine TOML, or `"embedded://default"` for the built-in SM.
+    pub state_machine: String,
     pub x: i32,
     pub y: i32,
     /// Integer pixel-art upscale factor.
     pub scale: u32,
     /// Pixels per second for walk.
     pub walk_speed: f32,
-    pub tag_map: AnimTagMap,
 }
 
 impl Default for PetConfig {
     fn default() -> Self {
-        PetConfig::esheep()
-    }
-}
-
-impl PetConfig {
-    /// Classic eSheep (40×40 sprites, all animations).
-    pub fn esheep() -> Self {
-        PetConfig {
-            id: "esheep".into(),
-            sheet_path: "embedded://esheep".into(),
+        Self {
+            id: "esheep".to_string(),
+            sheet_path: "embedded://esheep".to_string(),
+            state_machine: "embedded://default".to_string(),
             x: 100,
             y: 800,
             scale: 2,
             walk_speed: 80.0,
-            tag_map: AnimTagMap {
-                idle:    "idle".into(),
-                walk:    "walk".into(),
-                run:     Some("run".into()),
-                sit:     Some("sit".into()),
-                sleep:   Some("sleep".into()),
-                wake:    Some("wake".into()),
-                grabbed: Some("grabbed".into()),
-                petted:  Some("petted".into()),
-                react:   Some("react".into()),
-                fall:    Some("fall".into()),
-                thrown:  Some("thrown".into()),
-            },
         }
     }
 }

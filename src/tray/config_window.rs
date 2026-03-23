@@ -282,78 +282,8 @@ pub fn open_config_viewport(
                     });
 
                     ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.heading("Tag Map");
-                        crate::tray::ui_theme::help_icon(ui, "Maps pet behaviors to your tag names. idle and walk are required; others fall back to idle if not set.");
-                    });
-
-                    if let Some(ref sheet) = s.loaded_sheet {
-                        let tag_names: Vec<String> =
-                            sheet.tags.iter().map(|t| t.name.clone()).collect();
-
-                        // Required tags
-                        let mut changed = false;
-                        changed |= required_tag_combo(
-                            ui,
-                            "idle (required)",
-                            "tag_idle",
-                            idx,
-                            &mut s.config.pets[idx].tag_map.idle,
-                            &tag_names,
-                        );
-                        changed |= required_tag_combo(
-                            ui,
-                            "walk (required)",
-                            "tag_walk",
-                            idx,
-                            &mut s.config.pets[idx].tag_map.walk,
-                            &tag_names,
-                        );
-
-                        // Optional tags
-                        changed |= optional_tag_combo(
-                            ui, "run", "tag_run", idx,
-                            &mut s.config.pets[idx].tag_map.run, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "sit", "tag_sit", idx,
-                            &mut s.config.pets[idx].tag_map.sit, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "sleep", "tag_sleep", idx,
-                            &mut s.config.pets[idx].tag_map.sleep, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "wake", "tag_wake", idx,
-                            &mut s.config.pets[idx].tag_map.wake, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "grabbed", "tag_grabbed", idx,
-                            &mut s.config.pets[idx].tag_map.grabbed, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "petted", "tag_petted", idx,
-                            &mut s.config.pets[idx].tag_map.petted, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "react", "tag_react", idx,
-                            &mut s.config.pets[idx].tag_map.react, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "fall", "tag_fall", idx,
-                            &mut s.config.pets[idx].tag_map.fall, &tag_names,
-                        );
-                        changed |= optional_tag_combo(
-                            ui, "thrown", "tag_thrown", idx,
-                            &mut s.config.pets[idx].tag_map.thrown, &tag_names,
-                        );
-
-                        if changed {
-                            s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
-                        }
-                    } else {
-                        ui.label("(no sheet loaded)");
-                    }
+                    // TODO(Task-13): SM selector UI
+                    ui.label("SM selector (TODO)");
                 });
             });
         },

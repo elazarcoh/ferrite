@@ -299,14 +299,8 @@ pub fn open_sprite_editor_viewport(
                 ui.data_mut(|d| d.insert_temp(id, new_tag_name));
 
                 ui.separator();
-                ui.horizontal(|ui| {
-                    ui.heading("Tag Map");
-                    crate::tray::ui_theme::help_icon(ui, "Maps pet behaviors to your tag names. idle and walk are required; others fall back to idle if not set.");
-                });
-                let tag_names: Vec<String> = s.state.tags.iter().map(|t| t.name.clone()).collect();
-                if tag_map_ui(ui, &mut s.state.tag_map, &tag_names) {
-                    s.dirty = true;
-                }
+                // TODO(Task-13): SM mapping UI replaces tag_map_ui
+                ui.label("SM selector (TODO)");
             }); // end ScrollArea
         });
 
@@ -588,83 +582,4 @@ pub fn open_sprite_editor_viewport(
     });
 }
 
-/// UI for editing the AnimTagMap behavior-to-tag mapping.
-/// Returns true if any tag mapping changed.
-fn tag_map_ui(
-    ui: &mut egui::Ui,
-    tag_map: &mut crate::sprite::behavior::AnimTagMap,
-    tag_names: &[String],
-) -> bool {
-    let names: Vec<&str> = tag_names.iter().map(|s| s.as_str()).collect();
-    let mut changed = false;
-
-    changed |= required_tag_combo_edit(ui, "idle", "tm_idle", &mut tag_map.idle, &names);
-    changed |= required_tag_combo_edit(ui, "walk", "tm_walk", &mut tag_map.walk, &names);
-    changed |= optional_tag_combo_edit(ui, "run", "tm_run", &mut tag_map.run, &names);
-    changed |= optional_tag_combo_edit(ui, "sit", "tm_sit", &mut tag_map.sit, &names);
-    changed |= optional_tag_combo_edit(ui, "sleep", "tm_sleep", &mut tag_map.sleep, &names);
-    changed |= optional_tag_combo_edit(ui, "wake", "tm_wake", &mut tag_map.wake, &names);
-    changed |= optional_tag_combo_edit(ui, "grabbed", "tm_grab", &mut tag_map.grabbed, &names);
-    changed |= optional_tag_combo_edit(ui, "petted", "tm_pet", &mut tag_map.petted, &names);
-    changed |= optional_tag_combo_edit(ui, "react", "tm_react", &mut tag_map.react, &names);
-    changed |= optional_tag_combo_edit(ui, "fall", "tm_fall", &mut tag_map.fall, &names);
-    changed |= optional_tag_combo_edit(ui, "thrown", "tm_thrown", &mut tag_map.thrown, &names);
-    changed
-}
-
-fn required_tag_combo_edit(
-    ui: &mut egui::Ui,
-    label: &str,
-    id: &str,
-    value: &mut String,
-    tag_names: &[&str],
-) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let display = if value.is_empty() { "(none)" } else { value.as_str() };
-        egui::ComboBox::from_id_salt(id)
-            .selected_text(display)
-            .show_ui(ui, |ui| {
-                for name in tag_names {
-                    if ui.selectable_label(value.as_str() == *name, *name).clicked() {
-                        *value = name.to_string();
-                        changed = true;
-                    }
-                }
-            });
-    });
-    changed
-}
-
-fn optional_tag_combo_edit(
-    ui: &mut egui::Ui,
-    label: &str,
-    id: &str,
-    value: &mut Option<String>,
-    tag_names: &[&str],
-) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let display = value.as_deref().unwrap_or("\u{2014} not set \u{2014}");
-        egui::ComboBox::from_id_salt(id)
-            .selected_text(display)
-            .show_ui(ui, |ui| {
-                if ui.selectable_label(value.is_none(), "\u{2014} not set \u{2014}").clicked() {
-                    *value = None;
-                    changed = true;
-                }
-                for name in tag_names {
-                    let selected = value.as_deref() == Some(*name);
-                    if ui.selectable_label(selected, *name).clicked() {
-                        *value = Some(name.to_string());
-                        changed = true;
-                    }
-                }
-            });
-    });
-    changed
-}
-
-
+// TODO(Task-13): tag_map_ui and helpers removed — will be replaced by SM mapping UI
