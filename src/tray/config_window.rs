@@ -282,8 +282,38 @@ pub fn open_config_viewport(
                     });
 
                     ui.separator();
-                    // TODO(Task-13): SM selector UI
-                    ui.label("SM selector (TODO)");
+
+                    // SM selector
+                    {
+                        let config_dir = crate::config::config_path()
+                            .parent()
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| std::path::PathBuf::from("."));
+                        let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                        let mut sm_names = vec!["embedded://default".to_string()];
+                        sm_names.extend(gallery.valid_names().into_iter().map(|s| s.to_string()));
+
+                        let current = s.config.pets[idx].state_machine.clone();
+                        let mut new_sm = current.clone();
+                        ui.horizontal(|ui| {
+                            ui.label("State Machine:");
+                            crate::tray::ui_theme::help_icon(ui, "Choose which state machine drives this pet's behaviour. 'embedded://default' is the built-in eSheep behaviour.");
+                            egui::ComboBox::from_id_salt(("sm_selector", idx))
+                                .selected_text(&current)
+                                .show_ui(ui, |ui| {
+                                    for name in &sm_names {
+                                        let selected = current == *name;
+                                        if ui.selectable_label(selected, name).clicked() {
+                                            new_sm = name.clone();
+                                        }
+                                    }
+                                });
+                        });
+                        if new_sm != current {
+                            s.config.pets[idx].state_machine = new_sm;
+                            s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
+                        }
+                    }
                 });
             });
         },
