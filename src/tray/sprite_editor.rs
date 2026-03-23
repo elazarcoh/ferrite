@@ -21,6 +21,8 @@ pub struct SpriteEditorViewport {
     dirty: bool,
     sheet_zoom: f32,             // 1.0 = fit to panel; >1.0 = magnified
     tag_drag_start: Option<usize>, // frame index where a tag-range drag began
+    export_bundle_sm: Option<String>,   // selected SM name for export
+    show_export_bundle_dialog: bool,    // whether to show the SM picker modal
 }
 
 impl SpriteEditorViewport {
@@ -40,6 +42,45 @@ impl SpriteEditorViewport {
             dirty: false,
             sheet_zoom: 1.0,
             tag_drag_start: None,
+            export_bundle_sm: None,
+            show_export_bundle_dialog: false,
+        }
+    }
+
+    fn do_export_bundle(&self, sm_source: Option<&str>) {
+        let bundle_name = self.state.png_path
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "sprite".to_string());
+
+        let json_bytes = self.state.to_json();
+        let json_str = match std::str::from_utf8(&json_bytes) {
+            Ok(s) => s.to_string(),
+            Err(e) => { log::error!("JSON encoding error: {}", e); return; }
+        };
+
+        let png_bytes = match std::fs::read(&self.state.png_path) {
+            Ok(b) => b,
+            Err(e) => { log::error!("Failed to read PNG for bundle: {}", e); return; }
+        };
+
+        let file_name = format!("{}.petbundle", bundle_name);
+        let path = rfd::FileDialog::new()
+            .add_filter("Pet Bundle", &["petbundle"])
+            .set_file_name(&file_name)
+            .save_file();
+
+        if let Some(path) = path {
+            match crate::bundle::export(&bundle_name, None, &json_str, &png_bytes, sm_source, None) {
+                Ok(bytes) => {
+                    if let Err(e) = std::fs::write(&path, bytes) {
+                        log::error!("Failed to write bundle: {}", e);
+                    } else {
+                        log::info!("Bundle exported to {:?}", path);
+                    }
+                }
+                Err(e) => log::error!("Bundle export failed: {}", e),
+            }
         }
     }
 
@@ -115,6 +156,9 @@ pub fn open_sprite_editor_viewport(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
                         s.dark_mode_out = Some(s.dark_mode);
+                    }
+                    if ui.button("Export Bundle").clicked() {
+                        s.show_export_bundle_dialog = true;
                     }
                     if ui.button("Export PNG\u{2026}").clicked() {
                         let image_data = s.state.image.clone();
@@ -578,6 +622,23 @@ pub fn open_sprite_editor_viewport(
                 }
             }
         });
+
+        if s.show_export_bundle_dialog {
+            egui::Window::new("Export Bundle")
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Include state machine:");
+                    ui.horizontal(|ui| {
+                        if ui.button("Export sprite only").clicked() {
+                            s.do_export_bundle(None);
+                            s.show_export_bundle_dialog = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            s.show_export_bundle_dialog = false;
+                        }
+                    });
+                });
+        }
 
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     });
