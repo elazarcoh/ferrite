@@ -7,7 +7,7 @@ use my_pet::{
     app::PetInstance,
     config::schema::PetConfig,
     event::AppEvent,
-    sprite::{behavior::BehaviorState, sheet::load_embedded},
+    sprite::{sm_runner::ActiveState, sheet::load_embedded},
     window::wndproc,
 };
 use once_cell::sync::Lazy;
@@ -77,7 +77,7 @@ fn nchittest_opaque_pixel_returns_htclient() {
     let mut pet = make_pet();
     let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
@@ -106,7 +106,7 @@ fn click_sends_pet_clicked_event() {
     // Land pet first.
     let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
@@ -140,7 +140,7 @@ fn drag_sends_drag_start_and_end_events() {
     // Land pet first.
     let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
@@ -178,16 +178,16 @@ fn drag_sends_drag_start_and_end_events() {
     );
 }
 
-// ─── Drag: ai state transitions via grab/release ──────────────────────────────
+// ─── Drag: runner state transitions via grab/release ──────────────────────────
 
 #[test]
 fn grab_then_fast_release_makes_thrown_state() {
     let mut pet = make_pet();
-    pet.ai.grab((5, 5));
-    assert!(matches!(pet.ai.state, BehaviorState::Grabbed { .. }));
-    pet.ai.release((600.0, -200.0));
+    pet.runner.grab((5, 5));
+    assert!(matches!(&pet.runner.active, ActiveState::Grabbed { .. }));
+    pet.runner.release((600.0, -200.0));
     assert!(
-        matches!(pet.ai.state, BehaviorState::Thrown { .. }),
+        matches!(&pet.runner.active, ActiveState::Thrown { .. }),
         "fast release must produce Thrown state"
     );
 }
@@ -195,10 +195,10 @@ fn grab_then_fast_release_makes_thrown_state() {
 #[test]
 fn grab_then_slow_release_makes_fall_state() {
     let mut pet = make_pet();
-    pet.ai.grab((0, 0));
-    pet.ai.release((0.0, 0.0));
+    pet.runner.grab((0, 0));
+    pet.runner.release((0.0, 0.0));
     assert!(
-        matches!(pet.ai.state, BehaviorState::Fall { .. }),
+        matches!(&pet.runner.active, ActiveState::Fall { .. }),
         "slow release must produce Fall state"
     );
 }
@@ -211,7 +211,7 @@ fn alpha_buf_center_pixel_is_opaque_after_render() {
     // Land pet so render_current_frame has been called.
     let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(pet.ai.state, BehaviorState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();

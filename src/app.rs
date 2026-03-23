@@ -4,8 +4,8 @@ use crate::{
     event::AppEvent,
     sprite::{
         animation::AnimationState,
-        behavior::{BehaviorAi, BehaviorState, Facing},
         sheet::{self, SpriteSheet},
+        sm_runner::SMRunner,
     },
     tray::{
         config_window::{open_config_viewport, ConfigWindowState},
@@ -35,7 +35,7 @@ pub struct PetInstance {
     pub sheet: SpriteSheet,
     pub window: PetWindow,
     pub anim: AnimationState,
-    pub ai: BehaviorAi,
+    pub runner: SMRunner,
     pub x: i32,
     pub y: i32,
     /// Milliseconds the pet has spent on an elevated surface (above virtual ground).
@@ -58,13 +58,19 @@ impl PetInstance {
         // Register this window for per-pixel hit testing.
         crate::window::wndproc::register_hwnd(window.hwnd, cfg.id.clone());
 
-        // TODO(Task-13): derive fall_tag from SM runner instead of tag_map
-        let fall_tag = "fall".to_string();
-        let anim = AnimationState::new(fall_tag);
-        let mut ai = BehaviorAi::new();
-        ai.state = BehaviorState::Fall { vy: 0.0 };
+        let runner = if cfg.state_machine == "embedded://default" || cfg.state_machine.is_empty() {
+            let sm = crate::sprite::sm_runner::load_default_sm();
+            SMRunner::new(sm, cfg.walk_speed)
+        } else {
+            // For now, fallback to default for any non-embedded path
+            // TODO(Plan-2): load from disk path
+            let sm = crate::sprite::sm_runner::load_default_sm();
+            SMRunner::new(sm, cfg.walk_speed)
+        };
 
-        let mut inst = PetInstance { x: cfg.x, y: spawn_y, cfg, sheet, window, anim, ai, elevated_ms: 0, last_flip: false };
+        let anim = AnimationState::new("fall".to_string());
+
+        let mut inst = PetInstance { x: cfg.x, y: spawn_y, cfg, sheet, window, anim, runner, elevated_ms: 0, last_flip: false };
 
         inst.render_current_frame()?;
 
@@ -94,35 +100,34 @@ impl PetInstance {
             self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
         );
 
-        // TODO(Task-13): restore runner.tick() — replace BehaviorAi with SMRunner
-        let _tag_unused = self.ai.tick(
+        let tag = self.runner.tick(
             delta_ms,
             &mut self.x,
             &mut self.y,
             screen_w,
             pet_w,
             pet_h,
-            self.cfg.walk_speed,
             floor_y,
-            &crate::sprite::behavior::AnimTagMap::default(),
+            &self.sheet,
         );
-        let tag = "idle"; // TODO(Task-13): get tag from SMRunner
         self.anim.set_tag(tag.to_string());
 
-        // After the AI has potentially moved x (Walk), recompute floor at
+        // After the runner has potentially moved x (Walk), recompute floor at
         // the new position and apply surface snapping / edge-fall logic.
-        if !being_dragged && !matches!(
-            self.ai.state,
-            BehaviorState::Fall { .. } | BehaviorState::Thrown { .. } | BehaviorState::Grabbed { .. }
-        ) {
+        let is_airborne = matches!(
+            self.runner.active,
+            crate::sprite::sm_runner::ActiveState::Fall { .. }
+            | crate::sprite::sm_runner::ActiveState::Thrown { .. }
+            | crate::sprite::sm_runner::ActiveState::Grabbed { .. }
+        );
+        if !being_dragged && !is_airborne {
             let new_floor = crate::window::surfaces::find_floor(
                 self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
             );
             // If the floor dropped more than one pet height, the pet walked
             // off a window edge — start falling.
             if new_floor > self.y + pet_h {
-                self.ai.state = BehaviorState::Fall { vy: 0.0 };
-                self.ai.reset_idle();
+                self.runner.active = crate::sprite::sm_runner::ActiveState::Fall { vy: 0.0 };
             } else {
                 // Snap to surface (handles small steps up/down between windows)
                 self.y = new_floor;
@@ -133,10 +138,6 @@ impl PetInstance {
         // for too long, make it fall off (eSheep-style edge drop).
         const ELEVATED_DROP_MS: u32 = 20_000; // 20 s before dropping
         let virtual_ground = screen_h - 4 - pet_h;
-        let is_airborne = matches!(
-            self.ai.state,
-            BehaviorState::Fall { .. } | BehaviorState::Thrown { .. } | BehaviorState::Grabbed { .. }
-        );
         if is_airborne || self.y >= virtual_ground - 4 {
             // On ground or in the air — reset timer.
             self.elevated_ms = 0;
@@ -144,8 +145,7 @@ impl PetInstance {
             self.elevated_ms = self.elevated_ms.saturating_add(delta_ms);
             if self.elevated_ms >= ELEVATED_DROP_MS {
                 log::debug!("elevated_drop after {}ms at y={}", self.elevated_ms, self.y);
-                self.ai.state = BehaviorState::Fall { vy: 0.0 };
-                self.ai.reset_idle();
+                self.runner.active = crate::sprite::sm_runner::ActiveState::Fall { vy: 0.0 };
                 self.elevated_ms = 0;
             }
         }
@@ -165,15 +165,7 @@ impl PetInstance {
     /// `flip_h=false` (default) = sprite faces RIGHT. Flip when going LEFT.
     /// `flip_h=true`            = sprite faces LEFT.  Flip when going RIGHT.
     pub fn compute_flip(&self) -> bool {
-        let tag_flip_h = self.sheet.tag(&self.anim.current_tag).map_or(false, |t| t.flip_h);
-        let facing = match &self.ai.state {
-            BehaviorState::Walk { facing, .. } | BehaviorState::Run { facing, .. } => facing,
-            _ => return false,
-        };
-        match facing {
-            Facing::Right => tag_flip_h,   // facing right, going right  → only flip if sprite faces left
-            Facing::Left  => !tag_flip_h,  // facing right, going left   → flip unless sprite already faces left
-        }
+        compute_flip(&self.runner, &self.sheet)
     }
 
     fn render_current_frame(&mut self) -> Result<()> {
@@ -302,13 +294,10 @@ impl App {
             }
         }).collect();
 
-        let tag_map = crate::sprite::behavior::AnimTagMap::default();
-
         let mut state = SpriteEditorState::new(png_path, sheet.image);
         state.rows = rows;
         state.cols = cols;
         state.tags = tags;
-        state.tag_map = tag_map;
         Ok(state)
     }
 
@@ -385,24 +374,28 @@ impl App {
             AppEvent::PetClicked { pet_id } => {
                 log::debug!("PetClicked pet_id={pet_id}");
                 if let Some(p) = self.pets.get_mut(&pet_id) {
-                    if matches!(p.ai.state, BehaviorState::Sleep) {
-                        p.ai.wake();
+                    let state_name = p.runner.current_state_name().to_string();
+                    if state_name == "sleep" {
+                        p.runner.interrupt("wake", None);
                     } else {
-                        p.ai.pet();
+                        p.runner.interrupt("petted", None);
                     }
                 }
             }
             AppEvent::PetDragStart { pet_id, cursor_x, cursor_y } => {
                 log::debug!("PetDragStart pet_id={pet_id} cursor=({cursor_x},{cursor_y})");
                 if let Some(p) = self.pets.get_mut(&pet_id) {
-                    p.ai.grab((cursor_x - p.x, cursor_y - p.y));
+                    p.runner.interrupt("grabbed", Some((cursor_x - p.x, cursor_y - p.y)));
                 }
             }
             AppEvent::PetDragEnd { pet_id, velocity } => {
                 log::debug!("PetDragEnd pet_id={pet_id} vel=({:.0},{:.0})", velocity.0, velocity.1);
                 if let Some(p) = self.pets.get_mut(&pet_id) {
-                    p.ai.release(velocity);
+                    p.runner.release(velocity);
                 }
+            }
+            AppEvent::SMImported { .. } | AppEvent::SMChanged { .. } => {
+                // TODO(Plan-2): handle SM import and per-pet SM switching
             }
         }
         Ok(())
@@ -537,6 +530,20 @@ impl eframe::App for App {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+fn compute_flip(runner: &SMRunner, sheet: &SpriteSheet) -> bool {
+    use crate::sprite::sm_runner::Facing;
+    let facing = runner.current_facing();
+    let tag_name = runner.current_state_name();
+    let flip_h = sheet.tags.iter()
+        .find(|t| t.name == tag_name)
+        .map(|t| t.flip_h)
+        .unwrap_or(false);
+    match facing {
+        Facing::Right => flip_h,
+        Facing::Left  => !flip_h,
+    }
+}
 
 fn build_pet(cfg: &PetConfig) -> Result<PetInstance> {
     let sheet = load_sheet(&cfg.sheet_path)?;

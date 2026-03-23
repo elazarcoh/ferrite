@@ -40,7 +40,7 @@ pub struct SMRunner {
     state_time_ms: u32,
     pub step_index: usize,
     walk_remaining_px: f32,
-    facing: Facing,
+    pub facing: Facing,
     walk_speed: f32,
     rng: u64,
     next_transition_ms: u32,

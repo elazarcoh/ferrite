@@ -7,6 +7,7 @@ default_fallback   = "idle"
 [interrupts]
 grabbed = { goto = "grabbed" }
 petted  = { goto = "petted" }
+wake    = { goto = "wake" }
 
 [states.idle]
 required = true

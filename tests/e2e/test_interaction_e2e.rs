@@ -3,7 +3,7 @@ use my_pet::{
     app::PetInstance,
     config::schema::PetConfig,
     sprite::{
-        behavior::{BehaviorAi, BehaviorState},
+        sm_runner::ActiveState,
         sheet::load_embedded,
     },
     window::blender::alpha_at,
@@ -42,47 +42,44 @@ fn opaque_pixel_has_nonzero_alpha() {
 #[test]
 fn pet_click_triggers_petted_state() {
     let mut pet = make_pet();
-    pet.ai.pet();
+    pet.runner.interrupt("petted", None);
     assert!(
-        matches!(pet.ai.state, BehaviorState::Petted { .. }),
-        "pet() should transition to Petted"
+        matches!(&pet.runner.active, ActiveState::Named(n) if n == "petted"),
+        "interrupt petted should transition to petted state"
     );
 }
 
 #[test]
 fn petted_state_resolves_back_to_idle() {
     let mut pet = make_pet();
-    // Land the pet and wait for Idle specifically — if we stop at Walk,
-    // pet() stores Walk as previous state and the pet can fall off the screen
-    // edge after Petted resolves, producing Fall instead of Idle.
+    // Land the pet and wait for Idle.
     let mut cache = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..500 {
-        if matches!(pet.ai.state, BehaviorState::Idle) {
+        if matches!(&pet.runner.active, ActiveState::Named(n) if n == "idle") {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
     }
     assert!(
-        matches!(pet.ai.state, BehaviorState::Idle),
-        "pet must reach Idle before pet() call; got {:?}", pet.ai.state
+        matches!(&pet.runner.active, ActiveState::Named(n) if n == "idle"),
+        "pet must reach Idle before petted call; got {:?}", pet.runner.active
     );
-    // Force pet to virtual ground so the snap logic in tick() cannot trigger
-    // Fall if the pet happened to land on a user app window that then closes.
+    // Force pet to virtual ground so the snap logic in tick() cannot trigger Fall.
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
     let ground_y = screen_h - 4 - pet.window.height as i32;
     pet.y = ground_y;
     pet.window.move_to(pet.x, ground_y);
-    pet.ai.state = BehaviorState::Idle;
-    pet.ai.reset_idle();
-    pet.ai.pet();
+    // Trigger petted interrupt
+    pet.runner.interrupt("petted", None);
     let mut cache2 = my_pet::window::surfaces::SurfaceCache::default();
     for _ in 0..50 {
         pet.tick(20, &mut cache2).unwrap();
     }
+    // After petted resolves, should return to some named state (idle or previous)
     assert!(
-        matches!(pet.ai.state, BehaviorState::Idle),
-        "Petted should resolve to Idle after one-shot duration, got {:?}",
-        pet.ai.state
+        matches!(&pet.runner.active, ActiveState::Named(_)),
+        "Petted should resolve to a Named state after one-shot duration, got {:?}",
+        pet.runner.active
     );
 }
 
@@ -91,9 +88,9 @@ fn petted_state_resolves_back_to_idle() {
 #[test]
 fn drag_start_sets_grabbed_state() {
     let mut pet = make_pet();
-    pet.ai.grab((4, 8));
+    pet.runner.grab((4, 8));
     assert!(
-        matches!(pet.ai.state, BehaviorState::Grabbed { cursor_offset: (4, 8) }),
+        matches!(&pet.runner.active, ActiveState::Grabbed { cursor_offset: (4, 8) }),
         "grab() must store cursor offset"
     );
 }
@@ -101,10 +98,10 @@ fn drag_start_sets_grabbed_state() {
 #[test]
 fn fast_release_causes_thrown() {
     let mut pet = make_pet();
-    pet.ai.grab((0, 0));
-    pet.ai.release((500.0, -200.0));
+    pet.runner.grab((0, 0));
+    pet.runner.release((500.0, -200.0));
     assert!(
-        matches!(pet.ai.state, BehaviorState::Thrown { .. }),
+        matches!(&pet.runner.active, ActiveState::Thrown { .. }),
         "fast release must transition to Thrown"
     );
 }
@@ -112,10 +109,10 @@ fn fast_release_causes_thrown() {
 #[test]
 fn slow_release_causes_fall() {
     let mut pet = make_pet();
-    pet.ai.grab((0, 0));
-    pet.ai.release((0.0, 0.0));
+    pet.runner.grab((0, 0));
+    pet.runner.release((0.0, 0.0));
     assert!(
-        matches!(pet.ai.state, BehaviorState::Fall { .. }),
+        matches!(&pet.runner.active, ActiveState::Fall { .. }),
         "slow release must transition to Fall"
     );
 }

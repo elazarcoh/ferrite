@@ -6,7 +6,7 @@ use my_pet::{
     app::PetInstance,
     config::schema::PetConfig,
     sprite::{
-        behavior::{AnimTagMap, BehaviorState, Facing},
+        sm_runner::{ActiveState, Facing},
         sheet::load_embedded,
     },
     window::{pet_window::PetWindow, surfaces::SurfaceCache},
@@ -22,23 +22,11 @@ fn make_pet() -> PetInstance {
     let cfg = PetConfig {
         id: "stress_pet".into(),
         sheet_path: "embedded://test_pet".into(),
+        state_machine: "embedded://default".into(),
         scale: 2,
         x: 100,
         y: 100,
         walk_speed: 100.0,
-        tag_map: AnimTagMap {
-            idle: "idle".into(),
-            walk: "walk".into(),
-            run: None,
-            sit: None,
-            sleep: None,
-            wake: None,
-            grabbed: None,
-            petted: None,
-            react: None,
-            fall: None,
-            thrown: None,
-        },
     };
     PetInstance::new(cfg, sheet).expect("create PetInstance")
 }
@@ -71,16 +59,11 @@ fn make_pet_with_flip_sheet() -> PetInstance {
     let cfg = PetConfig {
         id: "flip_pet".into(),
         sheet_path: "embedded://test".into(),
+        state_machine: "embedded://default".into(),
         scale: 1,
         x: 100,
         y: 100,
         walk_speed: 100.0,
-        tag_map: AnimTagMap {
-            idle: "idle".into(),
-            walk: "walk".into(),
-            run: None, sit: None, sleep: None, wake: None,
-            grabbed: None, petted: None, react: None, fall: None, thrown: None,
-        },
     };
     PetInstance::new(cfg, sheet).expect("create flip PetInstance")
 }
@@ -89,6 +72,9 @@ fn make_pet_with_flip_sheet() -> PetInstance {
 fn compute_flip_false_when_idle() {
     let pet = make_pet_with_flip_sheet();
     // Default state is Fall (spawning), which is not Walk → no flip.
+    // The compute_flip now uses runner.current_facing() and the current tag name.
+    // When in Fall state, current_state_name()="fall" which isn't in tags, so flip_h=false.
+    // Facing is Right by default, so flip_h=false → no flip.
     assert!(!pet.compute_flip(), "flip must be false when not walking");
 }
 
@@ -96,7 +82,9 @@ fn compute_flip_false_when_idle() {
 fn compute_flip_true_when_walking_right_with_flip_h_tag() {
     // flip_h=true means "sprite faces LEFT" — mirror when going RIGHT
     let mut pet = make_pet_with_flip_sheet();
-    pet.ai.state = BehaviorState::Walk { facing: Facing::Right, remaining_px: 500.0 };
+    // Set runner to walk state facing right
+    pet.runner.active = ActiveState::Named("walk".to_string());
+    pet.runner.facing = Facing::Right;
     pet.anim.set_tag("walk");
     assert!(pet.compute_flip(), "flip must be true when facing right with flip_h tag");
 }
@@ -105,7 +93,8 @@ fn compute_flip_true_when_walking_right_with_flip_h_tag() {
 fn compute_flip_false_when_walking_left_with_flip_h_tag() {
     // Sprite faces LEFT naturally — no flip needed when going left
     let mut pet = make_pet_with_flip_sheet();
-    pet.ai.state = BehaviorState::Walk { facing: Facing::Left, remaining_px: 500.0 };
+    pet.runner.active = ActiveState::Named("walk".to_string());
+    pet.runner.facing = Facing::Left;
     pet.anim.set_tag("walk");
     assert!(!pet.compute_flip(), "flip must be false when facing left with flip_h tag (sprite already faces left)");
 }
@@ -113,7 +102,8 @@ fn compute_flip_false_when_walking_left_with_flip_h_tag() {
 #[test]
 fn compute_flip_false_when_walking_right_without_flip_h_tag() {
     let mut pet = make_pet_with_flip_sheet();
-    pet.ai.state = BehaviorState::Walk { facing: Facing::Right, remaining_px: 500.0 };
+    pet.runner.active = ActiveState::Named("idle".to_string());
+    pet.runner.facing = Facing::Right;
     // Idle tag has flip_h=false (sprite faces right) — no flip when going right
     pet.anim.set_tag("idle");
     assert!(!pet.compute_flip(), "flip must be false when tag has flip_h=false and going right");
@@ -122,7 +112,8 @@ fn compute_flip_false_when_walking_right_without_flip_h_tag() {
 #[test]
 fn compute_flip_true_when_walking_left_without_flip_h_tag() {
     let mut pet = make_pet_with_flip_sheet();
-    pet.ai.state = BehaviorState::Walk { facing: Facing::Left, remaining_px: 500.0 };
+    pet.runner.active = ActiveState::Named("idle".to_string());
+    pet.runner.facing = Facing::Left;
     // Idle tag has flip_h=false (sprite faces right) — must flip when going left
     pet.anim.set_tag("idle");
     assert!(pet.compute_flip(), "flip must be true when tag has flip_h=false and going left (arrows case)");

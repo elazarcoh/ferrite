@@ -4,7 +4,6 @@ use anyhow::{anyhow, Context, Result};
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 
-use crate::sprite::behavior::AnimTagMap;
 use crate::sprite::sheet::TagDirection;
 
 // ─── Tag color palette ────────────────────────────────────────────────────────
@@ -42,7 +41,6 @@ pub struct SpriteEditorState {
     pub rows: u32,
     pub cols: u32,
     pub tags: Vec<EditorTag>,
-    pub tag_map: AnimTagMap,
     pub selected_tag: Option<usize>,
 }
 
@@ -59,12 +57,6 @@ impl SpriteEditorState {
             rows: 1,
             cols: 1,
             tags: Vec::new(),
-            tag_map: AnimTagMap {
-                idle: String::new(),
-                walk: String::new(),
-                run: None, sit: None, sleep: None, wake: None,
-                grabbed: None, petted: None, react: None, fall: None, thrown: None,
-            },
             selected_tag: None,
         }
     }
@@ -86,9 +78,9 @@ impl SpriteEditorState {
         }
     }
 
-    /// True iff both `idle` and `walk` behavior states are mapped (non-empty).
+    /// True iff the sheet has at least one tag defined.
     pub fn is_saveable(&self) -> bool {
-        !self.tag_map.idle.is_empty() && !self.tag_map.walk.is_empty()
+        !self.tags.is_empty()
     }
 
     /// Iterator of `(tag_idx, &EditorTag)` — used by the canvas painter.
@@ -101,16 +93,15 @@ impl SpriteEditorState {
         TAG_COLORS[idx % TAG_COLORS.len()]
     }
 
-    /// Serialise to Aseprite array-format JSON including `myPetTagMap`.
+    /// Serialise to Aseprite array-format JSON.
     pub fn to_json(&self) -> Vec<u8> {
-        let json = self.build_json(true);
+        let json = self.build_json();
         serde_json::to_vec_pretty(&json).unwrap_or_else(|e| unreachable!("serde_json::Value serialize failed: {e}"))
     }
 
-    /// Serialise to Aseprite array-format JSON WITHOUT `myPetTagMap` (for export).
+    /// Serialise to Aseprite array-format JSON (alias for export compatibility).
     pub fn to_clean_json(&self) -> Vec<u8> {
-        let json = self.build_json(false);
-        serde_json::to_vec_pretty(&json).unwrap_or_else(|e| unreachable!("serde_json::Value serialize failed: {e}"))
+        self.to_json()
     }
 
     /// Write JSON + copy PNG to `dir`, overwriting any existing files.
@@ -131,7 +122,7 @@ impl SpriteEditorState {
 
     // ─── Private helpers ───────────────────────────────────────────────────
 
-    fn build_json(&self, include_tag_map: bool) -> serde_json::Value {
+    fn build_json(&self) -> serde_json::Value {
         let total = (self.rows * self.cols) as usize;
         let frames: Vec<serde_json::Value> = (0..total)
             .map(|i| {
@@ -156,21 +147,10 @@ impl SpriteEditorState {
             })
             .collect();
 
-        if include_tag_map {
-            let mut map = serde_json::Map::new();
-            for (key, val) in tag_map_populated_entries(&self.tag_map) {
-                map.insert(key, val.into());
-            }
-            serde_json::json!({
-                "frames": frames,
-                "meta": {"frameTags": frame_tags, "myPetTagMap": map},
-            })
-        } else {
-            serde_json::json!({
-                "frames": frames,
-                "meta": {"frameTags": frame_tags},
-            })
-        }
+        serde_json::json!({
+            "frames": frames,
+            "meta": {"frameTags": frame_tags},
+        })
     }
 }
 
@@ -185,19 +165,3 @@ fn direction_to_str(d: &TagDirection) -> &'static str {
     }
 }
 
-/// Returns only populated (non-empty) entries from the tag map.
-fn tag_map_populated_entries(tm: &AnimTagMap) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    if !tm.idle.is_empty() { out.push(("idle".into(), tm.idle.clone())); }
-    if !tm.walk.is_empty() { out.push(("walk".into(), tm.walk.clone())); }
-    if let Some(v) = &tm.run     { out.push(("run".into(),     v.clone())); }
-    if let Some(v) = &tm.sit     { out.push(("sit".into(),     v.clone())); }
-    if let Some(v) = &tm.sleep   { out.push(("sleep".into(),   v.clone())); }
-    if let Some(v) = &tm.wake    { out.push(("wake".into(),    v.clone())); }
-    if let Some(v) = &tm.grabbed { out.push(("grabbed".into(), v.clone())); }
-    if let Some(v) = &tm.petted  { out.push(("petted".into(),  v.clone())); }
-    if let Some(v) = &tm.react   { out.push(("react".into(),   v.clone())); }
-    if let Some(v) = &tm.fall    { out.push(("fall".into(),    v.clone())); }
-    if let Some(v) = &tm.thrown  { out.push(("thrown".into(),  v.clone())); }
-    out
-}

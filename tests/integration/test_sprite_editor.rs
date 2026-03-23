@@ -42,8 +42,6 @@ fn to_json_produces_valid_aseprite() {
         flip_h: false,
         color: 0,
     });
-    state.tag_map.idle = "idle".into();
-    state.tag_map.walk = "walk".into();
 
     let json = state.to_json();
     // Must parse via from_json_and_image without error
@@ -52,31 +50,33 @@ fn to_json_produces_valid_aseprite() {
         .into_rgba8();
     my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image)
         .expect("to_json must produce valid Aseprite JSON");
-    // Must also embed myPetTagMap in JSON
+    // Must contain frameTags in JSON
     let parsed: serde_json::Value = serde_json::from_slice(&json).unwrap();
-    let tm = parsed.pointer("/meta/myPetTagMap").expect("to_json must embed myPetTagMap");
-    assert_eq!(tm["idle"], "idle");
-    assert_eq!(tm["walk"], "walk");
+    assert!(parsed.pointer("/meta/frameTags").is_some(), "JSON must contain frameTags");
+    // Must NOT contain myPetTagMap (removed in SM-based approach)
+    let text = std::str::from_utf8(&json).unwrap();
+    assert!(!text.contains("myPetTagMap"), "JSON must not contain legacy myPetTagMap");
 }
 
 #[test]
-fn clean_json_strips_tag_map() {
+fn clean_json_is_identical_to_json() {
     let (mut state, _tmp) = make_state();
     state.rows = 1;
     state.cols = 2;
-    state.tag_map.idle = "idle".into();
-    state.tag_map.walk = "walk".into();
 
-    let json = state.to_clean_json();
+    let json = state.to_json();
+    let clean_json = state.to_clean_json();
     // Must parse cleanly
     let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
         .unwrap()
         .into_rgba8();
-    my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image)
+    my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&clean_json, image)
         .expect("to_clean_json must produce valid Aseprite JSON");
     // Must NOT contain myPetTagMap
-    let text = std::str::from_utf8(&json).unwrap();
+    let text = std::str::from_utf8(&clean_json).unwrap();
     assert!(!text.contains("myPetTagMap"), "clean export must not contain myPetTagMap");
+    // Both methods should produce the same result
+    assert_eq!(json, clean_json, "to_json and to_clean_json must be identical");
 }
 
 #[test]
@@ -93,8 +93,6 @@ fn direction_round_trip() {
         state.rows = 1;
         state.cols = 2;
         state.tags.push(EditorTag { name: "t".into(), from: 0, to: 1, direction: dir.clone(), flip_h: false, color: 0 });
-        state.tag_map.idle = "idle".into();
-        state.tag_map.walk = "walk".into();
         let json = state.to_json();
         let text = std::str::from_utf8(&json).unwrap();
         assert!(text.contains(expected_str),
@@ -109,15 +107,15 @@ fn direction_round_trip() {
 }
 
 #[test]
-fn is_saveable_requires_idle_and_walk() {
+fn is_saveable_requires_at_least_one_tag() {
     let (mut state, _tmp) = make_state();
-    assert!(!state.is_saveable(), "empty idle+walk → not saveable");
-    state.tag_map.idle = "idle".into();
-    assert!(!state.is_saveable(), "missing walk → not saveable");
-    state.tag_map.walk = "walk".into();
-    assert!(state.is_saveable(), "both set → saveable");
-    state.tag_map.idle = String::new();
-    assert!(!state.is_saveable(), "empty idle → not saveable");
+    assert!(!state.is_saveable(), "no tags → not saveable");
+    state.tags.push(EditorTag {
+        name: "idle".into(),
+        from: 0, to: 0,
+        direction: TagDirection::Forward, flip_h: false, color: 0,
+    });
+    assert!(state.is_saveable(), "one tag → saveable");
 }
 
 #[test]
@@ -145,8 +143,6 @@ fn save_to_dir_writes_json_and_png() {
         name: "walk".into(), from: 0, to: 1,
         direction: TagDirection::Forward, flip_h: true, color: 1,
     });
-    state.tag_map.idle = "idle".into();
-    state.tag_map.walk = "walk".into();
 
     state.save_to_dir(tmp.path()).expect("save_to_dir must succeed");
 
@@ -155,12 +151,13 @@ fn save_to_dir_writes_json_and_png() {
     assert!(json_path.exists(), "JSON must be written");
     assert!(png_path.exists(), "PNG must be copied");
 
-    // Reload and verify myPetTagMap is present in saved JSON
+    // Reload and verify the JSON is valid
     let json_bytes = std::fs::read(&json_path).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
-    let tm = parsed.pointer("/meta/myPetTagMap").expect("saved JSON must contain myPetTagMap");
-    assert_eq!(tm["idle"], "idle");
-    assert_eq!(tm["walk"], "walk");
+    assert!(parsed.pointer("/meta/frameTags").is_some(), "saved JSON must contain frameTags");
+    // Must NOT contain legacy myPetTagMap
+    let text = std::str::from_utf8(&json_bytes).unwrap();
+    assert!(!text.contains("myPetTagMap"), "saved JSON must not contain legacy myPetTagMap");
 }
 
 #[test]
@@ -175,8 +172,6 @@ fn flip_h_true_round_trips_through_json() {
         flip_h: true,
         color: 0,
     });
-    state.tag_map.idle = "idle".into();
-    state.tag_map.walk = "walk".into();
 
     let json = state.to_json();
     // "flipH" must appear in the serialised JSON
@@ -203,8 +198,6 @@ fn flip_h_false_omits_field_from_json() {
         flip_h: false,
         color: 0,
     });
-    state.tag_map.idle = "idle".into();
-    state.tag_map.walk = "walk".into();
 
     let json = state.to_json();
     let text = std::str::from_utf8(&json).unwrap();

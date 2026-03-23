@@ -22,4 +22,8 @@ pub enum AppEvent {
     PetDragEnd { pet_id: String, velocity: (f32, f32) },
     /// Quit the application.
     Quit,
+    /// A state machine file was imported/added.
+    SMImported { name: String },
+    /// The active state machine for a pet was changed.
+    SMChanged { pet_id: String, sm_name: String },
 }
