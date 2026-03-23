@@ -42,6 +42,8 @@ pub struct SpriteEditorState {
     pub cols: u32,
     pub tags: Vec<EditorTag>,
     pub selected_tag: Option<usize>,
+    /// smMappings: sm_name → (state_name → tag_name). Written back to JSON on save.
+    pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 // ─── impl SpriteEditorState ───────────────────────────────────────────────────
@@ -58,6 +60,7 @@ impl SpriteEditorState {
             cols: 1,
             tags: Vec::new(),
             selected_tag: None,
+            sm_mappings: std::collections::HashMap::new(),
         }
     }
 
@@ -147,9 +150,29 @@ impl SpriteEditorState {
             })
             .collect();
 
+        // Build smMappings object if any mappings exist
+        let sm_mappings_json: serde_json::Value = if self.sm_mappings.is_empty() {
+            serde_json::Value::Null
+        } else {
+            let mut obj = serde_json::Map::new();
+            for (sm_name, mapping) in &self.sm_mappings {
+                let mut inner = serde_json::Map::new();
+                for (state, tag) in mapping {
+                    inner.insert(state.clone(), serde_json::Value::String(tag.clone()));
+                }
+                obj.insert(sm_name.clone(), serde_json::Value::Object(inner));
+            }
+            serde_json::Value::Object(obj)
+        };
+
+        let mut meta = serde_json::json!({"frameTags": frame_tags});
+        if !sm_mappings_json.is_null() {
+            meta["smMappings"] = sm_mappings_json;
+        }
+
         serde_json::json!({
             "frames": frames,
-            "meta": {"frameTags": frame_tags},
+            "meta": meta,
         })
     }
 }

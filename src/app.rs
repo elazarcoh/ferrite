@@ -62,9 +62,14 @@ impl PetInstance {
             let sm = crate::sprite::sm_runner::load_default_sm();
             SMRunner::new(sm, cfg.walk_speed)
         } else {
-            // For now, fallback to default for any non-embedded path
-            // TODO(Plan-2): load from disk path
-            let sm = crate::sprite::sm_runner::load_default_sm();
+            // Try to load from the SM gallery by name
+            let config_dir = config::config_path()
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+            let sm = gallery.get(&cfg.state_machine)
+                .unwrap_or_else(|| crate::sprite::sm_runner::load_default_sm());
             SMRunner::new(sm, cfg.walk_speed)
         };
 
@@ -301,6 +306,7 @@ impl App {
         state.rows = rows;
         state.cols = cols;
         state.tags = tags;
+        state.sm_mappings = sheet.sm_mappings;
         Ok(state)
     }
 

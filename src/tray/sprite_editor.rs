@@ -23,11 +23,14 @@ pub struct SpriteEditorViewport {
     tag_drag_start: Option<usize>, // frame index where a tag-range drag began
     export_bundle_sm: Option<String>,   // selected SM name for export
     show_export_bundle_dialog: bool,    // whether to show the SM picker modal
+    selected_sm_name: Option<String>,   // SM selected in the coverage panel combobox
+    sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 impl SpriteEditorViewport {
     pub fn new(state: SpriteEditorState) -> Self {
         let tag = state.tags.first().map(|t| t.name.clone()).unwrap_or_default();
+        let sm_mappings = state.sm_mappings.clone();
         Self {
             state,
             texture: None,
@@ -44,6 +47,8 @@ impl SpriteEditorViewport {
             tag_drag_start: None,
             export_bundle_sm: None,
             show_export_bundle_dialog: false,
+            selected_sm_name: None,
+            sm_mappings,
         }
     }
 
@@ -173,6 +178,8 @@ pub fn open_sprite_editor_viewport(
                     }
                     let save_btn = egui::Button::new("Save");
                     if ui.add_enabled(s.dirty, save_btn).clicked() {
+                        // Sync sm_mappings from viewport into editor state before saving
+                        s.state.sm_mappings = s.sm_mappings.clone();
                         let save_dir = s.state.png_path.parent().map(|p| p.to_path_buf());
                         if let Some(dir) = save_dir {
                             if let Err(e) = s.state.save_to_dir(&dir) {
@@ -344,8 +351,81 @@ pub fn open_sprite_editor_viewport(
                 ui.data_mut(|d| d.insert_temp(id, new_tag_name));
 
                 ui.separator();
-                // TODO(Task-13): SM mapping UI replaces tag_map_ui
-                ui.label("SM selector (TODO)");
+
+                // SM selector combobox
+                {
+                    let config_dir = crate::config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    let sm_names: Vec<String> = gallery.valid_names().into_iter().map(|n| n.to_string()).collect();
+
+                    let selected_text = s.selected_sm_name.clone().unwrap_or_else(|| "(none)".to_string());
+                    ui.horizontal(|ui| {
+                        ui.label("SM:");
+                        egui::ComboBox::from_id_salt("sm_selector_editor")
+                            .selected_text(&selected_text)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(s.selected_sm_name.is_none(), "(none)").clicked() {
+                                    s.selected_sm_name = None;
+                                }
+                                for name in &sm_names {
+                                    let is_selected = s.selected_sm_name.as_deref() == Some(name.as_str());
+                                    if ui.selectable_label(is_selected, name).clicked() {
+                                        s.selected_sm_name = Some(name.clone());
+                                    }
+                                }
+                            });
+                    });
+
+                    // SM coverage panel — shown when an SM is selected
+                    if let Some(sm_name) = s.selected_sm_name.clone() {
+                        if let Some(sm) = gallery.get(&sm_name) {
+                            ui.separator();
+                            ui.label(egui::RichText::new("SM Coverage").strong());
+
+                            // Collect current tag names for auto-match
+                            let tag_names: Vec<String> = s.state.tags.iter().map(|t| t.name.clone()).collect();
+
+                            for (state_name, state_def) in &sm.states {
+                                // Resolve: explicit alias in sm_mappings, then auto-match
+                                let resolved = s.sm_mappings
+                                    .get(&sm_name)
+                                    .and_then(|m| m.get(state_name.as_str()))
+                                    .map(|tag| tag.as_str())
+                                    .or_else(|| {
+                                        if tag_names.iter().any(|t| t == state_name) {
+                                            Some(state_name.as_str())
+                                        } else {
+                                            None
+                                        }
+                                    });
+
+                                let (icon, label, color) = match resolved {
+                                    Some(tag) if tag == state_name.as_str() => {
+                                        ("✓", format!("auto  {}", state_name), egui::Color32::GREEN)
+                                    }
+                                    Some(tag) => {
+                                        ("✓", format!("alias  {} → {}", state_name, tag), egui::Color32::GREEN)
+                                    }
+                                    None => {
+                                        if state_def.required {
+                                            ("✗", format!("REQUIRED  {}", state_name), egui::Color32::RED)
+                                        } else {
+                                            ("○", format!("optional  {}", state_name), egui::Color32::YELLOW)
+                                        }
+                                    }
+                                };
+
+                                ui.horizontal(|ui| {
+                                    ui.colored_label(color, icon);
+                                    ui.label(label);
+                                });
+                            }
+                        }
+                    }
+                }
             }); // end ScrollArea
         });
 
