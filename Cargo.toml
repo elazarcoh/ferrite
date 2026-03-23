@@ -43,6 +43,7 @@ eframe = { version = "0.33", default-features = false, features = [
 # so no backends compile in unless we force them here via feature unification.
 wgpu = { version = "27", features = ["dx12", "vulkan"] }
 rfd = "0.17"
+zip = "2"
 
 [dev-dependencies]
 tempfile = "3"
