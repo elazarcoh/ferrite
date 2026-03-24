@@ -715,6 +715,7 @@ impl eframe::App for App {
                         }
                     }
                 }
+                let _ = self.tx.send(AppEvent::SMCollectionChanged);
             }
 
             if sm_editor_should_close {

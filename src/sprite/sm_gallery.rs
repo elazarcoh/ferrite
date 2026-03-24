@@ -130,6 +130,15 @@ impl SmGallery {
         })
     }
 
+    /// Get compile errors for a draft SM by name.
+    pub fn draft_errors(&self, name: &str) -> &[CompileError] {
+        self.entries.iter().find_map(|e| {
+            if let SmEntry::Draft { name: n, errors, .. } = e {
+                if n == name { Some(errors.as_slice()) } else { None }
+            } else { None }
+        }).unwrap_or(&[])
+    }
+
     /// Check for name collision with existing entries.
     pub fn name_exists(&self, name: &str) -> bool {
         self.entries.iter().any(|e| e.name() == name)

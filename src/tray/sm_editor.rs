@@ -174,6 +174,8 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                         vp.editor_text = src.clone();
                         vp.selected_sm = Some(name.clone());
                         vp.is_dirty = false;
+                        vp.save_errors = vec![];
+                        vp.has_saved_once = false;
                     }
                 }
 
@@ -189,6 +191,8 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                         vp.editor_text = src.clone();
                         vp.selected_sm = Some(name.clone());
                         vp.is_dirty = false;
+                        vp.save_errors = vec![];
+                        vp.has_saved_once = false;
                     }
                 }
 
@@ -245,7 +249,9 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                         ];
                     }
                     Ok(name) => {
-                        let gallery = vp.cached_gallery.as_mut().unwrap();
+                        let Some(gallery) = vp.cached_gallery.as_mut() else {
+                            return; // should not happen — lazy-load runs before panels
+                        };
                         match gallery.save(&name, &editor_text) {
                             Err(io_err) => {
                                 vp.save_errors = vec![
@@ -256,30 +262,19 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                                 ];
                             }
                             Ok(is_valid) => {
-                                // c) Update viewport state
-                                vp.selected_sm = Some(name.clone());
-                                vp.is_dirty = false;
-                                // d) Collect errors for bottom panel
-                                let save_errors = if !is_valid {
-                                    match toml::from_str::<crate::sprite::sm_format::SmFile>(
-                                        &editor_text,
-                                    ) {
-                                        Ok(sm_file) => {
-                                            match crate::sprite::sm_compiler::compile(&sm_file) {
-                                                Err(errs) => errs,
-                                                Ok(_) => vec![],
-                                            }
-                                        }
-                                        Err(e) => vec![
-                                            crate::sprite::sm_compiler::CompileError::ConditionParseError(
-                                                "(parse)".to_string(),
-                                                e.to_string(),
-                                            ),
-                                        ],
-                                    }
+                                // d) Collect errors for bottom panel (read from gallery entry)
+                                // Must be done while gallery borrow is active, before other vp mutations.
+                                let save_errors: Vec<crate::sprite::sm_compiler::CompileError> = if !is_valid {
+                                    // Read errors from the gallery entry that was just written
+                                    gallery.draft_errors(&name).to_vec()
                                 } else {
                                     vec![]
                                 };
+                                // Drop gallery borrow before mutating other vp fields
+                                drop(gallery);
+                                // c) Update viewport state
+                                vp.selected_sm = Some(name.clone());
+                                vp.is_dirty = false;
                                 vp.save_errors = save_errors;
                                 // e) Signal app thread to hot-reload if valid
                                 if is_valid {
@@ -295,11 +290,13 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 vp.has_saved_once = true;
             }
             ui.add_space(4.0);
-            // Status bar
-            if vp.from_app.validation_errors.is_empty() {
+            // Status bar (reflects last save attempt)
+            if !vp.has_saved_once {
+                ui.colored_label(egui::Color32::GRAY, "Not saved yet");
+            } else if vp.save_errors.is_empty() {
                 ui.colored_label(egui::Color32::GREEN, "✅ Valid");
             } else {
-                let n = vp.from_app.validation_errors.len();
+                let n = vp.save_errors.len();
                 ui.colored_label(egui::Color32::RED, format!("❌ {} error(s)", n));
             }
             ui.add_space(4.0);
