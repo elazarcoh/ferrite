@@ -56,9 +56,10 @@ pub struct SMRunner {
 
 impl SMRunner {
     pub fn new(sm: Arc<CompiledSM>, walk_speed: f32) -> Self {
+        let initial_state = sm.default_fallback.clone();
         let mut runner = Self {
             sm: sm.clone(),
-            active: ActiveState::Named("idle".to_string()),
+            active: ActiveState::Named(initial_state.clone()),
             previous_named: None,
             state_time_ms: 0,
             step_index: 0,
@@ -69,13 +70,13 @@ impl SMRunner {
             next_transition_ms: 0,
             last_vars: ConditionVars::default(),
             transition_log: Vec::new(),
-            current_tag: "idle".to_string(),
+            current_tag: initial_state.clone(),
             force_state: None,
             release_force: false,
             step_mode: false,
             step_advance: false,
         };
-        runner.enter_state("idle");
+        runner.enter_state(&initial_state);
         runner
     }
 

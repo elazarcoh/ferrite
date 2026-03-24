@@ -573,13 +573,16 @@ impl eframe::App for App {
                 if let Ok(mut s) = state.lock() {
                     s.dark_mode = self.dark_mode;
                 }
-                open_config_viewport(ctx, state.clone());
-                // Read dark_mode_out back.
+                // Read dark_mode_out and should_close before deciding whether to open.
                 if let Ok(mut s) = state.lock() {
                     if let Some(new_dark) = s.dark_mode_out.take() {
                         self.dark_mode = new_dark;
                     }
                     config_should_close = s.should_close;
+                }
+                // Only keep the viewport open if not closing.
+                if !config_should_close {
+                    open_config_viewport(ctx, state.clone());
                 }
             }
             if config_should_close {
@@ -618,14 +621,17 @@ impl eframe::App for App {
                 if let Ok(mut s) = state.lock() {
                     s.dark_mode = self.dark_mode;
                 }
-                open_sprite_editor_viewport(ctx, state.clone());
-                // Read dark_mode_out and saved_json_path back.
+                // Read dark_mode_out and saved_json_path before deciding whether to open.
                 if let Ok(mut s) = state.lock() {
                     if let Some(new_dark) = s.dark_mode_out.take() {
                         self.dark_mode = new_dark;
                     }
                     editor_should_close = s.should_close;
                     saved_json_path = s.saved_json_path.take();
+                }
+                // Only keep the viewport open if not closing.
+                if !editor_should_close {
+                    open_sprite_editor_viewport(ctx, state.clone());
                 }
             }
             // Reload sheets outside the sprite_editor_state borrow so &mut self is free.
@@ -692,10 +698,11 @@ impl eframe::App for App {
                     }
                 }
 
-            // Open (or keep open) the SM editor deferred viewport.
-            if let Some(ref viewport) = self.sm_editor {
-                open_sm_editor_viewport(ctx, viewport.clone());
-            }
+            // Open (or keep open) the SM editor deferred viewport — but NOT when closing.
+            if !sm_editor_should_close
+                && let Some(ref viewport) = self.sm_editor {
+                    open_sm_editor_viewport(ctx, viewport.clone());
+                }
 
             // Handle saved SM (hot-reload) outside the viewport borrow
             if let Some(sm_name) = sm_saved_name {

@@ -51,6 +51,7 @@ pub struct SmEditorViewport {
     pub cached_gallery: Option<SmGallery>,
     pub save_errors: Vec<crate::sprite::sm_compiler::CompileError>,
     pub has_saved_once: bool,
+    pub pending_delete: Option<String>,
 }
 
 const MINIMAL_TEMPLATE: &str = r#"[meta]
@@ -58,10 +59,6 @@ name = "My SM"
 version = "1.0"
 engine_min_version = "1.0"
 default_fallback = "idle"
-
-[interrupts]
-grabbed = { goto = "grabbed" }
-petted  = { goto = "petted" }
 
 [states.idle]
 required = true
@@ -76,21 +73,6 @@ action   = "walk"
 dir      = "random"
 distance = "200px..600px"
 transitions = [{ goto = "idle" }]
-
-[states.grabbed]
-required = true
-action   = "grabbed"
-transitions = []
-
-[states.fall]
-required = true
-action   = "fall"
-transitions = [{ goto = "idle", condition = "on_surface" }]
-
-[states.thrown]
-required = true
-action   = "thrown"
-transitions = [{ goto = "fall", condition = "on_surface" }]
 "#;
 
 impl SmEditorViewport {
@@ -119,6 +101,7 @@ impl SmEditorViewport {
             cached_gallery: None,
             save_errors: Vec::new(),
             has_saved_once: false,
+            pending_delete: None,
         }))
     }
 }
@@ -132,8 +115,9 @@ fn draw_state_graph(
     use crate::sprite::sm_compiler::{StateKind, Goto};
     use std::collections::HashMap;
 
+    let graph_height = (ui.available_height() - 150.0).max(200.0);
     let (response, painter) = ui.allocate_painter(
-        ui.available_size(),
+        egui::vec2(ui.available_width(), graph_height),
         egui::Sense::click_and_drag(),
     );
     let rect = response.rect;
@@ -277,13 +261,18 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 // Valid SMs
                 for (name, src) in &valid_entries {
                     let selected = vp.selected_sm.as_deref() == Some(name.as_str());
-                    if ui.selectable_label(selected, name.as_str()).clicked() && !selected {
-                        vp.editor_text = src.clone();
-                        vp.selected_sm = Some(name.clone());
-                        vp.is_dirty = false;
-                        vp.save_errors = vec![];
-                        vp.has_saved_once = false;
-                    }
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(selected, name.as_str()).clicked() && !selected {
+                            vp.editor_text = src.clone();
+                            vp.selected_sm = Some(name.clone());
+                            vp.is_dirty = false;
+                            vp.save_errors = vec![];
+                            vp.has_saved_once = false;
+                        }
+                        if ui.small_button("🗑").on_hover_text("Delete SM").clicked() {
+                            vp.pending_delete = Some(name.clone());
+                        }
+                    });
                 }
 
                 ui.separator();
@@ -293,14 +282,19 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
 
                 for (name, src) in &draft_entries {
                     let selected = vp.selected_sm.as_deref() == Some(name.as_str());
-                    let label = egui::RichText::new(name.as_str()).color(egui::Color32::GRAY);
-                    if ui.selectable_label(selected, label).clicked() && !selected {
-                        vp.editor_text = src.clone();
-                        vp.selected_sm = Some(name.clone());
-                        vp.is_dirty = false;
-                        vp.save_errors = vec![];
-                        vp.has_saved_once = false;
-                    }
+                    ui.horizontal(|ui| {
+                        let label = egui::RichText::new(name.as_str()).color(egui::Color32::GRAY);
+                        if ui.selectable_label(selected, label).clicked() && !selected {
+                            vp.editor_text = src.clone();
+                            vp.selected_sm = Some(name.clone());
+                            vp.is_dirty = false;
+                            vp.save_errors = vec![];
+                            vp.has_saved_once = false;
+                        }
+                        if ui.small_button("🗑").on_hover_text("Delete draft").clicked() {
+                            vp.pending_delete = Some(name.clone());
+                        }
+                    });
                 }
 
                 ui.separator();
@@ -374,50 +368,52 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                     ui.add_space(4.0);
                 }
 
-                let compiled_sm = vp.cached_gallery.as_ref()
-                    .and_then(|g| vp.selected_sm.as_deref().and_then(|name| g.get(name)));
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let compiled_sm = vp.cached_gallery.as_ref()
+                        .and_then(|g| vp.selected_sm.as_deref().and_then(|name| g.get(name)));
 
-                if let Some(sm) = compiled_sm {
-                    let active = vp.from_app.active_state.as_deref();
-                    let mut force_out: Option<String> = None;
-                    draw_state_graph(ui, &sm, active, &mut force_out);
-                    if let Some(state_name) = force_out {
-                        vp.from_ui.force_state = Some(state_name);
-                    }
-                } else {
-                    ui.label("No valid SM selected.");
-                }
-
-                ui.separator();
-
-                // Step mode controls
-                ui.checkbox(&mut vp.from_ui.step_mode, "Step mode")
-                    .on_hover_text("In step mode, transitions are paused until advanced. Interrupts (grab, pet) still fire.");
-                if vp.from_ui.step_mode
-                    && ui.button("→ Next transition").clicked() {
-                        vp.from_ui.step_advance = true;
+                    if let Some(sm) = compiled_sm {
+                        let active = vp.from_app.active_state.as_deref();
+                        let mut force_out: Option<String> = None;
+                        draw_state_graph(ui, &sm, active, &mut force_out);
+                        if let Some(state_name) = force_out {
+                            vp.from_ui.force_state = Some(state_name);
+                        }
+                    } else {
+                        ui.label("No valid SM selected.");
                     }
 
-                ui.separator();
+                    ui.separator();
 
-                egui::CollapsingHeader::new("🔍 Variables").show(ui, |ui| {
-                    let v = &vp.from_app.var_snapshot;
-                    egui::Grid::new("vars").striped(true).show(ui, |ui| {
-                        ui.label("cursor_dist"); ui.label(format!("{:.0}px", v.cursor_dist)); ui.end_row();
-                        ui.label("state_time");  ui.label(format!("{:.1}s", v.state_time_ms as f32 / 1000.0)); ui.end_row();
-                        ui.label("on_surface");  ui.label(if v.on_surface { "true" } else { "false" }); ui.end_row();
-                        ui.label("near_edge");   ui.label(if v.near_edge { "true" } else { "false" }); ui.end_row();
-                        ui.label("pet.x/y");     ui.label(format!("{:.0}, {:.0}", v.pet_x, v.pet_y)); ui.end_row();
-                        ui.label("pet.vx/vy/v"); ui.label(format!("{:.0}, {:.0}, {:.0}", v.pet_vx, v.pet_vy, v.pet_v)); ui.end_row();
-                        ui.label("time.hour");   ui.label(format!("{}", v.hour)); ui.end_row();
-                        ui.label("focused_app"); ui.label(&v.focused_app); ui.end_row();
+                    // Step mode controls
+                    ui.checkbox(&mut vp.from_ui.step_mode, "Step mode")
+                        .on_hover_text("In step mode, transitions are paused until advanced. Interrupts (grab, pet) still fire.");
+                    if vp.from_ui.step_mode
+                        && ui.button("→ Next transition").clicked() {
+                            vp.from_ui.step_advance = true;
+                        }
+
+                    ui.separator();
+
+                    egui::CollapsingHeader::new("🔍 Variables").show(ui, |ui| {
+                        let v = &vp.from_app.var_snapshot;
+                        egui::Grid::new("vars").striped(true).show(ui, |ui| {
+                            ui.label("cursor_dist"); ui.label(format!("{:.0}px", v.cursor_dist)); ui.end_row();
+                            ui.label("state_time");  ui.label(format!("{:.1}s", v.state_time_ms as f32 / 1000.0)); ui.end_row();
+                            ui.label("on_surface");  ui.label(if v.on_surface { "true" } else { "false" }); ui.end_row();
+                            ui.label("near_edge");   ui.label(if v.near_edge { "true" } else { "false" }); ui.end_row();
+                            ui.label("pet.x/y");     ui.label(format!("{:.0}, {:.0}", v.pet_x, v.pet_y)); ui.end_row();
+                            ui.label("pet.vx/vy/v"); ui.label(format!("{:.0}, {:.0}, {:.0}", v.pet_vx, v.pet_vy, v.pet_v)); ui.end_row();
+                            ui.label("time.hour");   ui.label(format!("{}", v.hour)); ui.end_row();
+                            ui.label("focused_app"); ui.label(&v.focused_app); ui.end_row();
+                        });
                     });
-                });
 
-                egui::CollapsingHeader::new("📋 Transitions").default_open(true).show(ui, |ui| {
-                    for entry in vp.from_app.transition_log.iter().rev() {
-                        ui.label(format!("{} → {}  ({})", entry.from_state, entry.to_state, entry.reason));
-                    }
+                    egui::CollapsingHeader::new("📋 Transitions").default_open(true).show(ui, |ui| {
+                        for entry in vp.from_app.transition_log.iter().rev() {
+                            ui.label(format!("{} → {}  ({})", entry.from_state, entry.to_state, entry.reason));
+                        }
+                    });
                 });
             });
 
@@ -438,10 +434,13 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 }
             });
 
-        // ── Central panel: save button + text editor placeholder ────────────
+        // ── Central panel: save button + text editor ────────────────────────
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Keyboard shortcut: Ctrl+S to save
+            let ctrl_s = ctx.input(|i| i.key_pressed(egui::Key::S) && i.modifiers.command_only());
+
             let save_label = if vp.is_dirty { "💾 Save*" } else { "💾 Save" };
-            if ui.button(save_label).clicked() {
+            if ui.button(save_label).clicked() || ctrl_s {
                 let editor_text = vp.editor_text.clone();
                 // a) Extract SM name from TOML
                 let name_result: Result<String, String> =
@@ -515,15 +514,45 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 ui.colored_label(egui::Color32::RED, format!("❌ {} error(s)", n));
             }
             ui.add_space(4.0);
-            // Monospace multiline text editor (20 rows fits a typical 1080p window at initial size)
+
+            // Syntax-highlighted TOML editor that fills all remaining height
+            let theme = egui_extras::syntax_highlighting::CodeTheme::from_memory(
+                ui.ctx(), ui.style()
+            );
+            let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+                let string = buf.as_str();
+                let mut layout_job = egui_extras::syntax_highlighting::highlight(
+                    ui.ctx(), ui.style(), &theme, string, "toml"
+                );
+                layout_job.wrap.max_width = wrap_width;
+                ui.painter().layout_job(layout_job)
+            };
+
             let response = egui::TextEdit::multiline(&mut vp.editor_text)
                 .font(egui::TextStyle::Monospace)
                 .desired_width(f32::INFINITY)
-                .desired_rows(20)
+                .desired_rows(1)
+                .min_size(egui::vec2(0.0, ui.available_height()))
+                .layouter(&mut layouter)
                 .show(ui);
             if response.response.changed() {
                 vp.is_dirty = true;
             }
         });
+
+        // Handle pending deletion — done after panels to avoid borrow conflicts
+        if let Some(name) = vp.pending_delete.take()
+            && let Some(gallery) = vp.cached_gallery.as_mut() {
+                let _ = gallery.delete(&name);
+                // Reload gallery from disk
+                let config_dir = vp.config_dir.clone();
+                vp.cached_gallery = Some(SmGallery::load(&config_dir));
+                // Clear editor if deleted SM was selected
+                if vp.selected_sm.as_deref() == Some(name.as_str()) {
+                    vp.selected_sm = None;
+                    vp.editor_text = String::new();
+                    vp.is_dirty = false;
+                }
+            }
     });
 }

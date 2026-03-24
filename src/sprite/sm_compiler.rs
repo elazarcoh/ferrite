@@ -80,12 +80,7 @@ pub fn validate(sm: &SmFile) -> Vec<CompileError> {
         errors.push(CompileError::InvalidDefaultFallback(sm.meta.default_fallback.clone()));
     }
 
-    // 4. Engine primitives: grabbed, fall, thrown must all be present (as states)
-    for prim in &["grabbed", "fall", "thrown"] {
-        if !sm.states.contains_key(*prim) {
-            errors.push(CompileError::MissingEnginePrimitive(prim.to_string()));
-        }
-    }
+    // 4. (Engine primitives check removed — grabbed/fall/thrown are no longer required)
 
     // 5. All state names for reference
     let all_state_names: HashSet<&str> = sm.states.keys().map(|s| s.as_str()).collect();
@@ -491,7 +486,9 @@ action = "idle"
     }
 
     #[test]
-    fn missing_engine_primitive_error() {
+    fn sm_without_engine_primitives_is_valid() {
+        // Engine primitives (grabbed/fall/thrown) are no longer required —
+        // a minimal SM with just an idle state should compile successfully.
         let toml_str = r#"
 [meta]
 name = "T"
@@ -505,7 +502,7 @@ action = "idle"
 "#;
         let sm: crate::sprite::sm_format::SmFile = toml::from_str(toml_str).unwrap();
         let errs = validate(&sm);
-        assert!(errs.iter().any(|e| matches!(e, CompileError::MissingEnginePrimitive(_))));
+        assert!(errs.is_empty(), "expected no errors, got: {:?}", errs);
     }
 
     #[test]
