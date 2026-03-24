@@ -317,6 +317,45 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                     vp.selected_sm = None;
                     vp.is_dirty = true;
                 }
+                if ui.button("📂 Import .petstate").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Pet State Machine", &["petstate"])
+                        .pick_file()
+                    {
+                        if let Ok(source) = std::fs::read_to_string(&path) {
+                            vp.editor_text = source;
+                            vp.is_dirty = true;
+                            vp.selected_sm = None;
+                            vp.save_errors = vec![];
+                            vp.has_saved_once = false;
+                        }
+                    }
+                }
+                if ui.button("📦 Import .petbundle").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Pet Bundle", &["petbundle"])
+                        .pick_file()
+                    {
+                        match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| crate::bundle::import(&bytes)) {
+                            Ok(contents) => {
+                                if let Some(sm_source) = contents.sm_source {
+                                    vp.editor_text = sm_source;
+                                    vp.is_dirty = true;
+                                    vp.selected_sm = None;
+                                    vp.save_errors = vec![];
+                                    vp.has_saved_once = false;
+                                }
+                            }
+                            Err(e) => {
+                                vp.save_errors = vec![crate::sprite::sm_compiler::CompileError::ConditionParseError(
+                                    "(bundle import)".to_string(),
+                                    e.to_string(),
+                                )];
+                                vp.has_saved_once = true;
+                            }
+                        }
+                    }
+                }
             });
 
         // ── Right: state graph ──────────────────────────────────────────────
