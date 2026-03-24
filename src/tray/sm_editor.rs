@@ -134,7 +134,7 @@ fn draw_state_graph(
 
     let (response, painter) = ui.allocate_painter(
         ui.available_size(),
-        egui::Sense::hover(),
+        egui::Sense::click_and_drag(),
     );
     let rect = response.rect;
 
