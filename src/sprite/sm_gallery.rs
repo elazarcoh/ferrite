@@ -184,13 +184,15 @@ impl SmGallery {
 
     /// Delete a SM (valid or draft) by name. Removes the file and the in-memory entry.
     pub fn delete(&mut self, name: &str) -> std::io::Result<()> {
-        let entry_idx = self.entries.iter().position(|e| e.name() == name);
+        let entry_idx = self.entries.iter().position(|e| match e {
+            SmEntry::Valid { name: n, .. } | SmEntry::Draft { name: n, .. } => n == name,
+        });
         if let Some(idx) = entry_idx {
             let path = match &self.entries[idx] {
                 SmEntry::Valid { path, .. } => path.clone(),
                 SmEntry::Draft { path, .. } => path.clone(),
             };
-            let _ = std::fs::remove_file(&path); // ignore error if already missing
+            std::fs::remove_file(&path)?;  // propagate error
             self.entries.remove(idx);
         }
         Ok(())

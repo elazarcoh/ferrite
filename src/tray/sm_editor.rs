@@ -538,20 +538,96 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
             if response.response.changed() {
                 vp.is_dirty = true;
             }
+
+            // Ctrl+. — toggle line comment (TOML uses `#`)
+            let ctrl_period = ctx.input(|i| i.key_pressed(egui::Key::Period) && i.modifiers.command_only());
+            if ctrl_period
+                && let Some(cursor_range) = response.cursor_range {
+                    let start_char = cursor_range.primary.index
+                        .min(cursor_range.secondary.index);
+                    let end_char = cursor_range.primary.index
+                        .max(cursor_range.secondary.index);
+
+                    // Convert char indices to byte offsets
+                    let text = &vp.editor_text;
+                    let mut char_iter = text.char_indices();
+                    let start_byte = char_iter
+                        .nth(start_char)
+                        .map(|(b, _)| b)
+                        .unwrap_or(text.len());
+                    let end_byte = if end_char == start_char {
+                        start_byte
+                    } else {
+                        char_iter
+                            .nth(end_char - start_char - 1)
+                            .map(|(b, _)| b)
+                            .unwrap_or(text.len())
+                    };
+
+                    // Find the line range covering start_byte..end_byte
+                    let line_start = text[..start_byte].rfind('\n').map(|p| p + 1).unwrap_or(0);
+                    let line_end = text[end_byte..]
+                        .find('\n')
+                        .map(|p| end_byte + p)
+                        .unwrap_or(text.len());
+
+                    let affected = &text[line_start..line_end];
+
+                    // If ALL non-empty lines start with `#`, uncomment; otherwise comment
+                    let all_commented = affected
+                        .lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .all(|l| l.starts_with("# ") || l.starts_with('#'));
+
+                    let new_section: String = affected
+                        .lines()
+                        .map(|line| {
+                            if all_commented {
+                                if let Some(stripped) = line.strip_prefix("# ") {
+                                    stripped.to_string()
+                                } else if let Some(stripped) = line.strip_prefix('#') {
+                                    stripped.to_string()
+                                } else {
+                                    line.to_string()
+                                }
+                            } else {
+                                format!("# {}", line)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    let before = &text[..line_start];
+                    let after = &text[line_end..];
+                    vp.editor_text = if after.is_empty() {
+                        format!("{}{}", before, new_section)
+                    } else {
+                        format!("{}{}{}", before, new_section, after)
+                    };
+                    vp.is_dirty = true;
+                }
         });
 
         // Handle pending deletion — done after panels to avoid borrow conflicts
         if let Some(name) = vp.pending_delete.take()
             && let Some(gallery) = vp.cached_gallery.as_mut() {
-                let _ = gallery.delete(&name);
-                // Reload gallery from disk
-                let config_dir = vp.config_dir.clone();
-                vp.cached_gallery = Some(SmGallery::load(&config_dir));
-                // Clear editor if deleted SM was selected
-                if vp.selected_sm.as_deref() == Some(name.as_str()) {
-                    vp.selected_sm = None;
-                    vp.editor_text = String::new();
-                    vp.is_dirty = false;
+                match gallery.delete(&name) {
+                    Ok(()) => {
+                        let config_dir = vp.config_dir.clone();
+                        vp.cached_gallery = Some(SmGallery::load(&config_dir));
+                        if vp.selected_sm.as_deref() == Some(name.as_str()) {
+                            vp.selected_sm = None;
+                            vp.editor_text = String::new();
+                            vp.is_dirty = false;
+                        }
+                    }
+                    Err(e) => {
+                        vp.save_errors = vec![crate::sprite::sm_compiler::CompileError::ConditionParseError(
+                            "(delete)".to_string(),
+                            e.to_string(),
+                        )];
+                        vp.has_saved_once = true;
+                    }
                 }
             }
     });
