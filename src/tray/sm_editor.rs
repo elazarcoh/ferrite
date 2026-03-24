@@ -327,6 +327,19 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 ui.heading("State Graph");
                 ui.add_space(4.0);
 
+                // Force state banner
+                if vp.from_app.is_forced {
+                    let amber = egui::Color32::from_rgb(255, 180, 0);
+                    let state_name = vp.from_app.active_state.clone().unwrap_or_else(|| "?".to_string());
+                    ui.horizontal(|ui| {
+                        ui.colored_label(amber, format!("⏸ FORCED: {}", state_name));
+                        if ui.button("▶ Release").clicked() {
+                            vp.from_ui.release_force = true;
+                        }
+                    });
+                    ui.add_space(4.0);
+                }
+
                 let compiled_sm = vp.cached_gallery.as_ref()
                     .and_then(|g| vp.selected_sm.as_deref().and_then(|name| g.get(name)));
 
@@ -339,6 +352,17 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                     }
                 } else {
                     ui.label("No valid SM selected.");
+                }
+
+                ui.separator();
+
+                // Step mode controls
+                ui.checkbox(&mut vp.from_ui.step_mode, "Step mode")
+                    .on_hover_text("In step mode, transitions are paused until advanced. Interrupts (grab, pet) still fire.");
+                if vp.from_ui.step_mode {
+                    if ui.button("→ Next transition").clicked() {
+                        vp.from_ui.step_advance = true;
+                    }
                 }
             });
 
