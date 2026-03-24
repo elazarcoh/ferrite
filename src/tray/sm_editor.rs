@@ -364,6 +364,28 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                         vp.from_ui.step_advance = true;
                     }
                 }
+
+                ui.separator();
+
+                egui::CollapsingHeader::new("🔍 Variables").show(ui, |ui| {
+                    let v = &vp.from_app.var_snapshot;
+                    egui::Grid::new("vars").striped(true).show(ui, |ui| {
+                        ui.label("cursor_dist"); ui.label(format!("{:.0}px", v.cursor_dist)); ui.end_row();
+                        ui.label("state_time");  ui.label(format!("{:.1}s", v.state_time_ms as f32 / 1000.0)); ui.end_row();
+                        ui.label("on_surface");  ui.label(if v.on_surface { "true" } else { "false" }); ui.end_row();
+                        ui.label("near_edge");   ui.label(if v.near_edge { "true" } else { "false" }); ui.end_row();
+                        ui.label("pet.x/y");     ui.label(format!("{:.0}, {:.0}", v.pet_x, v.pet_y)); ui.end_row();
+                        ui.label("pet.vx/vy/v"); ui.label(format!("{:.0}, {:.0}, {:.0}", v.pet_vx, v.pet_vy, v.pet_v)); ui.end_row();
+                        ui.label("time.hour");   ui.label(format!("{}", v.hour)); ui.end_row();
+                        ui.label("focused_app"); ui.label(&v.focused_app); ui.end_row();
+                    });
+                });
+
+                egui::CollapsingHeader::new("📋 Transitions").default_open(true).show(ui, |ui| {
+                    for entry in vp.from_app.transition_log.iter().rev() {
+                        ui.label(format!("{} → {}  ({})", entry.from_state, entry.to_state, entry.reason));
+                    }
+                });
             });
 
         // ── Bottom error bar ────────────────────────────────────────────────
