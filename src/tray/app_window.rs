@@ -110,8 +110,8 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
 
         let tab = s.selected_tab;
         match tab {
-            AppTab::Config => render_config_tab(ctx, &mut *s),
-            AppTab::Sprites => render_sprites_tab(ctx, &mut *s),
+            AppTab::Config => render_config_tab(ctx, &mut s),
+            AppTab::Sprites => render_sprites_tab(ctx, &mut s),
             AppTab::Sm => render_sm_panel(ctx, &mut s.sm),
         }
 
@@ -120,19 +120,17 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
             s.dark_mode_out = Some(new_dark);
             s.dark_mode = new_dark;
         }
-        if let Some(ref mut ed) = s.sprite_editor {
-            if let Some(new_dark) = ed.dark_mode_out.take() {
+        if let Some(ref mut ed) = s.sprite_editor
+            && let Some(new_dark) = ed.dark_mode_out.take() {
                 s.dark_mode_out = Some(new_dark);
                 s.dark_mode = new_dark;
             }
-        }
 
         // Collect saved_json_path from sprite editor
-        if let Some(ref mut ed) = s.sprite_editor {
-            if let Some(p) = ed.saved_json_path.take() {
+        if let Some(ref mut ed) = s.sprite_editor
+            && let Some(p) = ed.saved_json_path.take() {
                 s.saved_json_path = Some(p);
             }
-        }
     });
 }
 
@@ -143,12 +141,11 @@ fn render_config_tab(ctx: &egui::Context, s: &mut AppWindowState) {
 fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
     // Poll pending PNG pick
     let mut picked_png: Option<std::path::PathBuf> = None;
-    if let Some(rx) = &s.pending_png_pick {
-        if let Ok(result) = rx.try_recv() {
+    if let Some(rx) = &s.pending_png_pick
+        && let Ok(result) = rx.try_recv() {
             picked_png = result;
             s.pending_png_pick = None;
         }
-    }
     if let Some(png_path) = picked_png {
         match load_editor_state_from_png(&png_path) {
             Ok(es) => {
@@ -204,8 +201,7 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
         });
 
     // Central area: sprite editor panels or placeholder
-    if s.sprite_editor.is_some() {
-        let ed = s.sprite_editor.as_mut().unwrap();
+    if let Some(ed) = &mut s.sprite_editor {
         render_sprite_editor_panel(ctx, ed);
     } else {
         egui::CentralPanel::default().show(ctx, |ui| {

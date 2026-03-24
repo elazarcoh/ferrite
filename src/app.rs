@@ -8,9 +8,7 @@ use crate::{
         sm_runner::SMRunner,
     },
     tray::{
-        config_window::{open_config_viewport, ConfigWindowState},
-        sm_editor::{open_sm_editor_viewport, SmEditorViewport},
-        sprite_editor::{open_sprite_editor_viewport, SpriteEditorViewport},
+        app_window::{open_app_window, AppWindowState},
         SystemTray,
     },
     window::pet_window::PetWindow,
@@ -223,9 +221,7 @@ pub struct App {
     _tray: SystemTray,
     _watcher: notify::RecommendedWatcher,
     last_tick_ms: std::time::Instant,
-    config_window_state: Option<Arc<Mutex<ConfigWindowState>>>,
-    sprite_editor_state: Option<Arc<Mutex<SpriteEditorViewport>>>,
-    sm_editor: Option<Arc<Mutex<SmEditorViewport>>>,
+    app_window: Option<Arc<Mutex<AppWindowState>>>,
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
     dark_mode: bool,
@@ -260,9 +256,7 @@ impl App {
             _tray: tray,
             _watcher: watcher,
             last_tick_ms: std::time::Instant::now(),
-            config_window_state: None,
-            sprite_editor_state: None,
-            sm_editor: None,
+            app_window: None,
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
@@ -273,56 +267,6 @@ impl App {
     /// Load a sprite sheet from a path string. Public for use by config window.
     pub fn load_sheet_for_config(path: &str) -> Result<SpriteSheet> {
         load_sheet(path)
-    }
-
-    /// Load a SpriteEditorState from an existing sheet JSON path.
-    fn load_editor_state_from_sheet(sheet_path: &str) -> Result<crate::sprite::editor_state::SpriteEditorState> {
-        use crate::sprite::editor_state::{EditorTag, SpriteEditorState};
-        let sheet = load_sheet(sheet_path)?;
-        let json_path = std::path::Path::new(sheet_path);
-        let png_path = json_path.with_extension("png");
-
-        // Infer grid from first frame size
-        let (cols, rows) = if let Some(f) = sheet.frames.first() {
-            if f.w > 0 && f.h > 0 {
-                if sheet.image.width() % f.w != 0 || sheet.image.height() % f.h != 0 {
-                    log::warn!("non-uniform sheet '{sheet_path}': image {}x{} not divisible by frame {}x{} — grid may be wrong",
-                        sheet.image.width(), sheet.image.height(), f.w, f.h);
-                }
-                (sheet.image.width() / f.w, sheet.image.height() / f.h)
-            } else {
-                (1, 1)
-            }
-        } else {
-            (1, 1)
-        };
-
-        let tags: Vec<EditorTag> = sheet.tags.iter().enumerate().map(|(i, t)| {
-            EditorTag {
-                name: t.name.clone(),
-                from: t.from,
-                to: t.to,
-                direction: t.direction.clone(),
-                flip_h: t.flip_h,
-                color: SpriteEditorState::assign_color(i),
-            }
-        }).collect();
-
-        let mut state = SpriteEditorState::new(png_path, sheet.image);
-        state.rows = rows;
-        state.cols = cols;
-        state.tags = tags;
-        state.sm_mappings = sheet.sm_mappings;
-        Ok(state)
-    }
-
-    /// Create a SpriteEditorState from a raw PNG file (new sprite sheet).
-    fn new_editor_state_from_png(png_path: &std::path::Path) -> Result<crate::sprite::editor_state::SpriteEditorState> {
-        let png = std::fs::read(png_path).context("read PNG")?;
-        let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
-            .context("decode PNG")?
-            .into_rgba8();
-        Ok(crate::sprite::editor_state::SpriteEditorState::new(png_path.to_path_buf(), image))
     }
 
     /// Reload the sheet for any live pet whose `sheet_path` resolves to `json_path`.
@@ -421,19 +365,23 @@ impl App {
             AppEvent::TrayRemovePet { pet_id } => {
                 self.pets.remove(&pet_id);
             }
-            AppEvent::TrayOpenConfig => {
-                if let Some(ref state) = self.config_window_state {
-                    let _ = state; // already open — focus handled via viewport command
+            AppEvent::TrayOpenWindow => {
+                if let Some(ref _w) = self.app_window {
                     ctx.send_viewport_cmd_to(
-                        egui::ViewportId::from_hash_of("config_window"),
+                        egui::ViewportId::from_hash_of("app_window"),
                         egui::ViewportCommand::Focus,
                     );
                 } else {
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
                     let current = config::load(&config::config_path()).unwrap_or_default();
-                    let state = Arc::new(Mutex::new(ConfigWindowState::new(current, self.tx.clone())));
-                    self.config_window_state = Some(state);
+                    let state = AppWindowState::new(current, self.tx.clone(), self.dark_mode, config_dir);
+                    self.app_window = Some(state);
                 }
             }
+            AppEvent::TrayOpenConfig | AppEvent::TrayOpenSmEditor => {}
             AppEvent::ConfigReloaded(new_cfg) => {
                 self.apply_config(new_cfg)?;
             }
@@ -485,21 +433,6 @@ impl App {
             }
             AppEvent::SMCollectionChanged => {
                 // TODO(Plan-3): refresh SM lists in open UI windows
-            }
-            AppEvent::TrayOpenSmEditor => {
-                if let Some(ref vp) = self.sm_editor {
-                    let _ = vp; // already open
-                    ctx.send_viewport_cmd_to(
-                        egui::ViewportId::from_hash_of("sm_editor"),
-                        egui::ViewportCommand::Focus,
-                    );
-                } else {
-                    let config_dir = config::config_path()
-                        .parent()
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    self.sm_editor = Some(SmEditorViewport::new(self.dark_mode, config_dir));
-                }
             }
         }
         Ok(())
@@ -568,99 +501,27 @@ impl eframe::App for App {
             }
         }
 
-        // Show config viewport if open.
+        // Show unified app window if open.
         {
-            let mut config_should_close = false;
-            if let Some(ref state) = self.config_window_state {
-                // Push dark_mode into viewport state before rendering.
-                if let Ok(mut s) = state.lock() {
-                    s.dark_mode = self.dark_mode;
-                }
-                // Read dark_mode_out and should_close before deciding whether to open.
-                if let Ok(mut s) = state.lock() {
-                    if let Some(new_dark) = s.dark_mode_out.take() {
-                        self.dark_mode = new_dark;
-                    }
-                    config_should_close = s.should_close;
-                }
-                // Only keep the viewport open if not closing.
-                if !config_should_close {
-                    open_config_viewport(ctx, state.clone());
-                }
-            }
-            if config_should_close {
-                self.config_window_state = None;
-            }
-        }
-
-        // Handle editor open requests from the config window.
-        if let Some(ref state) = self.config_window_state {
-            let req = state.lock().ok().and_then(|mut s| s.open_editor_request.take());
-            if let Some(req) = req
-                && self.sprite_editor_state.is_none() {
-                    let editor_state = match req {
-                        crate::tray::config_window::OpenEditorRequest::Edit(sheet_path) => {
-                            Self::load_editor_state_from_sheet(&sheet_path).ok()
-                        }
-                        crate::tray::config_window::OpenEditorRequest::New(png_path) => {
-                            Self::new_editor_state_from_png(&png_path).ok()
-                        }
-                    };
-                    if let Some(es) = editor_state {
-                        let viewport = SpriteEditorViewport::new(es);
-                        self.sprite_editor_state =
-                            Some(Arc::new(Mutex::new(viewport)));
-                    }
-                }
-        }
-
-        // Show sprite editor viewport if open.
-        // Opened via ConfigWindowState::open_editor_request (Edit or New from PNG).
-        {
-            let mut editor_should_close = false;
+            let mut win_should_close = false;
             let mut saved_json_path: Option<std::path::PathBuf> = None;
-            if let Some(ref state) = self.sprite_editor_state {
-                // Push dark_mode into viewport state before rendering.
-                if let Ok(mut s) = state.lock() {
-                    s.dark_mode = self.dark_mode;
-                }
-                // Read dark_mode_out and saved_json_path before deciding whether to open.
-                if let Ok(mut s) = state.lock() {
-                    if let Some(new_dark) = s.dark_mode_out.take() {
-                        self.dark_mode = new_dark;
-                    }
-                    editor_should_close = s.should_close;
-                    saved_json_path = s.saved_json_path.take();
-                }
-                // Only keep the viewport open if not closing.
-                if !editor_should_close {
-                    open_sprite_editor_viewport(ctx, state.clone());
-                }
-            }
-            // Reload sheets outside the sprite_editor_state borrow so &mut self is free.
-            if let Some(json_path) = saved_json_path {
-                self.reload_pets_for_sheet(&json_path);
-            }
-            if editor_should_close {
-                self.sprite_editor_state = None;
-            }
-        }
-
-        // Poll SM editor viewport state each frame.
-        {
-            let mut sm_editor_should_close = false;
             let mut sm_saved_name: Option<String> = None;
-            if let Some(ref viewport) = self.sm_editor
-                && let Ok(mut vp) = viewport.try_lock() {
-                    // Push live state to editor
+            let mut force_state: Option<String> = None;
+            let mut release_force = false;
+            let mut step_mode = false;
+            let mut step_advance = false;
+
+            if let Some(ref state) = self.app_window {
+                // Push live pet state into SM editor
+                if let Ok(mut s) = state.try_lock() {
                     if let Some(pet) = self.pets.values().next() {
-                        vp.from_app.active_state = Some(pet.runner.current_state_name().to_string());
+                        s.sm.from_app.active_state = Some(pet.runner.current_state_name().to_string());
                         let cvars = pet.runner.last_condition_vars();
-                        vp.from_app.var_snapshot = crate::tray::sm_editor::VarSnapshot {
+                        s.sm.from_app.var_snapshot = crate::tray::sm_editor::VarSnapshot {
                             cursor_dist: cvars.cursor_dist,
                             state_time_ms: cvars.state_time_ms,
                             on_surface: cvars.on_surface,
-                            near_edge: false, // TODO: compute
+                            near_edge: false,
                             pet_x: cvars.pet_x,
                             pet_y: cvars.pet_y,
                             pet_vx: cvars.pet_vx,
@@ -669,45 +530,52 @@ impl eframe::App for App {
                             hour: cvars.hour,
                             focused_app: cvars.focused_app.clone(),
                         };
-                        vp.from_app.transition_log = pet.runner.transition_log().to_vec();
-                        vp.from_app.is_forced = pet.runner.force_state.is_some();
+                        s.sm.from_app.transition_log = pet.runner.transition_log().to_vec();
+                        s.sm.from_app.is_forced = pet.runner.force_state.is_some();
                     }
+                    // Push current config
+                    s.dark_mode = self.dark_mode;
 
-                    // Consume debug commands
-                    let force_state = vp.from_ui.force_state.take();
-                    let release_force = vp.from_ui.release_force;
-                    let step_mode = vp.from_ui.step_mode;
-                    let step_advance = vp.from_ui.step_advance;
-                    if release_force { vp.from_ui.release_force = false; }
-                    if step_advance { vp.from_ui.step_advance = false; }
-                    sm_saved_name = vp.from_ui.saved_sm_name.take();
-                    sm_editor_should_close = vp.from_ui.should_close;
-
-                    drop(vp);
-
-                    if let Some(state_name) = force_state
-                        && let Some(pet) = self.pets.values_mut().next() {
-                            pet.runner.force_state = Some(state_name);
-                        }
-                    if release_force
-                        && let Some(pet) = self.pets.values_mut().next() {
-                            pet.runner.release_force = true;
-                        }
-                    if let Some(pet) = self.pets.values_mut().next() {
-                        pet.runner.step_mode = step_mode;
-                        if step_advance {
-                            pet.runner.step_advance = true;
-                        }
+                    // Consume outputs
+                    if let Some(new_dark) = s.dark_mode_out.take() {
+                        self.dark_mode = new_dark;
                     }
+                    win_should_close = s.should_close;
+                    saved_json_path = s.saved_json_path.take();
+                    sm_saved_name = s.sm.from_ui.saved_sm_name.take();
+                    force_state = s.sm.from_ui.force_state.take();
+                    release_force = s.sm.from_ui.release_force;
+                    step_mode = s.sm.from_ui.step_mode;
+                    step_advance = s.sm.from_ui.step_advance;
+                    if release_force { s.sm.from_ui.release_force = false; }
+                    if step_advance { s.sm.from_ui.step_advance = false; }
                 }
 
-            // Open (or keep open) the SM editor deferred viewport — but NOT when closing.
-            if !sm_editor_should_close
-                && let Some(ref viewport) = self.sm_editor {
-                    open_sm_editor_viewport(ctx, viewport.clone());
+                if !win_should_close {
+                    open_app_window(ctx, state.clone());
                 }
+            }
 
-            // Handle saved SM (hot-reload) outside the viewport borrow
+            // Apply SM debug commands to pets
+            if let Some(state_name) = force_state
+                && let Some(pet) = self.pets.values_mut().next() {
+                    pet.runner.force_state = Some(state_name);
+                }
+            if release_force
+                && let Some(pet) = self.pets.values_mut().next() {
+                    pet.runner.release_force = true;
+                }
+            if let Some(pet) = self.pets.values_mut().next() {
+                pet.runner.step_mode = step_mode;
+                if step_advance { pet.runner.step_advance = true; }
+            }
+
+            // Hot-reload pets for saved sprite
+            if let Some(json_path) = saved_json_path {
+                self.reload_pets_for_sheet(&json_path);
+            }
+
+            // Hot-reload pets for saved SM
             if let Some(sm_name) = sm_saved_name {
                 let config_dir = config::config_path()
                     .parent()
@@ -724,8 +592,8 @@ impl eframe::App for App {
                 let _ = self.tx.send(AppEvent::SMCollectionChanged);
             }
 
-            if sm_editor_should_close {
-                self.sm_editor = None;
+            if win_should_close {
+                self.app_window = None;
             }
         }
 

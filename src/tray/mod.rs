@@ -18,38 +18,28 @@ impl SystemTray {
     pub fn new(tx: Sender<AppEvent>) -> Result<Self> {
         let menu = Menu::new();
 
-        let add_pet = MenuItem::new("Add Pet", true, None);
-        let configure = MenuItem::new("Configure...", true, None);
-        let import_bundle = MenuItem::new("Import Bundle...", true, None);
-        let edit_sm = MenuItem::new("Edit State Machines", true, None);
+        let open_window = MenuItem::new("Open\u{2026}", true, None);
+        let import_bundle = MenuItem::new("Import Bundle\u{2026}", true, None);
         let separator = PredefinedMenuItem::separator();
         let quit = MenuItem::new("Quit", true, None);
 
-        menu.append(&add_pet)?;
-        menu.append(&configure)?;
+        menu.append(&open_window)?;
         menu.append(&import_bundle)?;
-        menu.append(&edit_sm)?;
         menu.append(&separator)?;
         menu.append(&quit)?;
 
-        let add_pet_id = add_pet.id().clone();
-        let configure_id = configure.id().clone();
+        let open_window_id = open_window.id().clone();
         let import_bundle_id = import_bundle.id().clone();
-        let edit_sm_id = edit_sm.id().clone();
         let quit_id = quit.id().clone();
 
         let tx_clone = tx.clone();
         muda::MenuEvent::set_event_handler(Some(move |ev: muda::MenuEvent| {
             if ev.id == quit_id {
                 let _ = tx_clone.send(AppEvent::TrayQuit);
-            } else if ev.id == add_pet_id {
-                let _ = tx_clone.send(AppEvent::TrayAddPet);
-            } else if ev.id == configure_id {
-                let _ = tx_clone.send(AppEvent::TrayOpenConfig);
+            } else if ev.id == open_window_id {
+                let _ = tx_clone.send(AppEvent::TrayOpenWindow);
             } else if ev.id == import_bundle_id {
                 let _ = tx_clone.send(AppEvent::TrayImportBundle);
-            } else if ev.id == edit_sm_id {
-                let _ = tx_clone.send(AppEvent::TrayOpenSmEditor);
             }
         }));
 

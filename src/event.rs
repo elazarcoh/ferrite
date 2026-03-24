@@ -35,4 +35,6 @@ pub enum AppEvent {
     SMCollectionChanged,
     /// Tray: open the SM editor dialog.
     TrayOpenSmEditor,
+    /// Tray: open the unified app window.
+    TrayOpenWindow,
 }
