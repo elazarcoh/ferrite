@@ -77,14 +77,13 @@ pub fn open_config_viewport(
             crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
             // Poll pending PNG file pick
-            if let Some(ref rx) = s.pending_png_pick {
-                if let Ok(maybe_path) = rx.try_recv() {
+            if let Some(ref rx) = s.pending_png_pick
+                && let Ok(maybe_path) = rx.try_recv() {
                     s.pending_png_pick = None;
                     if let Some(path) = maybe_path {
                         s.open_editor_request = Some(OpenEditorRequest::New(path));
                     }
                 }
-            }
 
             // Left panel: pet list
             egui::SidePanel::left("pet_list_panel")
@@ -140,12 +139,11 @@ pub fn open_config_viewport(
                             .unwrap_or(false);
 
                     ui.add_enabled_ui(has_sheet, |ui| {
-                        if ui.button("Edit\u{2026}").clicked() {
-                            if let Some(idx) = s.selected_pet_idx {
+                        if ui.button("Edit\u{2026}").clicked()
+                            && let Some(idx) = s.selected_pet_idx {
                                 let path = s.config.pets[idx].sheet_path.clone();
                                 s.open_editor_request = Some(OpenEditorRequest::Edit(path));
                             }
-                        }
                     });
 
                     let pick_in_progress = s.pending_png_pick.is_some();
@@ -318,75 +316,6 @@ pub fn open_config_viewport(
             });
         },
     );
-}
-
-/// ComboBox for a required tag field (String). Returns true if changed.
-fn required_tag_combo(
-    ui: &mut egui::Ui,
-    label: &str,
-    id: &str,
-    idx: usize,
-    value: &mut String,
-    tag_names: &[String],
-) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let display = if value.is_empty() {
-            "(none)"
-        } else {
-            value.as_str()
-        };
-        egui::ComboBox::from_id_salt((id, idx))
-            .selected_text(display)
-            .show_ui(ui, |ui| {
-                for name in tag_names {
-                    if ui.selectable_label(value == name, name).clicked() {
-                        *value = name.clone();
-                        changed = true;
-                    }
-                }
-            });
-    });
-    changed
-}
-
-/// ComboBox for an optional tag field (Option<String>). Returns true if changed.
-fn optional_tag_combo(
-    ui: &mut egui::Ui,
-    label: &str,
-    id: &str,
-    idx: usize,
-    value: &mut Option<String>,
-    tag_names: &[String],
-) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let display = value
-            .as_deref()
-            .unwrap_or("\u{2014} not set \u{2014}");
-        egui::ComboBox::from_id_salt((id, idx))
-            .selected_text(display)
-            .show_ui(ui, |ui| {
-                // "not set" option
-                if ui
-                    .selectable_label(value.is_none(), "\u{2014} not set \u{2014}")
-                    .clicked()
-                {
-                    *value = None;
-                    changed = true;
-                }
-                for name in tag_names {
-                    let selected = value.as_deref() == Some(name.as_str());
-                    if ui.selectable_label(selected, name).clicked() {
-                        *value = Some(name.clone());
-                        changed = true;
-                    }
-                }
-            });
-    });
-    changed
 }
 
 fn remove_selected(config: &mut Config, selected: &mut Option<usize>) {

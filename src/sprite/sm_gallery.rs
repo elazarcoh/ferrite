@@ -32,33 +32,29 @@ impl SmGallery {
         let mut gallery = SmGallery { dir: dir.clone(), draft_dir: draft_dir.clone(), entries: Vec::new() };
 
         // Load live .petstate files
-        if dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
+        if dir.exists()
+            && let Ok(entries) = std::fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) == Some("petstate") {
-                        if let Ok(source) = std::fs::read_to_string(&path) {
+                    if path.extension().and_then(|e| e.to_str()) == Some("petstate")
+                        && let Ok(source) = std::fs::read_to_string(&path) {
                             gallery.load_entry(path, source, false);
                         }
-                    }
                 }
             }
-        }
 
         // Load draft .draft.petstate files
-        if draft_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&draft_dir) {
+        if draft_dir.exists()
+            && let Ok(entries) = std::fs::read_dir(&draft_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     let ext = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if ext.ends_with(".draft.petstate") {
-                        if let Ok(source) = std::fs::read_to_string(&path) {
+                    if ext.ends_with(".draft.petstate")
+                        && let Ok(source) = std::fs::read_to_string(&path) {
                             gallery.load_entry(path, source, true);
                         }
-                    }
                 }
             }
-        }
 
         gallery
     }

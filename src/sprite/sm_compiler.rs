@@ -104,29 +104,26 @@ pub fn validate(sm: &SmFile) -> Vec<CompileError> {
             }
         }
         // Check per-state interrupts
-        for (_event, interrupt) in &state_def.interrupts {
-            if let Some(goto) = &interrupt.goto {
-                if goto != "$previous" && !all_state_names.contains(goto.as_str()) {
+        for interrupt in state_def.interrupts.values() {
+            if let Some(goto) = &interrupt.goto
+                && goto != "$previous" && !all_state_names.contains(goto.as_str()) {
                     errors.push(CompileError::UnknownGotoTarget(
                         state_name.clone(), goto.clone()
                     ));
                 }
-            }
         }
         // Check fallback
-        if let Some(fb) = &state_def.fallback {
-            if !required_states.contains(fb.as_str()) {
+        if let Some(fb) = &state_def.fallback
+            && !required_states.contains(fb.as_str()) {
                 errors.push(CompileError::InvalidFallback(state_name.clone(), fb.clone()));
             }
-        }
     }
     // Also check global interrupts
-    for (_event, interrupt) in &sm.interrupts {
-        if let Some(goto) = &interrupt.goto {
-            if goto != "$previous" && !all_state_names.contains(goto.as_str()) {
+    for interrupt in sm.interrupts.values() {
+        if let Some(goto) = &interrupt.goto
+            && goto != "$previous" && !all_state_names.contains(goto.as_str()) {
                 errors.push(CompileError::UnknownGotoTarget("(global)".to_string(), goto.clone()));
             }
-        }
     }
 
     // 7. Nested composites: if state A has steps=[B] and B has steps=[...], that's NestedComposite
@@ -161,13 +158,12 @@ pub fn validate(sm: &SmFile) -> Vec<CompileError> {
                 errors.push(CompileError::StepsCycle(start.to_string()));
                 break;
             }
-            if let Some(state) = sm.states.get(current) {
-                if let Some(steps) = &state.steps {
+            if let Some(state) = sm.states.get(current)
+                && let Some(steps) = &state.steps {
                     for step in steps {
                         stack.push(step.as_str());
                     }
                 }
-            }
         }
     }
 
@@ -176,20 +172,18 @@ pub fn validate(sm: &SmFile) -> Vec<CompileError> {
         // Check transition conditions
         if let Some(transitions) = &state_def.transitions {
             for t in transitions {
-                if let Some(cond) = &t.condition {
-                    if let Err(msg) = parse_expr(cond) {
+                if let Some(cond) = &t.condition
+                    && let Err(msg) = parse_expr(cond) {
                         errors.push(CompileError::ConditionParseError(state_name.clone(), msg));
                     }
-                }
             }
         }
         // Check per-state interrupt conditions
-        for (_event, interrupt) in &state_def.interrupts {
-            if let Some(cond) = &interrupt.condition {
-                if let Err(msg) = parse_expr(cond) {
+        for interrupt in state_def.interrupts.values() {
+            if let Some(cond) = &interrupt.condition
+                && let Err(msg) = parse_expr(cond) {
                     errors.push(CompileError::ConditionParseError(state_name.clone(), msg));
                 }
-            }
         }
 
         // Check weighted transitions: if any transition has weight, all must; and sum > 0
@@ -204,12 +198,11 @@ pub fn validate(sm: &SmFile) -> Vec<CompileError> {
         }
     }
     // Check global interrupt conditions
-    for (_event, interrupt) in &sm.interrupts {
-        if let Some(cond) = &interrupt.condition {
-            if let Err(msg) = parse_expr(cond) {
+    for interrupt in sm.interrupts.values() {
+        if let Some(cond) = &interrupt.condition
+            && let Err(msg) = parse_expr(cond) {
                 errors.push(CompileError::ConditionParseError("(global)".to_string(), msg));
             }
-        }
     }
 
     errors
@@ -371,7 +364,7 @@ fn compile_params(state_def: &crate::sprite::sm_format::SmStateDef) -> ActionPar
     });
 
     // Parse duration string like "500ms", "3s", "2.5s" → ms
-    let duration_ms = state_def.duration.as_deref().and_then(|s| parse_duration_str(s));
+    let duration_ms = state_def.duration.as_deref().and_then(parse_duration_str);
 
     ActionParams {
         dir,

@@ -103,11 +103,10 @@ impl SpriteSheet {
     /// Resolution order: smMappings[sm_name][state_name] → auto-match by name → None
     pub fn resolve_tag<'a>(&'a self, sm_name: &str, state_name: &str) -> Option<&'a str> {
         // 1. Explicit alias
-        if let Some(mapping) = self.sm_mappings.get(sm_name) {
-            if let Some(tag) = mapping.get(state_name) {
+        if let Some(mapping) = self.sm_mappings.get(sm_name)
+            && let Some(tag) = mapping.get(state_name) {
                 return Some(tag.as_str());
             }
-        }
         // 2. Auto-match: tag with same name exists
         if let Some(t) = self.tags.iter().find(|t| t.name == state_name) {
             return Some(t.name.as_str());

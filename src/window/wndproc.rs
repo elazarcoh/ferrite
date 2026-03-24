@@ -135,15 +135,15 @@ pub unsafe extern "system" fn wnd_proc(
     msg: u32,
     wparam: WPARAM,
     lparam: LPARAM,
-) -> LRESULT {
+) -> LRESULT { unsafe {
     match msg {
         // ─── Per-pixel hit testing ────────────────────────────────────────────
         WM_NCHITTEST => {
             // Release the registry lock BEFORE calling any Win32 functions to
             // avoid re-entrancy deadlock.
             let info = get_hwnd_info(hwnd);
-            if let Some((alpha_buf, buf_width, _)) = info {
-                if !alpha_buf.is_empty() && buf_width > 0 {
+            if let Some((alpha_buf, buf_width, _)) = info
+                && !alpha_buf.is_empty() && buf_width > 0 {
                     let (cx, cy) = cursor_pos(lparam);
                     let mut rc: RECT = std::mem::zeroed();
                     GetWindowRect(hwnd, &mut rc);
@@ -159,7 +159,6 @@ pub unsafe extern "system" fn wnd_proc(
                         log::trace!("NCHITTEST opaque pixel alpha={a} local=({lx},{ly}) → HTCLIENT");
                     }
                 }
-            }
             // Opaque pixel → HTCLIENT so WM_LBUTTONDOWN is delivered and we
             // can implement custom drag (HTCAPTION would cause snap-back when
             // the animation frame changes and app.rs calls move_to).
@@ -327,4 +326,4 @@ pub unsafe extern "system" fn wnd_proc(
 
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
-}
+}}

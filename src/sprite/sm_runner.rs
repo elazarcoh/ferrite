@@ -99,11 +99,10 @@ impl SMRunner {
         if let ActiveState::Named(composite_name) = &self.active {
             if let Some(state) = self.sm.states.get(composite_name.as_str()) {
                 use crate::sprite::sm_compiler::StateKind;
-                if let StateKind::Composite { steps, .. } = &state.kind {
-                    if let Some(step_name) = steps.get(self.step_index) {
+                if let StateKind::Composite { steps, .. } = &state.kind
+                    && let Some(step_name) = steps.get(self.step_index) {
                         return step_name.as_str();
                     }
-                }
             }
             composite_name.as_str()
         } else {
@@ -218,6 +217,7 @@ impl SMRunner {
 
     /// Tick the state machine for one frame.
     /// Returns the tag name to use for the current animation frame.
+    #[allow(clippy::too_many_arguments)]
     pub fn tick(
         &mut self,
         delta_ms: u32,
@@ -261,6 +261,7 @@ impl SMRunner {
         self.resolve_tag(sheet)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn execute_action(&mut self, dt: f32, x: &mut i32, y: &mut i32, screen_w: i32, pet_w: i32, _pet_h: i32, floor_y: i32) {
         match self.active.clone() {
             ActiveState::Named(name) => {
@@ -583,14 +584,14 @@ impl SMRunner {
         // Determine direction for walk/run states
         if let Some(state) = self.sm.states.get(target).cloned() {
             use crate::sprite::sm_compiler::StateKind;
-            if let StateKind::Atomic { action, params, .. } = &state.kind {
-                if *action == ActionType::Walk || *action == ActionType::Run {
+            if let StateKind::Atomic { action, params, .. } = &state.kind
+                && (*action == ActionType::Walk || *action == ActionType::Run) {
                     self.facing = match params.dir {
                         Some(Direction::Left) => Facing::Left,
                         Some(Direction::Right) => Facing::Right,
                         _ => {
                             // Random direction
-                            if self.lcg_rand() % 2 == 0 { Facing::Right } else { Facing::Left }
+                            if self.lcg_rand().is_multiple_of(2) { Facing::Right } else { Facing::Left }
                         }
                     };
                     // Set walk distance
@@ -601,7 +602,6 @@ impl SMRunner {
                     };
                     self.walk_remaining_px = dist;
                 }
-            }
         }
 
         self.log_transition(&from, target, reason);

@@ -67,7 +67,7 @@ impl SpriteGallery {
         std::fs::create_dir_all(&self.dir)?;
         let file = GalleryFile { sprites: self.entries.clone() };
         let toml = toml::to_string_pretty(&file)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         std::fs::write(self.dir.join("gallery.toml"), toml)
     }
 }

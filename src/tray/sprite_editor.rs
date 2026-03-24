@@ -21,7 +21,6 @@ pub struct SpriteEditorViewport {
     dirty: bool,
     sheet_zoom: f32,             // 1.0 = fit to panel; >1.0 = magnified
     tag_drag_start: Option<usize>, // frame index where a tag-range drag began
-    export_bundle_sm: Option<String>,   // selected SM name for export
     show_export_bundle_dialog: bool,    // whether to show the SM picker modal
     selected_sm_name: Option<String>,   // SM selected in the coverage panel combobox
     sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
@@ -45,7 +44,6 @@ impl SpriteEditorViewport {
             dirty: false,
             sheet_zoom: 1.0,
             tag_drag_start: None,
-            export_bundle_sm: None,
             show_export_bundle_dialog: false,
             selected_sm_name: None,
             sm_mappings,
@@ -249,8 +247,8 @@ pub fn open_sprite_editor_viewport(
                 ui.separator();
 
                 // Selected tag controls
-                if let Some(tag_idx) = s.selected_tag_idx {
-                    if tag_idx < s.state.tags.len() {
+                if let Some(tag_idx) = s.selected_tag_idx
+                    && tag_idx < s.state.tags.len() {
                         let total = s.total_frames();
 
                         // From / To frame range
@@ -323,7 +321,6 @@ pub fn open_sprite_editor_viewport(
                             s.preview_sheet = None;
                         }
                     }
-                }
 
                 ui.separator();
                 ui.label("Add tag:");
@@ -380,8 +377,8 @@ pub fn open_sprite_editor_viewport(
                     });
 
                     // SM coverage panel — shown when an SM is selected
-                    if let Some(sm_name) = s.selected_sm_name.clone() {
-                        if let Some(sm) = gallery.get(&sm_name) {
+                    if let Some(sm_name) = s.selected_sm_name.clone()
+                        && let Some(sm) = gallery.get(&sm_name) {
                             ui.separator();
                             ui.label(egui::RichText::new("SM Coverage").strong());
 
@@ -424,7 +421,6 @@ pub fn open_sprite_editor_viewport(
                                 });
                             }
                         }
-                    }
                 }
             }); // end ScrollArea
         });
@@ -462,7 +458,7 @@ pub fn open_sprite_editor_viewport(
                 let abs = s.anim.absolute_frame(&sheet);
                 let frame = sheet.frames.get(abs).cloned();
                 // For the preview we always play forward, so treat flip_h as always-flip.
-                let flip_h = sheet.tag(&s.anim.current_tag).map_or(false, |t| t.flip_h);
+                let flip_h = sheet.tag(&s.anim.current_tag).is_some_and(|t| t.flip_h);
                 s.preview_sheet = Some(sheet);
                 frame.map(|f| (f, flip_h))
             } else {
@@ -586,7 +582,7 @@ pub fn open_sprite_editor_viewport(
 
                             // Compute live drag range for preview.
                             let live_range: Option<(usize, usize)> =
-                                s.tag_drag_start.zip(resp.interact_pointer_pos().map(|p| frame_at(p)))
+                                s.tag_drag_start.zip(resp.interact_pointer_pos().map(&frame_at))
                                 .map(|(a, b)| (a.min(b), a.max(b)));
 
                             // Vertical grid lines
@@ -619,8 +615,8 @@ pub fn open_sprite_editor_viewport(
                                 );
 
                                 // Tag range highlight (committed range)
-                                if let Some((from, to, color)) = sel_tag {
-                                    if i >= from && i <= to {
+                                if let Some((from, to, color)) = sel_tag
+                                    && i >= from && i <= to {
                                         // Brighten during an active drag.
                                         let fill = if live_range.is_some() {
                                             egui::Color32::from_rgba_premultiplied(
@@ -630,11 +626,10 @@ pub fn open_sprite_editor_viewport(
                                         };
                                         painter.rect_filled(cell_rect, 0.0, fill);
                                     }
-                                }
                                 // Live drag preview
-                                if let Some((from, to)) = live_range {
-                                    if i >= from && i <= to {
-                                        if let Some((_, _, color)) = sel_tag {
+                                if let Some((from, to)) = live_range
+                                    && i >= from && i <= to
+                                        && let Some((_, _, color)) = sel_tag {
                                             painter.rect_filled(
                                                 cell_rect,
                                                 0.0,
@@ -642,8 +637,6 @@ pub fn open_sprite_editor_viewport(
                                                     color.r(), color.g(), color.b(), 55),
                                             );
                                         }
-                                    }
-                                }
 
                                 // Frame number in top-left corner
                                 painter.text(
@@ -666,12 +659,11 @@ pub fn open_sprite_editor_viewport(
                             }
 
                             // Drag → set tag range
-                            if s.selected_tag_idx.map_or(false, |idx| idx < s.state.tags.len()) {
-                                if resp.drag_started() {
-                                    if let Some(pos) = resp.interact_pointer_pos() {
+                            if s.selected_tag_idx.is_some_and(|idx| idx < s.state.tags.len()) {
+                                if resp.drag_started()
+                                    && let Some(pos) = resp.interact_pointer_pos() {
                                         s.tag_drag_start = Some(frame_at(pos));
                                     }
-                                }
                                 if resp.dragged() {
                                     // live_range already drives the visual; nothing extra needed
                                 }
@@ -693,11 +685,10 @@ pub fn open_sprite_editor_viewport(
                             }
 
                             // Click (no drag) → select frame for preview
-                            if resp.clicked() {
-                                if let Some(pos) = resp.interact_pointer_pos() {
+                            if resp.clicked()
+                                && let Some(pos) = resp.interact_pointer_pos() {
                                     s.selected_frame_idx = frame_at(pos);
                                 }
-                            }
                         });
                 }
             }

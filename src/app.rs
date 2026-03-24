@@ -70,7 +70,7 @@ impl PetInstance {
                 .unwrap_or_else(|| std::path::PathBuf::from("."));
             let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
             let sm = gallery.get(&cfg.state_machine)
-                .unwrap_or_else(|| crate::sprite::sm_runner::load_default_sm());
+                .unwrap_or_else(crate::sprite::sm_runner::load_default_sm);
             SMRunner::new(sm, cfg.walk_speed)
         };
 
@@ -329,7 +329,7 @@ impl App {
                 Some(_) => None, // embedded sheets can't be reloaded from a file path
                 None => Some(std::path::Path::new(&inst.cfg.sheet_path)),
             };
-            let matches = pet_json_path.map_or(false, |p| {
+            let matches = pet_json_path.is_some_and(|p| {
                 p == json_path
                     || p.canonicalize().ok().as_deref() == json_path.canonicalize().ok().as_deref()
             });
@@ -590,8 +590,8 @@ impl eframe::App for App {
         // Handle editor open requests from the config window.
         if let Some(ref state) = self.config_window_state {
             let req = state.lock().ok().and_then(|mut s| s.open_editor_request.take());
-            if let Some(req) = req {
-                if self.sprite_editor_state.is_none() {
+            if let Some(req) = req
+                && self.sprite_editor_state.is_none() {
                     let editor_state = match req {
                         crate::tray::config_window::OpenEditorRequest::Edit(sheet_path) => {
                             Self::load_editor_state_from_sheet(&sheet_path).ok()
@@ -606,7 +606,6 @@ impl eframe::App for App {
                             Some(Arc::new(Mutex::new(viewport)));
                     }
                 }
-            }
         }
 
         // Show sprite editor viewport if open.
@@ -642,8 +641,8 @@ impl eframe::App for App {
         {
             let mut sm_editor_should_close = false;
             let mut sm_saved_name: Option<String> = None;
-            if let Some(ref viewport) = self.sm_editor {
-                if let Ok(mut vp) = viewport.try_lock() {
+            if let Some(ref viewport) = self.sm_editor
+                && let Ok(mut vp) = viewport.try_lock() {
                     // Push live state to editor
                     if let Some(pet) = self.pets.values().next() {
                         vp.from_app.active_state = Some(pet.runner.current_state_name().to_string());
@@ -677,16 +676,14 @@ impl eframe::App for App {
 
                     drop(vp);
 
-                    if let Some(state_name) = force_state {
-                        if let Some(pet) = self.pets.values_mut().next() {
+                    if let Some(state_name) = force_state
+                        && let Some(pet) = self.pets.values_mut().next() {
                             pet.runner.force_state = Some(state_name);
                         }
-                    }
-                    if release_force {
-                        if let Some(pet) = self.pets.values_mut().next() {
+                    if release_force
+                        && let Some(pet) = self.pets.values_mut().next() {
                             pet.runner.release_force = true;
                         }
-                    }
                     if let Some(pet) = self.pets.values_mut().next() {
                         pet.runner.step_mode = step_mode;
                         if step_advance {
@@ -694,7 +691,6 @@ impl eframe::App for App {
                         }
                     }
                 }
-            }
 
             // Open (or keep open) the SM editor deferred viewport.
             if let Some(ref viewport) = self.sm_editor {

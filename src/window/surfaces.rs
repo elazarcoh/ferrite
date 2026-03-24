@@ -13,6 +13,7 @@ use windows_sys::Win32::{
 /// plus the HWND so the occlusion check can be performed at fill time.
 /// `hwnd` is not public — it's an implementation detail of the fill pass.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct SurfaceRect {
     pub left: i32,
     pub right: i32,
@@ -53,7 +54,7 @@ struct FillState {
     entries: Vec<SurfaceRect>,
 }
 
-unsafe extern "system" fn fill_cb(hwnd: HWND, lparam: LPARAM) -> i32 {
+unsafe extern "system" fn fill_cb(hwnd: HWND, lparam: LPARAM) -> i32 { unsafe {
     if wndproc::is_pet_hwnd(hwnd) { return 1; }
     if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 { return 1; }
     let s = &mut *(lparam as *mut FillState);
@@ -78,7 +79,7 @@ unsafe extern "system" fn fill_cb(hwnd: HWND, lparam: LPARAM) -> i32 {
         hwnd,
     });
     1
-}
+}}
 
 /// Returns the y-coordinate the pet top should be at when it lands on the
 /// nearest surface below it. Falls back to the virtual screen ground.

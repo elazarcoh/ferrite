@@ -12,8 +12,8 @@ pub fn spawn_watcher(path: PathBuf, tx: Sender<AppEvent>) -> Result<RecommendedW
     let watch_path = path.clone();
     let mut watcher = RecommendedWatcher::new(
         move |res: notify::Result<Event>| {
-            if let Ok(event) = res {
-                if matches!(
+            if let Ok(event) = res
+                && matches!(
                     event.kind,
                     EventKind::Modify(_) | EventKind::Create(_)
                 ) {
@@ -26,7 +26,6 @@ pub fn spawn_watcher(path: PathBuf, tx: Sender<AppEvent>) -> Result<RecommendedW
                         }
                     }
                 }
-            }
         },
         NotifyConfig::default(),
     )?;

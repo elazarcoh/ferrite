@@ -5,6 +5,7 @@ use image::RgbaImage;
 /// `UpdateLayeredWindow` (which requires premultiplied BGRA).
 ///
 /// `dst` must be exactly `w * scale` × `h * scale` pixels.
+#[allow(clippy::too_many_arguments)]
 pub fn blit_frame(
     src: &RgbaImage,
     src_x: u32,

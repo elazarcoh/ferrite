@@ -1,5 +1,5 @@
 use crate::window::blender::{alpha_at, blit_frame};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use windows_sys::Win32::{
@@ -110,11 +110,11 @@ impl PetWindow {
     /// Destruction order: deselect bitmap → delete DC → delete bitmap.
     /// (A bitmap selected into a DC must be deselected before the DC is deleted,
     /// and the DC must be deleted before the bitmap to avoid GDI handle leaks.)
-    unsafe fn alloc_gdi_cache(&mut self, w: u32, h: u32) {
+    unsafe fn alloc_gdi_cache(&mut self, w: u32, h: u32) { unsafe {
         // Destroy previous objects in the correct order.
         if !self.mem_dc.is_null() {
             // Deselect the bitmap by selecting a stock object, then delete the DC.
-            SelectObject(self.mem_dc, GetStockObject(BLACK_BRUSH as i32));
+            SelectObject(self.mem_dc, GetStockObject(BLACK_BRUSH));
             DeleteDC(self.mem_dc);
             self.mem_dc = std::ptr::null_mut();
         }
@@ -157,10 +157,11 @@ impl PetWindow {
         SelectObject(self.mem_dc, self.dib);
         self.cached_w = w;
         self.cached_h = h;
-    }
+    }}
 
     /// Render a frame from `src_image` at the given source rectangle, with
     /// integer upscale and optional horizontal flip.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_frame(
         &mut self,
         src: &image::RgbaImage,
@@ -254,7 +255,7 @@ impl Drop for PetWindow {
         unsafe {
             // Deselect bitmap → delete DC → delete bitmap (GDI required order).
             if !self.mem_dc.is_null() {
-                SelectObject(self.mem_dc, GetStockObject(BLACK_BRUSH as i32));
+                SelectObject(self.mem_dc, GetStockObject(BLACK_BRUSH));
                 DeleteDC(self.mem_dc);
             }
             if !self.dib.is_null() { DeleteObject(self.dib); }

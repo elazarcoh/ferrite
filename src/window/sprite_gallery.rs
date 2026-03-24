@@ -132,8 +132,8 @@ impl SpriteGallery {
 
         // Installed custom sprites
         let dir = Self::appdata_sprites_dir();
-        if dir.is_dir() {
-            if let Ok(rd) = std::fs::read_dir(&dir) {
+        if dir.is_dir()
+            && let Ok(rd) = std::fs::read_dir(&dir) {
                 let mut custom: Vec<PathBuf> = rd
                     .filter_map(|e| e.ok())
                     .map(|e| e.path())
@@ -154,7 +154,6 @@ impl SpriteGallery {
                     });
                 }
             }
-        }
 
         SpriteGallery { entries }
     }
@@ -263,7 +262,7 @@ impl SpriteGallery {
             bmi.bmiHeader.biHeight = -28; // top-down
             bmi.bmiHeader.biPlanes = 1;
             bmi.bmiHeader.biBitCount = 32;
-            bmi.bmiHeader.biCompression = BI_RGB as u32;
+            bmi.bmiHeader.biCompression = BI_RGB;
 
             let mut bits = std::ptr::null_mut();
             let hbmp = CreateDIBSection(
@@ -283,7 +282,7 @@ impl SpriteGallery {
             src_bmi.bmiHeader.biHeight = -img_h; // top-down
             src_bmi.bmiHeader.biPlanes = 1;
             src_bmi.bmiHeader.biBitCount = 32;
-            src_bmi.bmiHeader.biCompression = BI_RGB as u32;
+            src_bmi.bmiHeader.biCompression = BI_RGB;
 
             StretchDIBits(
                 hdc_mem,

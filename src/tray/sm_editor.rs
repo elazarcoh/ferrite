@@ -165,14 +165,13 @@ fn draw_state_graph(
         };
         if let Some(&from) = positions.get(state_name.as_str()) {
             for t in transitions {
-                if let Goto::State(to_name) = &t.goto {
-                    if let Some(&to) = positions.get(to_name.as_str()) {
+                if let Goto::State(to_name) = &t.goto
+                    && let Some(&to) = positions.get(to_name.as_str()) {
                         let delta = to - from;
                         if delta.length() > 0.1 {
                             painter.arrow(from, delta * 0.75, egui::Stroke::new(1.0, egui::Color32::from_gray(120)));
                         }
                     }
-                }
             }
         }
     }
@@ -210,8 +209,8 @@ fn draw_state_graph(
             );
 
             // Hover: show Force button indicator and detect click
-            if let Some(hover_pos) = response.hover_pos() {
-                if node_rect.contains(hover_pos) {
+            if let Some(hover_pos) = response.hover_pos()
+                && node_rect.contains(hover_pos) {
                     // Show a small Force label at top-right of node
                     let force_pos = node_rect.right_top() + egui::vec2(2.0, -2.0);
                     painter.text(
@@ -226,7 +225,6 @@ fn draw_state_graph(
                         *force_out = Some(name.to_string());
                     }
                 }
-            }
         }
     }
 }
@@ -256,6 +254,7 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
         }
         // Collect data from the gallery into owned Vecs so the borrow ends before
         // the egui closures need &mut vp.
+        #[allow(clippy::type_complexity)]
         let (valid_entries, draft_entries): (Vec<(String, String)>, Vec<(String, String)>) = {
             let g = vp.cached_gallery.as_ref().unwrap();
             let valid = g.valid_names().into_iter()
@@ -317,22 +316,19 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                     vp.selected_sm = None;
                     vp.is_dirty = true;
                 }
-                if ui.button("📂 Import .petstate").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
+                if ui.button("📂 Import .petstate").clicked()
+                    && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Pet State Machine", &["petstate"])
                         .pick_file()
-                    {
-                        if let Ok(source) = std::fs::read_to_string(&path) {
+                        && let Ok(source) = std::fs::read_to_string(&path) {
                             vp.editor_text = source;
                             vp.is_dirty = true;
                             vp.selected_sm = None;
                             vp.save_errors = vec![];
                             vp.has_saved_once = false;
                         }
-                    }
-                }
-                if ui.button("📦 Import .petbundle").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
+                if ui.button("📦 Import .petbundle").clicked()
+                    && let Some(path) = rfd::FileDialog::new()
                         .add_filter("Pet Bundle", &["petbundle"])
                         .pick_file()
                     {
@@ -355,7 +351,6 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                             }
                         }
                     }
-                }
             });
 
         // ── Right: state graph ──────────────────────────────────────────────
@@ -398,11 +393,10 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                 // Step mode controls
                 ui.checkbox(&mut vp.from_ui.step_mode, "Step mode")
                     .on_hover_text("In step mode, transitions are paused until advanced. Interrupts (grab, pet) still fire.");
-                if vp.from_ui.step_mode {
-                    if ui.button("→ Next transition").clicked() {
+                if vp.from_ui.step_mode
+                    && ui.button("→ Next transition").clicked() {
                         vp.from_ui.step_advance = true;
                     }
-                }
 
                 ui.separator();
 
@@ -468,26 +462,31 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                         let Some(gallery) = vp.cached_gallery.as_mut() else {
                             return; // should not happen — lazy-load runs before panels
                         };
-                        match gallery.save(&name, &editor_text) {
-                            Err(io_err) => {
+                        // a) Save and collect result/errors while gallery is borrowed
+                        let save_result = gallery.save(&name, &editor_text);
+                        let save_outcome: Result<(bool, Vec<crate::sprite::sm_compiler::CompileError>), String> =
+                            match save_result {
+                                Err(io_err) => Err(io_err.to_string()),
+                                Ok(is_valid) => {
+                                    let errs = if !is_valid {
+                                        gallery.draft_errors(&name).to_vec()
+                                    } else {
+                                        vec![]
+                                    };
+                                    Ok((is_valid, errs))
+                                }
+                            };
+                        // gallery borrow ends here; vp fields are now freely accessible
+                        match save_outcome {
+                            Err(msg) => {
                                 vp.save_errors = vec![
                                     crate::sprite::sm_compiler::CompileError::ConditionParseError(
                                         "(io)".to_string(),
-                                        io_err.to_string(),
+                                        msg,
                                     ),
                                 ];
                             }
-                            Ok(is_valid) => {
-                                // d) Collect errors for bottom panel (read from gallery entry)
-                                // Must be done while gallery borrow is active, before other vp mutations.
-                                let save_errors: Vec<crate::sprite::sm_compiler::CompileError> = if !is_valid {
-                                    // Read errors from the gallery entry that was just written
-                                    gallery.draft_errors(&name).to_vec()
-                                } else {
-                                    vec![]
-                                };
-                                // Drop gallery borrow before mutating other vp fields
-                                drop(gallery);
+                            Ok((is_valid, save_errors)) => {
                                 // c) Update viewport state
                                 vp.selected_sm = Some(name.clone());
                                 vp.is_dirty = false;
