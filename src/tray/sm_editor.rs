@@ -49,6 +49,8 @@ pub struct SmEditorViewport {
     pub dark_mode: bool,
     pub config_dir: PathBuf,
     pub cached_gallery: Option<SmGallery>,
+    pub save_errors: Vec<crate::sprite::sm_compiler::CompileError>,
+    pub has_saved_once: bool,
 }
 
 const MINIMAL_TEMPLATE: &str = r#"[meta]
@@ -115,6 +117,8 @@ impl SmEditorViewport {
             dark_mode,
             config_dir,
             cached_gallery: None,
+            save_errors: Vec::new(),
+            has_saved_once: false,
         }))
     }
 }
@@ -207,14 +211,88 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
         egui::TopBottomPanel::bottom("sm_errors")
             .min_height(24.0)
             .show(ctx, |ui| {
-                ui.label("No errors."); // placeholder — errors rendered in T5
+                if !vp.has_saved_once {
+                    ui.label("Ready.");
+                } else if vp.save_errors.is_empty() {
+                    ui.colored_label(egui::Color32::DARK_GREEN, "✅ Saved.");
+                } else {
+                    egui::ScrollArea::vertical().max_height(80.0).show(ui, |ui| {
+                        for e in &vp.save_errors {
+                            ui.colored_label(egui::Color32::RED, e.to_string());
+                        }
+                    });
+                }
             });
 
         // ── Central panel: save button + text editor placeholder ────────────
         egui::CentralPanel::default().show(ctx, |ui| {
             let save_label = if vp.is_dirty { "💾 Save*" } else { "💾 Save" };
             if ui.button(save_label).clicked() {
-                // Save logic implemented in T5
+                let editor_text = vp.editor_text.clone();
+                // a) Extract SM name from TOML
+                let name_result: Result<String, String> =
+                    toml::from_str::<crate::sprite::sm_format::SmFile>(&editor_text)
+                        .map(|f| f.meta.name)
+                        .map_err(|e| e.to_string());
+
+                match name_result {
+                    Err(parse_err) => {
+                        vp.save_errors = vec![
+                            crate::sprite::sm_compiler::CompileError::ConditionParseError(
+                                "(parse)".to_string(),
+                                parse_err,
+                            ),
+                        ];
+                    }
+                    Ok(name) => {
+                        let gallery = vp.cached_gallery.as_mut().unwrap();
+                        match gallery.save(&name, &editor_text) {
+                            Err(io_err) => {
+                                vp.save_errors = vec![
+                                    crate::sprite::sm_compiler::CompileError::ConditionParseError(
+                                        "(io)".to_string(),
+                                        io_err.to_string(),
+                                    ),
+                                ];
+                            }
+                            Ok(is_valid) => {
+                                // c) Update viewport state
+                                vp.selected_sm = Some(name.clone());
+                                vp.is_dirty = false;
+                                // d) Collect errors for bottom panel
+                                let save_errors = if !is_valid {
+                                    match toml::from_str::<crate::sprite::sm_format::SmFile>(
+                                        &editor_text,
+                                    ) {
+                                        Ok(sm_file) => {
+                                            match crate::sprite::sm_compiler::compile(&sm_file) {
+                                                Err(errs) => errs,
+                                                Ok(_) => vec![],
+                                            }
+                                        }
+                                        Err(e) => vec![
+                                            crate::sprite::sm_compiler::CompileError::ConditionParseError(
+                                                "(parse)".to_string(),
+                                                e.to_string(),
+                                            ),
+                                        ],
+                                    }
+                                } else {
+                                    vec![]
+                                };
+                                vp.save_errors = save_errors;
+                                // e) Signal app thread to hot-reload if valid
+                                if is_valid {
+                                    vp.from_ui.saved_sm_name = Some(name);
+                                }
+                                // f) Reload gallery from disk
+                                let config_dir = vp.config_dir.clone();
+                                vp.cached_gallery = Some(SmGallery::load(&config_dir));
+                            }
+                        }
+                    }
+                }
+                vp.has_saved_once = true;
             }
             ui.add_space(4.0);
             // Status bar
