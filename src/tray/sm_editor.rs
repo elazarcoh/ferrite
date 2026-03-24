@@ -516,26 +516,32 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
             }
             ui.add_space(4.0);
 
-            // Syntax-highlighted TOML editor that fills all remaining height
-            let theme = egui_extras::syntax_highlighting::CodeTheme::from_memory(
-                ui.ctx(), ui.style()
-            );
+            // Syntax-highlighted TOML editor — scrollable, fills remaining height
+            let ppp = ui.ctx().pixels_per_point();
+            let theme = if vp.dark_mode {
+                egui_extras::syntax_highlighting::CodeTheme::dark(ppp)
+            } else {
+                egui_extras::syntax_highlighting::CodeTheme::light(ppp)
+            };
             let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-                let string = buf.as_str();
                 let mut layout_job = egui_extras::syntax_highlighting::highlight(
-                    ui.ctx(), ui.style(), &theme, string, "toml"
+                    ui.ctx(), ui.style(), &theme, buf.as_str(), "toml"
                 );
                 layout_job.wrap.max_width = wrap_width;
                 ui.painter().layout_job(layout_job)
             };
 
-            let response = egui::TextEdit::multiline(&mut vp.editor_text)
-                .font(egui::TextStyle::Monospace)
-                .desired_width(f32::INFINITY)
-                .desired_rows(1)
-                .min_size(egui::vec2(0.0, ui.available_height()))
-                .layouter(&mut layouter)
-                .show(ui);
+            let scroll_output = egui::ScrollArea::vertical()
+                .id_salt("sm_code_editor")
+                .show(ui, |ui| {
+                    egui::TextEdit::multiline(&mut vp.editor_text)
+                        .font(egui::TextStyle::Monospace)
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(50)
+                        .layouter(&mut layouter)
+                        .show(ui)
+                });
+            let response = scroll_output.inner;
             if response.response.changed() {
                 vp.is_dirty = true;
             }
