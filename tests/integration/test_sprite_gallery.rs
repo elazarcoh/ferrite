@@ -3,16 +3,20 @@
 
 use my_pet::window::sprite_gallery::{SourceKind, SpriteGallery};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tempfile::TempDir;
 
+// Serialise all tests that touch MY_PET_SPRITES_DIR to avoid env-var races.
+static SPRITES_DIR_LOCK: Mutex<()> = Mutex::new(());
+
 /// Returns a TempDir and sets MY_PET_SPRITES_DIR to its path.
-/// The TempDir must be kept alive for the duration of the test.
-fn temp_sprites_dir() -> (TempDir, PathBuf) {
+/// Also returns the lock guard — must be kept alive for the duration of the test.
+fn temp_sprites_dir() -> (TempDir, PathBuf, std::sync::MutexGuard<'static, ()>) {
+    let guard = SPRITES_DIR_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
-    // SAFETY: tests run single-threaded (cargo test -- --test-threads=1 if needed).
     unsafe { std::env::set_var("MY_PET_SPRITES_DIR", &path) };
-    (dir, path)
+    (dir, path, guard)
 }
 
 /// Copy test_pet assets from the embedded store to a temp dir to act as a
@@ -31,7 +35,7 @@ fn write_test_sprite_source(dir: &TempDir) -> (PathBuf, PathBuf) {
 
 #[test]
 fn gallery_load_shows_arrows_not_test_pet() {
-    let _sprites_dir = temp_sprites_dir();
+    let (_sprites_dir, _, _guard) = temp_sprites_dir();
     let gallery = SpriteGallery::load();
     let names: Vec<&str> = gallery.entries.iter().map(|e| e.display_name.as_str()).collect();
     // "test_pet" must not appear as a display name — it's remapped to "arrows"
@@ -44,7 +48,7 @@ fn gallery_load_shows_arrows_not_test_pet() {
 
 #[test]
 fn install_sprite_rejects_missing_png() {
-    let (sprites_dir, _) = temp_sprites_dir();
+    let (sprites_dir, _, _guard) = temp_sprites_dir();
     let src_dir = tempfile::tempdir().unwrap();
     let (json_path, png_path) = write_test_sprite_source(&src_dir);
     std::fs::remove_file(&png_path).unwrap();
@@ -56,7 +60,7 @@ fn install_sprite_rejects_missing_png() {
 
 #[test]
 fn install_sprite_overwrites_existing() {
-    let (sprites_dir, _) = temp_sprites_dir();
+    let (sprites_dir, _, _guard) = temp_sprites_dir();
     let src_dir = tempfile::tempdir().unwrap();
     let (json_path, _) = write_test_sprite_source(&src_dir);
 
