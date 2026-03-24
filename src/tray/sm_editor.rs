@@ -218,16 +218,14 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
             }
             ui.add_space(4.0);
             // Status bar
-            ui.horizontal(|ui| {
-                if vp.from_app.validation_errors.is_empty() {
-                    ui.colored_label(egui::Color32::GREEN, "✅ Valid");
-                } else {
-                    let n = vp.from_app.validation_errors.len();
-                    ui.colored_label(egui::Color32::RED, format!("❌ {} error(s)", n));
-                }
-            });
+            if vp.from_app.validation_errors.is_empty() {
+                ui.colored_label(egui::Color32::GREEN, "✅ Valid");
+            } else {
+                let n = vp.from_app.validation_errors.len();
+                ui.colored_label(egui::Color32::RED, format!("❌ {} error(s)", n));
+            }
             ui.add_space(4.0);
-            // Monospace multiline text editor
+            // Monospace multiline text editor (20 rows fits a typical 1080p window at initial size)
             let response = egui::TextEdit::multiline(&mut vp.editor_text)
                 .font(egui::TextStyle::Monospace)
                 .desired_width(f32::INFINITY)
