@@ -123,6 +123,114 @@ impl SmEditorViewport {
     }
 }
 
+fn draw_state_graph(
+    ui: &mut egui::Ui,
+    sm: &crate::sprite::sm_compiler::CompiledSM,
+    active_state: Option<&str>,
+    force_out: &mut Option<String>,
+) {
+    use crate::sprite::sm_compiler::{StateKind, Goto};
+    use std::collections::HashMap;
+
+    let (response, painter) = ui.allocate_painter(
+        ui.available_size(),
+        egui::Sense::hover(),
+    );
+    let rect = response.rect;
+
+    // Sort state names for deterministic layout
+    let mut state_names: Vec<&str> = sm.states.keys().map(String::as_str).collect();
+    state_names.sort_unstable();
+
+    let node_w = 100.0f32;
+    let node_h = 30.0f32;
+    let gap_x = 20.0f32;
+    let gap_y = 20.0f32;
+    let cols = ((state_names.len() as f32).sqrt().ceil() as usize).max(1);
+
+    // Compute center positions
+    let positions: HashMap<&str, egui::Pos2> = state_names.iter().enumerate().map(|(i, &name)| {
+        let col = (i % cols) as f32;
+        let row = (i / cols) as f32;
+        let x = rect.left() + col * (node_w + gap_x) + node_w / 2.0 + 8.0;
+        let y = rect.top() + row * (node_h + gap_y) + node_h / 2.0 + 8.0;
+        (name, egui::pos2(x, y))
+    }).collect();
+
+    // Draw arrows (behind nodes)
+    for (state_name, state) in &sm.states {
+        let transitions = match &state.kind {
+            StateKind::Atomic { transitions, .. } => transitions.as_slice(),
+            StateKind::Composite { transitions, .. } => transitions.as_slice(),
+        };
+        if let Some(&from) = positions.get(state_name.as_str()) {
+            for t in transitions {
+                if let Goto::State(to_name) = &t.goto {
+                    if let Some(&to) = positions.get(to_name.as_str()) {
+                        let delta = to - from;
+                        if delta.length() > 0.1 {
+                            painter.arrow(from, delta * 0.75, egui::Stroke::new(1.0, egui::Color32::from_gray(120)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Draw nodes (and handle hover → Force button)
+    for &name in &state_names {
+        if let Some(&center) = positions.get(name) {
+            let state = &sm.states[name];
+            let node_rect = egui::Rect::from_center_size(center, egui::vec2(node_w, node_h));
+            let is_active = active_state == Some(name);
+            let is_composite = matches!(state.kind, StateKind::Composite { .. });
+
+            let bg = if is_active {
+                egui::Color32::from_rgb(50, 100, 200)
+            } else if state.required {
+                egui::Color32::from_gray(70)
+            } else {
+                egui::Color32::from_gray(50)
+            };
+
+            // Rounding: composite states get more rounding
+            let rounding = if is_composite { 10.0 } else { 4.0 };
+            painter.rect_filled(node_rect, rounding, bg);
+
+            if is_active {
+                painter.rect_stroke(node_rect, rounding, egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 180, 255)), egui::StrokeKind::Outside);
+            }
+
+            painter.text(
+                center,
+                egui::Align2::CENTER_CENTER,
+                name,
+                egui::FontId::monospace(11.0),
+                egui::Color32::WHITE,
+            );
+
+            // Hover: show Force button indicator and detect click
+            if let Some(hover_pos) = response.hover_pos() {
+                if node_rect.contains(hover_pos) {
+                    // Show a small Force label at top-right of node
+                    let force_pos = node_rect.right_top() + egui::vec2(2.0, -2.0);
+                    painter.text(
+                        force_pos,
+                        egui::Align2::LEFT_TOP,
+                        "▶",
+                        egui::FontId::monospace(10.0),
+                        egui::Color32::YELLOW,
+                    );
+                    // Check click
+                    if response.clicked() {
+                        *force_out = Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorViewport>>) {
     let viewport_id = egui::ViewportId::from_hash_of("sm_editor");
     let viewport_builder = egui::ViewportBuilder::default()
@@ -208,6 +316,29 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
                     vp.editor_text = DEFAULT_SM_TOML.to_string();
                     vp.selected_sm = None;
                     vp.is_dirty = true;
+                }
+            });
+
+        // ── Right: state graph ──────────────────────────────────────────────
+        egui::SidePanel::right("sm_graph")
+            .resizable(true)
+            .min_width(240.0)
+            .show(ctx, |ui| {
+                ui.heading("State Graph");
+                ui.add_space(4.0);
+
+                let compiled_sm = vp.cached_gallery.as_ref()
+                    .and_then(|g| vp.selected_sm.as_deref().and_then(|name| g.get(name)));
+
+                if let Some(sm) = compiled_sm {
+                    let active = vp.from_app.active_state.as_deref();
+                    let mut force_out: Option<String> = None;
+                    draw_state_graph(ui, &sm, active, &mut force_out);
+                    if let Some(state_name) = force_out {
+                        vp.from_ui.force_state = Some(state_name);
+                    }
+                } else {
+                    ui.label("No valid SM selected.");
                 }
             });
 
