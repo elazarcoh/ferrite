@@ -1,3 +1,4 @@
+pub mod app_window;
 pub mod config_window;
 pub mod sm_editor;
 pub mod sprite_editor;
