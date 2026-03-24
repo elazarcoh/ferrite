@@ -117,43 +117,25 @@ impl SpriteEditorViewport {
     }
 }
 
-pub fn open_sprite_editor_viewport(
-    ctx: &egui::Context,
-    state: Arc<Mutex<SpriteEditorViewport>>,
-) {
-    let viewport_id = egui::ViewportId::from_hash_of("sprite_editor");
-    let viewport_builder = egui::ViewportBuilder::default()
-        .with_title("Sprite Editor")
-        .with_inner_size([900.0, 600.0]);
+pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewport) {
+    crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
-    ctx.show_viewport_deferred(viewport_id, viewport_builder, move |ctx, _vp_class| {
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if let Ok(mut s) = state.lock() {
-                s.should_close = true;
-            }
-            return;
-        }
+    // Upload texture if not yet uploaded.
+    if s.texture.is_none() {
+        let image = &s.state.image;
+        let size = [image.width() as usize, image.height() as usize];
+        let pixels = image.as_raw();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels);
+        s.texture = Some(ctx.load_texture("sprite_sheet", color_image, egui::TextureOptions::NEAREST));
+    }
 
-        let Ok(mut s) = state.lock() else { return };
+    // Build preview sheet if missing.
+    if s.preview_sheet.is_none() {
+        s.rebuild_preview_sheet();
+    }
 
-        crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
-
-        // Upload texture if not yet uploaded.
-        if s.texture.is_none() {
-            let image = &s.state.image;
-            let size = [image.width() as usize, image.height() as usize];
-            let pixels = image.as_raw();
-            let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels);
-            s.texture = Some(ctx.load_texture("sprite_sheet", color_image, egui::TextureOptions::NEAREST));
-        }
-
-        // Build preview sheet if missing.
-        if s.preview_sheet.is_none() {
-            s.rebuild_preview_sheet();
-        }
-
-        // Top bar
-        egui::TopBottomPanel::top("editor_top").show(ctx, |ui| {
+    // Top bar
+    egui::TopBottomPanel::top("editor_top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(format!("File: {}", s.state.png_path.display()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -711,7 +693,28 @@ pub fn open_sprite_editor_viewport(
                 });
         }
 
-        ctx.request_repaint_after(std::time::Duration::from_millis(16));
+    ctx.request_repaint_after(std::time::Duration::from_millis(16));
+}
+
+pub fn open_sprite_editor_viewport(
+    ctx: &egui::Context,
+    state: Arc<Mutex<SpriteEditorViewport>>,
+) {
+    let viewport_id = egui::ViewportId::from_hash_of("sprite_editor");
+    let viewport_builder = egui::ViewportBuilder::default()
+        .with_title("Sprite Editor")
+        .with_inner_size([900.0, 600.0]);
+
+    ctx.show_viewport_deferred(viewport_id, viewport_builder, move |ctx, _vp_class| {
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if let Ok(mut s) = state.lock() {
+                s.should_close = true;
+            }
+            return;
+        }
+
+        let Ok(mut guard) = state.lock() else { return };
+        render_sprite_editor_panel(ctx, &mut guard);
     });
 }
 
