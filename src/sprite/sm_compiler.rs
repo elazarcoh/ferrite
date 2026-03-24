@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::sprite::sm_expr::parse as parse_expr;
 use crate::sprite::sm_expr::Expr;
 use crate::sprite::sm_format::SmFile;

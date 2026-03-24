@@ -38,10 +38,12 @@ impl SpriteGallery {
         SpriteGallery { dir, entries }
     }
 
+    #[allow(dead_code)]
     pub fn all(&self) -> &[SpriteEntry] {
         &self.entries
     }
 
+    #[allow(dead_code)]
     pub fn get_by_id(&self, id: &str) -> Option<&SpriteEntry> {
         self.entries.iter().find(|e| e.id == id)
     }
@@ -56,6 +58,7 @@ impl SpriteGallery {
         self.save_gallery_file()
     }
 
+    #[allow(dead_code)]
     pub fn set_recommended_sm(&mut self, sprite_id: &str, sm_name: Option<&str>) {
         if let Some(entry) = self.entries.iter_mut().find(|e| e.id == sprite_id) {
             entry.recommended_sm = sm_name.map(|s| s.to_string());

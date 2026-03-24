@@ -74,6 +74,7 @@ impl SpriteEditorState {
     }
 
     /// Frame indices (inclusive range) covered by tag `tag_idx`.
+    #[allow(dead_code)]
     pub fn frames_for_tag(&self, tag_idx: usize) -> Vec<usize> {
         match self.tags.get(tag_idx) {
             Some(t) => (t.from..=t.to).collect(),
@@ -82,11 +83,13 @@ impl SpriteEditorState {
     }
 
     /// True iff the sheet has at least one tag defined.
+    #[allow(dead_code)]
     pub fn is_saveable(&self) -> bool {
         !self.tags.is_empty()
     }
 
     /// Iterator of `(tag_idx, &EditorTag)` — used by the canvas painter.
+    #[allow(dead_code)]
     pub fn state_tags_iter(&self) -> impl Iterator<Item = (usize, &EditorTag)> {
         self.tags.iter().enumerate()
     }
@@ -103,6 +106,7 @@ impl SpriteEditorState {
     }
 
     /// Serialise to Aseprite array-format JSON (alias for export compatibility).
+    #[allow(dead_code)]
     pub fn to_clean_json(&self) -> Vec<u8> {
         self.to_json()
     }

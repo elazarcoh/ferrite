@@ -227,6 +227,7 @@ impl PetWindow {
     }
 
     /// Returns the alpha of the pixel at the given window-local coordinates.
+    #[allow(dead_code)]
     pub fn alpha_at_local(&self, lx: u32, ly: u32) -> u8 {
         if self.frame_buf.is_empty() {
             return 0;

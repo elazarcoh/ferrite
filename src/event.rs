@@ -1,6 +1,7 @@
 use crate::config::schema::Config;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum AppEvent {
     /// Config file changed on disk.
     ConfigReloaded(Config),

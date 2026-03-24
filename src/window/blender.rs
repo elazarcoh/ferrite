@@ -46,6 +46,7 @@ pub fn blit_frame(
 
 /// Returns the alpha value of the pixel at (`px`, `py`) in a premultiplied
 /// BGRA buffer of given `width`.
+#[allow(dead_code)]
 pub fn alpha_at(buf: &[u8], width: u32, px: u32, py: u32) -> u8 {
     let idx = ((py * width + px) * 4 + 3) as usize;
     buf.get(idx).copied().unwrap_or(0)

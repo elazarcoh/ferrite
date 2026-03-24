@@ -190,16 +190,19 @@ impl PetInstance {
     // ─── Test-helper accessors ───────────────────────────────────────────────
 
     /// Returns true if the window's internal pixel buffer is empty.
+    #[allow(dead_code)]
     pub fn window_frame_buf_is_empty(&self) -> bool {
         self.window.frame_buf.is_empty()
     }
 
     /// Returns a reference to the window's premultiplied BGRA buffer.
+    #[allow(dead_code)]
     pub fn window_frame_buf(&self) -> &[u8] {
         &self.window.frame_buf
     }
 
     /// Returns the rendered window width in pixels (after scale).
+    #[allow(dead_code)]
     pub fn window_width(&self) -> u32 {
         self.window.width
     }

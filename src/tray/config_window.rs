@@ -47,6 +47,7 @@ impl ConfigWindowState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn refresh_gallery(&mut self) {
         self.gallery = SpriteGallery::load();
     }

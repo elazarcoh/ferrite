@@ -31,6 +31,7 @@ impl SpriteKey {
     }
 
     /// Parses a `sheet_path` string back into a `SpriteKey`.
+    #[allow(dead_code)]
     pub fn from_sheet_path(s: &str) -> Self {
         if let Some(stem) = s.strip_prefix("embedded://") {
             SpriteKey::Embedded(stem.to_string())
@@ -57,6 +58,7 @@ pub enum SourceKind {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct GalleryEntry {
     pub key: SpriteKey,
     pub display_name: String,
@@ -83,6 +85,7 @@ unsafe impl Send for SpriteGallery {}
 unsafe impl Sync for SpriteGallery {}
 
 /// Sentinel last entry — not a real sprite.
+#[allow(dead_code)]
 pub struct BrowseEntry;
 
 // ─── Embedded asset stems ────────────────────────────────────────────────────
@@ -171,6 +174,7 @@ impl SpriteGallery {
     /// Validate and copy a `.json` + adjacent `.png` into the sprites directory.
     /// Returns a new `GalleryEntry` with `thumbnail = None`; caller must call
     /// `load_thumbnail` before painting.
+    #[allow(dead_code)]
     pub fn install(json_path: &Path) -> Result<GalleryEntry> {
         let json_bytes = std::fs::read(json_path)
             .with_context(|| format!("read {}", json_path.display()))?;
@@ -210,6 +214,7 @@ impl SpriteGallery {
     /// Load a 28×28 thumbnail HBITMAP for the given entry.
     /// Stores the result in `entry.thumbnail`. No-op if already loaded.
     /// Must be called from the Win32 thread.
+    #[allow(dead_code)]
     #[cfg(target_os = "windows")]
     pub fn load_thumbnail(entry: &mut GalleryEntry) {
         if entry.thumbnail.is_some() {
@@ -305,6 +310,7 @@ impl SpriteGallery {
     }
 
     /// Delete all GDI HBITMAP handles. Must be called from `WM_DESTROY`.
+    #[allow(dead_code)]
     #[cfg(target_os = "windows")]
     pub fn destroy_thumbnails(&mut self) {
         for entry in &mut self.entries {

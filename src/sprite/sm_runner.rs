@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::sync::Arc;
 use crate::sprite::sm_compiler::{CompiledSM, ActionType, Direction};
 use crate::sprite::sm_expr::ConditionVars;

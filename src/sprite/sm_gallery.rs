@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::sprite::sm_compiler::{compile, CompiledSM, CompileError};
