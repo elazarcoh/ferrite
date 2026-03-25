@@ -55,6 +55,68 @@ pub struct SmEditorViewport {
     pub pending_delete: Option<String>,
 }
 
+const TOML_SYNTAX: &str = r#"%YAML 1.2
+---
+name: TOML
+file_extensions: [toml]
+scope: source.toml
+contexts:
+  main:
+    - match: '#.*$'
+      scope: comment.line.number-sign.toml
+    - match: '"""'
+      push:
+        - meta_scope: string.quoted.triple.toml
+        - match: '"""'
+          pop: true
+    - match: '"'
+      push:
+        - meta_scope: string.quoted.double.toml
+        - match: '"'
+          pop: true
+        - match: '\\'
+          scope: constant.character.escape.toml
+    - match: "'''"
+      push:
+        - meta_scope: string.quoted.triple.single.toml
+        - match: "'''"
+          pop: true
+    - match: "'"
+      push:
+        - meta_scope: string.quoted.single.toml
+        - match: "'"
+          pop: true
+    - match: '\b(true|false)\b'
+      scope: constant.language.toml
+    - match: '\b[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][+-]?[0-9][0-9_]*)?\b'
+      scope: constant.numeric.toml
+    - match: '^\s*\[\[.*?\]\]'
+      scope: entity.name.section.array.toml
+    - match: '^\s*\[.*?\]'
+      scope: entity.name.section.toml
+    - match: '(^|\s)([a-zA-Z_][a-zA-Z0-9_\-]*)(\s*=)'
+      captures:
+        2: variable.other.toml
+        3: keyword.operator.assignment.toml
+"#;
+
+fn toml_syntect_settings() -> &'static egui_extras::syntax_highlighting::SyntectSettings {
+    use std::sync::OnceLock;
+    static SETTINGS: OnceLock<egui_extras::syntax_highlighting::SyntectSettings> = OnceLock::new();
+    SETTINGS.get_or_init(|| {
+        use syntect::parsing::SyntaxDefinition;
+        let base = syntect::parsing::SyntaxSet::load_defaults_newlines();
+        let mut builder = base.into_builder();
+        if let Ok(toml_def) = SyntaxDefinition::load_from_str(TOML_SYNTAX, true, None) {
+            builder.add(toml_def);
+        }
+        egui_extras::syntax_highlighting::SyntectSettings {
+            ps: builder.build(),
+            ts: syntect::highlighting::ThemeSet::load_defaults(),
+        }
+    })
+}
+
 const MINIMAL_TEMPLATE: &str = r#"[meta]
 name = "My SM"
 version = "1.0"
@@ -503,9 +565,10 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
 
         // Syntax-highlighted TOML editor — scrollable, fills remaining height
         let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
+        let settings = toml_syntect_settings();
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
-            let mut layout_job = egui_extras::syntax_highlighting::highlight(
-                ui.ctx(), ui.style(), &theme, buf.as_str(), "toml"
+            let mut layout_job = egui_extras::syntax_highlighting::highlight_with(
+                ui.ctx(), ui.style(), &theme, buf.as_str(), "TOML", settings,
             );
             layout_job.wrap.max_width = wrap_width;
             ui.painter().layout_job(layout_job)
@@ -663,18 +726,20 @@ mod tests {
 
     #[test]
     fn syntax_highlight_produces_colored_toml_output() {
+        let settings = super::toml_syntect_settings();
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx: &egui::Context| {
             let style = ctx.style();
             let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(&style);
-            // Use Rust syntax — available in syntect's default syntax set.
-            let code = r#"fn main() { let x = 42; println!("{}", x); }"#;
-            let job = egui_extras::syntax_highlighting::highlight(ctx, &style, &theme, code, "rs");
+            let code = "[state.idle]\naction = \"idle\"\n# comment\ntransitions = []\n";
+            let job = egui_extras::syntax_highlighting::highlight_with(
+                ctx, &style, &theme, code, "TOML", settings,
+            );
             assert!(job.sections.len() > 1, "expected multiple sections, got {}", job.sections.len());
             let colors: std::collections::HashSet<_> = job.sections.iter()
                 .map(|s| s.format.color)
                 .collect();
-            assert!(colors.len() > 1, "expected multiple colors, got only {:?}", colors);
+            assert!(colors.len() > 1, "expected multiple colors in TOML highlighting, got only {:?}", colors);
         });
     }
 }
