@@ -600,8 +600,25 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
             }
     });
 
-    // Handle pending deletion — done after panels to avoid borrow conflicts
-    if let Some(name) = vp.pending_delete.take()
+    // SM deletion confirmation modal
+    let mut sm_delete_confirmed = false;
+    let mut sm_delete_cancelled = false;
+    if let Some(ref name) = vp.pending_delete {
+        let display_name = name.clone();
+        egui::Window::new("Remove State Machine?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(format!("Delete \"{}\"? This cannot be undone.", display_name));
+                ui.horizontal(|ui| {
+                    if ui.button("Remove").clicked() { sm_delete_confirmed = true; }
+                    if ui.button("Cancel").clicked() { sm_delete_cancelled = true; }
+                });
+            });
+    }
+    if sm_delete_confirmed
+        && let Some(name) = vp.pending_delete.take()
         && let Some(gallery) = vp.cached_gallery.as_mut() {
             match gallery.delete(&name) {
                 Ok(()) => {
@@ -621,7 +638,8 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
                     vp.has_saved_once = true;
                 }
             }
-        }
+    }
+    if sm_delete_cancelled { vp.pending_delete = None; }
 }
 
 pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorViewport>>) {

@@ -117,6 +117,40 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
             AppTab::Sm => render_sm_panel(ctx, &mut s.sm),
         }
 
+        // Sprite deletion confirmation modal
+        let mut confirmed = false;
+        let mut cancelled = false;
+        if let Some(ref key) = s.pending_sprite_delete {
+            let display_name = s.sprite_gallery.entries.iter()
+                .find(|e| &e.key == key)
+                .map(|e| e.display_name.as_str())
+                .unwrap_or("this sprite");
+            egui::Window::new("Remove Sprite?")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label(format!("Delete \"{}\"? This cannot be undone.", display_name));
+                    ui.horizontal(|ui| {
+                        if ui.button("Remove").clicked() { confirmed = true; }
+                        if ui.button("Cancel").clicked() { cancelled = true; }
+                    });
+                });
+        }
+        if confirmed {
+            let key = s.pending_sprite_delete.take().unwrap();
+            if let Err(e) = SpriteGallery::delete_installed(&key) {
+                log::warn!("Failed to delete sprite: {e}");
+            } else {
+                s.sprite_gallery = SpriteGallery::load();
+                if s.selected_sprite_key.as_ref() == Some(&key) {
+                    s.selected_sprite_key = None;
+                    s.sprite_editor = None;
+                }
+            }
+        }
+        if cancelled { s.pending_sprite_delete = None; }
+
         // Handle "Edit…" / "New from PNG…" requests from Config tab → switch to Sprites tab
         if let Some(req) = s.config_state.open_editor_request.take() {
             s.selected_tab = AppTab::Sprites;
