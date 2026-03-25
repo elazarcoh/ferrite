@@ -115,6 +115,23 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
             AppTab::Sm => render_sm_panel(ctx, &mut s.sm),
         }
 
+        // Handle "Edit…" / "New from PNG…" requests from Config tab → switch to Sprites tab
+        if let Some(req) = s.config_state.open_editor_request.take() {
+            s.selected_tab = AppTab::Sprites;
+            match req {
+                crate::tray::config_window::OpenEditorRequest::Edit(sheet_path) => {
+                    if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
+                        s.sprite_editor = Some(crate::tray::sprite_editor::SpriteEditorViewport::new(es));
+                    }
+                }
+                crate::tray::config_window::OpenEditorRequest::New(png_path) => {
+                    if let Ok(es) = load_editor_state_from_png(&png_path) {
+                        s.sprite_editor = Some(crate::tray::sprite_editor::SpriteEditorViewport::new(es));
+                    }
+                }
+            }
+        }
+
         // Collect dark_mode_out from sub-states
         if let Some(new_dark) = s.config_state.dark_mode_out.take() {
             s.dark_mode_out = Some(new_dark);

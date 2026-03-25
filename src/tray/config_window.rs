@@ -13,7 +13,6 @@ pub struct ConfigWindowState {
     pub selected_pet_idx: Option<usize>,
     pub gallery: SpriteGallery,
     pub tx: Sender<AppEvent>,
-    pub should_close: bool,
     pub open_editor_request: Option<OpenEditorRequest>,
     pub dark_mode: bool,        // synced from App each frame
     pub dark_mode_out: Option<bool>,  // set by toggle, read by App
@@ -37,7 +36,6 @@ impl ConfigWindowState {
             selected_pet_idx,
             gallery,
             tx,
-            should_close: false,
             open_editor_request: None,
             dark_mode: true,
             dark_mode_out: None,
@@ -70,14 +68,7 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
     egui::SidePanel::left("pet_list_panel")
         .default_width(180.0)
         .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("Pets");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
-                        s.dark_mode_out = Some(s.dark_mode);
-                    }
-                });
-            });
+            ui.heading("Pets");
             ui.separator();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -295,32 +286,6 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
             }
         });
     });
-}
-
-pub fn open_config_viewport(
-    ctx: &egui::Context,
-    state: std::sync::Arc<std::sync::Mutex<ConfigWindowState>>,
-) {
-    let viewport_id = egui::ViewportId::from_hash_of("config_window");
-    ctx.show_viewport_deferred(
-        viewport_id,
-        egui::ViewportBuilder::default()
-            .with_title("my-pet Config")
-            .with_inner_size([600.0, 480.0]),
-        move |ctx, _class| {
-            let mut guard = match state.lock() {
-                Ok(g) => g,
-                Err(_) => return,
-            };
-            let s = &mut *guard;
-
-            if ctx.input(|i| i.viewport().close_requested()) {
-                s.should_close = true;
-            }
-
-            render_config_panel(ctx, s);
-        },
-    );
 }
 
 fn remove_selected(config: &mut Config, selected: &mut Option<usize>) {
