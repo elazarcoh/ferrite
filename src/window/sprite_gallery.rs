@@ -50,19 +50,11 @@ use windows_sys::Win32::Graphics::Gdi::{
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-/// Whether a sprite is bundled with the app or user-installed.
-#[derive(Debug, Clone, PartialEq)]
-pub enum SourceKind {
-    BuiltIn,
-    Custom,
-}
-
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct GalleryEntry {
     pub key: SpriteKey,
     pub display_name: String,
-    pub source: SourceKind,
     /// 28×28 HBITMAP thumbnail; `None` until `load_thumbnail` is called.
     /// Cloning copies the handle value — only safe when thumbnail is None
     /// (e.g., freshly installed entries). Never clone an entry with a live thumbnail.
@@ -128,7 +120,6 @@ impl SpriteGallery {
             entries.push(GalleryEntry {
                 key: SpriteKey::Embedded(stem.clone()),
                 display_name,
-                source: SourceKind::BuiltIn,
                 thumbnail: None,
             });
         }
@@ -152,7 +143,6 @@ impl SpriteGallery {
                     entries.push(GalleryEntry {
                         display_name: stem.clone(),
                         key: SpriteKey::Installed(json_path),
-                        source: SourceKind::Custom,
                         thumbnail: None,
                     });
                 }
@@ -206,7 +196,6 @@ impl SpriteGallery {
         Ok(GalleryEntry {
             key: SpriteKey::Installed(dest_json),
             display_name: stem,
-            source: SourceKind::Custom,
             thumbnail: None,
         })
     }

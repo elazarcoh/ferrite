@@ -4,14 +4,12 @@ use crate::sprite::{
     sheet::{Frame, FrameTag, SpriteSheet, TagDirection},
 };
 use eframe::egui;
-use std::sync::{Arc, Mutex};
 
 pub struct SpriteEditorViewport {
     pub state: SpriteEditorState,
     pub texture: Option<egui::TextureHandle>,
     pub anim: AnimationState,
     pub preview_sheet: Option<SpriteSheet>,
-    pub should_close: bool,
     pub dark_mode: bool,        // synced from App each frame
     pub dark_mode_out: Option<bool>,  // set by toggle, read by App
     /// Set to the saved JSON path after a successful save; App reads + clears to trigger hot-reload.
@@ -36,7 +34,6 @@ impl SpriteEditorViewport {
             texture: None,
             anim: AnimationState::new(tag),
             preview_sheet: None,
-            should_close: false,
             dark_mode: true,
             dark_mode_out: None,
             saved_json_path: None,
@@ -700,28 +697,6 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
         }
 
     ctx.request_repaint_after(std::time::Duration::from_millis(16));
-}
-
-pub fn open_sprite_editor_viewport(
-    ctx: &egui::Context,
-    state: Arc<Mutex<SpriteEditorViewport>>,
-) {
-    let viewport_id = egui::ViewportId::from_hash_of("sprite_editor");
-    let viewport_builder = egui::ViewportBuilder::default()
-        .with_title("Sprite Editor")
-        .with_inner_size([900.0, 600.0]);
-
-    ctx.show_viewport_deferred(viewport_id, viewport_builder, move |ctx, _vp_class| {
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if let Ok(mut s) = state.lock() {
-                s.should_close = true;
-            }
-            return;
-        }
-
-        let Ok(mut guard) = state.lock() else { return };
-        render_sprite_editor_panel(ctx, &mut guard);
-    });
 }
 
 // TODO(Task-13): tag_map_ui and helpers removed — will be replaced by SM mapping UI
