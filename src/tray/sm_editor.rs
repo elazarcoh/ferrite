@@ -73,7 +73,7 @@ required = true
 action   = "walk"
 dir      = "random"
 distance = "200px..600px"
-transitions = [{ goto = "idle" }]
+transitions = []
 "#;
 
 impl SmEditorViewport {

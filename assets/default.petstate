@@ -22,13 +22,13 @@ transitions = [
 [states.walk]
 action = "walk"
 dir    = "random"
-transitions = [{ goto = "idle" }]
+transitions = []
 
 [states.run]
 fallback = "idle"
 action   = "run"
 dir      = "random"
-transitions = [{ goto = "idle" }]
+transitions = []
 
 [states.sit]
 fallback = "idle"

@@ -479,7 +479,14 @@ impl SMRunner {
                 }
             }
 
-            StateKind::Atomic { transitions, .. } => {
+            StateKind::Atomic { action, transitions, .. } => {
+                // Don't evaluate data-driven transitions mid-walk; walk completion
+                // is handled by execute_action calling transition_to(fallback, "walk_done").
+                if (*action == ActionType::Walk || *action == ActionType::Run)
+                    && self.walk_remaining_px > 0.0
+                {
+                    return;
+                }
                 let transitions = transitions.clone();
                 self.try_atomic_transitions(&transitions);
             }
