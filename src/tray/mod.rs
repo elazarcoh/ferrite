@@ -43,6 +43,15 @@ impl SystemTray {
             }
         }));
 
+        tray_icon::TrayIconEvent::set_event_handler(Some({
+            let tx = tx.clone();
+            move |event: tray_icon::TrayIconEvent| {
+                if matches!(event, tray_icon::TrayIconEvent::DoubleClick { .. }) {
+                    tx.send(AppEvent::TrayOpenWindow).ok();
+                }
+            }
+        }));
+
         // RC-fix: create a visible 16×16 icon (green paw / solid square).
         // A fully-transparent icon is invisible in the system tray.
         let icon_rgba = make_tray_icon();
