@@ -159,7 +159,9 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                         });
                     }
                     let save_btn = egui::Button::new("Save");
-                    if ui.add_enabled(!s.is_builtin && s.dirty, save_btn).clicked() {
+                    let save_resp = ui.add_enabled(!s.is_builtin && s.dirty, save_btn)
+                        .on_disabled_hover_text("Built-in sprites cannot be modified");
+                    if save_resp.clicked() {
                         // Sync sm_mappings from viewport into editor state before saving
                         s.state.sm_mappings = s.sm_mappings.clone();
                         let save_dir = s.state.png_path.parent().map(|p| p.to_path_buf());
@@ -181,8 +183,9 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
 
         // Left panel: tag list and grid settings
         egui::SidePanel::left("tag_panel").min_width(200.0).show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal(|ui| {
+            ui.add_enabled_ui(!s.is_builtin, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.horizontal(|ui| {
                     ui.heading("Grid");
                     crate::tray::ui_theme::help_icon(ui, "Sets how the PNG is divided into frames. Cols × Rows = total frame count.");
                 });
@@ -407,6 +410,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                         }
                 }
             }); // end ScrollArea
+            });
         });
 
         // Central panel: frame controls + preview
