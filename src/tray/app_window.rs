@@ -121,7 +121,11 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
             match req {
                 crate::tray::config_window::OpenEditorRequest::Edit(sheet_path) => {
                     if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                        s.sprite_editor = Some(crate::tray::sprite_editor::SpriteEditorViewport::new(es));
+                        let mut ed = crate::tray::sprite_editor::SpriteEditorViewport::new(es);
+                        if sheet_path.starts_with("embedded://") {
+                            ed.is_builtin = true;
+                        }
+                        s.sprite_editor = Some(ed);
                     }
                 }
                 crate::tray::config_window::OpenEditorRequest::New(png_path) => {
@@ -190,7 +194,9 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                             SpriteKey::Embedded(stem) => {
                                 let sheet_path = format!("embedded://{stem}");
                                 if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                                    s.sprite_editor = Some(SpriteEditorViewport::new(es));
+                                    let mut ed = SpriteEditorViewport::new(es);
+                                    ed.is_builtin = true;
+                                    s.sprite_editor = Some(ed);
                                 }
                             }
                             SpriteKey::Installed(path) => {

@@ -16,6 +16,7 @@ pub struct SpriteEditorViewport {
     pub dark_mode_out: Option<bool>,  // set by toggle, read by App
     /// Set to the saved JSON path after a successful save; App reads + clears to trigger hot-reload.
     pub saved_json_path: Option<std::path::PathBuf>,
+    pub is_builtin: bool,       // true for embedded sprites — disables Save/Export
     selected_tag_idx: Option<usize>,
     selected_frame_idx: usize,
     dirty: bool,
@@ -39,6 +40,7 @@ impl SpriteEditorViewport {
             dark_mode: true,
             dark_mode_out: None,
             saved_json_path: None,
+            is_builtin: false,
             selected_tag_idx: None,
             selected_frame_idx: 0,
             dirty: false,
@@ -138,11 +140,14 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
     egui::TopBottomPanel::top("editor_top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(format!("File: {}", s.state.png_path.display()));
+                if s.is_builtin {
+                    ui.colored_label(egui::Color32::GRAY, "(Built-in \u{2014} read only)");
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Export Bundle").clicked() {
+                    if ui.add_enabled(!s.is_builtin, egui::Button::new("Export Bundle")).clicked() {
                         s.show_export_bundle_dialog = true;
                     }
-                    if ui.button("Export PNG\u{2026}").clicked() {
+                    if ui.add_enabled(!s.is_builtin, egui::Button::new("Export PNG\u{2026}")).clicked() {
                         let image_data = s.state.image.clone();
                         std::thread::spawn(move || {
                             if let Some(path) = rfd::FileDialog::new()
@@ -154,7 +159,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                         });
                     }
                     let save_btn = egui::Button::new("Save");
-                    if ui.add_enabled(s.dirty, save_btn).clicked() {
+                    if ui.add_enabled(!s.is_builtin && s.dirty, save_btn).clicked() {
                         // Sync sm_mappings from viewport into editor state before saving
                         s.state.sm_mappings = s.sm_mappings.clone();
                         let save_dir = s.state.png_path.parent().map(|p| p.to_path_buf());
