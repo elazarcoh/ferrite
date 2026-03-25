@@ -1,7 +1,7 @@
 // Tests for SpriteGallery — gallery load, install, and appdata resolution.
 // Uses MY_PET_SPRITES_DIR env var to redirect installs to a tempdir.
 
-use my_pet::window::sprite_gallery::{SourceKind, SpriteGallery};
+use my_pet::window::sprite_gallery::SpriteGallery;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tempfile::TempDir;
