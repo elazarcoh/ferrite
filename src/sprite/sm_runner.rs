@@ -849,7 +849,7 @@ transitions = []
         let initial_facing = r.current_facing();
 
         // Tick for ~30 more frames (≈500ms at 16ms/frame) — still well within
-        // the 2000 px walk distance at 80 px/s (≈25 s to complete).
+        // the 400 px walk distance at 80 px/s (≈5 s to complete).
         for _ in 0..30 {
             r.tick(16, &mut x, &mut y, screen_w, pet_w, pet_h, floor_y, &sheet);
             assert!(
