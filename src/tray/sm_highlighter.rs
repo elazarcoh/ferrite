@@ -34,7 +34,7 @@ impl PetstateTheme {
             field_unknown: Color32::from_rgb(212, 212, 212),  // light gray
             action_val:    Color32::from_rgb( 78, 201, 176),  // teal
             state_ref:     Color32::from_rgb(220, 220, 170),  // yellow (same as state_name)
-            special:       Color32::from_rgb(206, 145, 120),  // orange
+            special:       Color32::from_rgb(255, 185,  50),  // bright gold (distinct from string)
             duration_val:  Color32::from_rgb(197, 134, 192),  // purple
             bool_val:      Color32::from_rgb( 86, 156, 214),  // blue
             number:        Color32::from_rgb(181, 206, 168),  // light green
@@ -54,7 +54,7 @@ impl PetstateTheme {
             field_unknown: Color32::from_rgb( 80,  80,  80),  // dark gray
             action_val:    Color32::from_rgb(  0, 128, 100),  // dark teal
             state_ref:     Color32::from_rgb(130,  85,   0),  // dark yellow
-            special:       Color32::from_rgb(163,  52,  20),  // dark orange
+            special:       Color32::from_rgb(190, 140,   0),  // dark gold (distinct from string)
             duration_val:  Color32::from_rgb(113,  56, 127),  // dark purple
             bool_val:      Color32::from_rgb(  0,   0, 200),  // dark blue
             number:        Color32::from_rgb( 50, 130,  50),  // dark green
@@ -67,7 +67,6 @@ impl PetstateTheme {
 
 pub fn highlight_petstate(code: &str, theme: &PetstateTheme) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let mut _pending_key: Option<String> = None;
     let mut in_transitions: bool = false;
 
     for line in code.split_inclusive('\n') {
@@ -88,17 +87,24 @@ pub fn highlight_petstate(code: &str, theme: &PetstateTheme) -> LayoutJob {
 
         // Section header: [meta], [states.idle], etc.
         if trimmed.starts_with('[') && !in_transitions {
-            _pending_key = None;
             in_transitions = false;
             colorize_section_line(&mut job, line, theme);
             continue;
         }
 
-        // Closing ] for transitions array
-        let trimmed_no_comma = trimmed.trim_end_matches(',').trim();
-        if trimmed_no_comma == "]" && in_transitions {
+        // Closing ] for transitions array — strip trailing comment/comma before comparing
+        let effective = trimmed.split('#').next().unwrap_or("").trim().trim_end_matches(',').trim();
+        if effective == "]" && in_transitions {
             push(&mut job, indent, theme.default, &theme.font_id);
-            push(&mut job, trimmed, theme.operator, &theme.font_id);
+            push(&mut job, "]", theme.operator, &theme.font_id);
+            // emit anything after ] (comma, whitespace, comment)
+            let rest_of_line = &line[indent_len + 1..];  // skip indent + "]"
+            if let Some(hash) = rest_of_line.find('#') {
+                push(&mut job, &rest_of_line[..hash], theme.default, &theme.font_id);
+                push(&mut job, &rest_of_line[hash..], theme.comment, &theme.font_id);
+            } else {
+                push(&mut job, rest_of_line, theme.default, &theme.font_id);
+            }
             in_transitions = false;
             continue;
         }
@@ -146,7 +152,6 @@ pub fn highlight_petstate(code: &str, theme: &PetstateTheme) -> LayoutJob {
                     push(&mut job, "\n", theme.default, &theme.font_id);
                 }
             }
-            _pending_key = Some(key.to_string());
             continue;
         }
 
@@ -475,5 +480,36 @@ mod tests {
         let t = dark();
         let job = highlight_petstate("required = true\n", &t);
         assert!(job.sections.iter().any(|s| s.format.color == t.bool_val));
+    }
+
+    #[test]
+    fn inline_table_in_transitions_array_is_colored() {
+        let t = dark();
+        // goto in inline table → state_ref; after → duration_val
+        let job = highlight_petstate(
+            "transitions = [{ goto = \"idle\", after = \"500ms\" }]\n",
+            &t,
+        );
+        assert!(
+            job.sections.iter().any(|s| s.format.color == t.state_ref),
+            "goto value in inline table should be state_ref color"
+        );
+        assert!(
+            job.sections.iter().any(|s| s.format.color == t.duration_val),
+            "after value in inline table should be duration_val color"
+        );
+    }
+
+    #[test]
+    fn in_transitions_resets_on_bracket_with_trailing_comment() {
+        let t = dark();
+        // The ] line has a trailing comment — in_transitions must still reset
+        let code = "transitions = [\n{ goto = \"idle\" },\n] # end\naction = \"walk\"\n";
+        let job = highlight_petstate(code, &t);
+        // "walk" after the ] should be colored as action_val, not fall through as default
+        assert!(
+            job.sections.iter().any(|s| s.format.color == t.action_val),
+            "action after closing ] with comment should be action_val"
+        );
     }
 }
