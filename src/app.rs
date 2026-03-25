@@ -366,12 +366,19 @@ impl App {
                 self.pets.remove(&pet_id);
             }
             AppEvent::TrayOpenWindow => {
-                if let Some(ref _w) = self.app_window {
+                // Check if the window is actually still alive (not closed by the user)
+                let is_open = self.app_window.as_ref().is_some_and(|w| {
+                    w.lock().ok().map(|s| !s.should_close).unwrap_or(false)
+                });
+
+                if is_open {
+                    // Already open — bring to front
                     ctx.send_viewport_cmd_to(
                         egui::ViewportId::from_hash_of("app_window"),
                         egui::ViewportCommand::Focus,
                     );
                 } else {
+                    // Create fresh state (also clears stale Some)
                     let config_dir = config::config_path()
                         .parent()
                         .map(|p| p.to_path_buf())
