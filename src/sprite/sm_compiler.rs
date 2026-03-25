@@ -267,6 +267,44 @@ pub enum ActionType {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Direction { Left, Right, Random }
 
+impl ActionType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ActionType::Idle          => "idle",
+            ActionType::Walk          => "walk",
+            ActionType::Run           => "run",
+            ActionType::Sit           => "sit",
+            ActionType::Jump          => "jump",
+            ActionType::Float         => "float",
+            ActionType::FollowCursor  => "follow_cursor",
+            ActionType::FleeCursor    => "flee_cursor",
+            ActionType::Grabbed       => "grabbed",
+            ActionType::Fall          => "fall",
+            ActionType::Thrown        => "thrown",
+        }
+    }
+
+    pub const ALL: &'static [ActionType] = &[
+        ActionType::Idle, ActionType::Walk, ActionType::Run, ActionType::Sit,
+        ActionType::Jump, ActionType::Float, ActionType::FollowCursor,
+        ActionType::FleeCursor, ActionType::Grabbed, ActionType::Fall, ActionType::Thrown,
+    ];
+}
+
+impl Direction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Direction::Left   => "left",
+            Direction::Right  => "right",
+            Direction::Random => "random",
+        }
+    }
+
+    pub const ALL: &'static [Direction] = &[
+        Direction::Left, Direction::Right, Direction::Random,
+    ];
+}
+
 #[derive(Debug, Clone)]
 pub struct CompiledTransition {
     pub goto: Goto,
