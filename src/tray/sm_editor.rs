@@ -502,12 +502,7 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
         ui.add_space(4.0);
 
         // Syntax-highlighted TOML editor — scrollable, fills remaining height
-        let ppp = ui.ctx().pixels_per_point();
-        let theme = if vp.dark_mode {
-            egui_extras::syntax_highlighting::CodeTheme::dark(ppp)
-        } else {
-            egui_extras::syntax_highlighting::CodeTheme::light(ppp)
-        };
+        let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
             let mut layout_job = egui_extras::syntax_highlighting::highlight(
                 ui.ctx(), ui.style(), &theme, buf.as_str(), "toml"
@@ -659,4 +654,27 @@ pub fn open_sm_editor_viewport(ctx: &egui::Context, state: Arc<Mutex<SmEditorVie
         let Ok(mut guard) = state.lock() else { return };
         render_sm_panel(ctx, &mut guard);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui;
+    use egui_extras;
+
+    #[test]
+    fn syntax_highlight_produces_colored_toml_output() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx: &egui::Context| {
+            let style = ctx.style();
+            let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(&style);
+            // Use Rust syntax — available in syntect's default syntax set.
+            let code = r#"fn main() { let x = 42; println!("{}", x); }"#;
+            let job = egui_extras::syntax_highlighting::highlight(ctx, &style, &theme, code, "rs");
+            assert!(job.sections.len() > 1, "expected multiple sections, got {}", job.sections.len());
+            let colors: std::collections::HashSet<_> = job.sections.iter()
+                .map(|s| s.format.color)
+                .collect();
+            assert!(colors.len() > 1, "expected multiple colors, got only {:?}", colors);
+        });
+    }
 }
