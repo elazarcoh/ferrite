@@ -785,4 +785,82 @@ transitions = [{ goto = "idle" }]
         // previous_named should be "idle"
         assert_eq!(r.previous_named.as_deref(), Some("idle"));
     }
+
+    #[test]
+    fn walk_facing_does_not_change_during_single_episode() {
+        // Build a minimal SM that transitions directly from idle to walk.
+        // walk_remaining_px defaults to 400 px at 80 px/s → ~5 s to complete.
+        // We only tick for ~30 frames (≈500ms), so the walk never finishes.
+        let sm_toml = r#"
+[meta]
+name = "WalkTest"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+required = true
+action = "idle"
+transitions = [{ goto = "walk" }]
+
+[states.walk]
+action = "walk"
+dir = "right"
+transitions = []
+
+[states.grabbed]
+required = true
+action = "grabbed"
+transitions = []
+
+[states.fall]
+required = true
+action = "fall"
+transitions = []
+
+[states.thrown]
+required = true
+action = "thrown"
+transitions = []
+"#;
+        let file: SmFile = toml::from_str(sm_toml).unwrap();
+        let compiled = compile(&file).unwrap();
+        let mut r = SMRunner::new(compiled, 80.0);
+        let sheet = mock_sheet();
+
+        // Place the pet well away from both walls: x=500 on a 1920-wide screen.
+        let mut x: i32 = 500;
+        let mut y: i32 = 800;
+        let screen_w = 1920;
+        let pet_w = 32;
+        let pet_h = 32;
+        let floor_y = 800;
+
+        // Tick once — idle transitions immediately to walk (no after= guard).
+        r.tick(16, &mut x, &mut y, screen_w, pet_w, pet_h, floor_y, &sheet);
+
+        // Confirm we are now in walk.
+        assert!(
+            matches!(&r.active, ActiveState::Named(n) if n == "walk"),
+            "expected walk state after first tick, got: {:?}", r.active
+        );
+
+        // Record the facing direction that was chosen when entering walk.
+        let initial_facing = r.current_facing();
+
+        // Tick for ~30 more frames (≈500ms at 16ms/frame) — still well within
+        // the 2000 px walk distance at 80 px/s (≈25 s to complete).
+        for _ in 0..30 {
+            r.tick(16, &mut x, &mut y, screen_w, pet_w, pet_h, floor_y, &sheet);
+            assert!(
+                matches!(&r.active, ActiveState::Named(n) if n == "walk"),
+                "runner left walk state unexpectedly"
+            );
+            assert_eq!(
+                r.current_facing(),
+                initial_facing,
+                "facing changed unexpectedly during a single walk episode"
+            );
+        }
+    }
 }

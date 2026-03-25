@@ -33,3 +33,11 @@ mod sprite_editor {
 mod stress {
     include!("integration/test_stress.rs");
 }
+
+mod sprite_gallery_delete {
+    include!("integration/test_sprite_gallery_delete.rs");
+}
+
+mod sm_gallery_delete {
+    include!("integration/test_sm_gallery_delete.rs");
+}
