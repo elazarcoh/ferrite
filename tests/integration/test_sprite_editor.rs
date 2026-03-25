@@ -1,7 +1,7 @@
 // Integration tests for SpriteEditorState — pure Rust, no Win32.
 
-use my_pet::sprite::editor_state::{EditorTag, SpriteEditorState};
-use my_pet::sprite::sheet::TagDirection;
+use ferrite::sprite::editor_state::{EditorTag, SpriteEditorState};
+use ferrite::sprite::sheet::TagDirection;
 use tempfile::{tempdir, TempDir};
 
 fn test_png_bytes() -> &'static [u8] {
@@ -48,7 +48,7 @@ fn to_json_produces_valid_aseprite() {
     let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
         .unwrap()
         .into_rgba8();
-    my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image)
+    ferrite::sprite::sheet::SpriteSheet::from_json_and_image(&json, image)
         .expect("to_json must produce valid Aseprite JSON");
     // Must contain frameTags in JSON
     let parsed: serde_json::Value = serde_json::from_slice(&json).unwrap();
@@ -70,7 +70,7 @@ fn clean_json_is_identical_to_json() {
     let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
         .unwrap()
         .into_rgba8();
-    my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&clean_json, image)
+    ferrite::sprite::sheet::SpriteSheet::from_json_and_image(&clean_json, image)
         .expect("to_clean_json must produce valid Aseprite JSON");
     // Must NOT contain myPetTagMap
     let text = std::str::from_utf8(&clean_json).unwrap();
@@ -81,7 +81,7 @@ fn clean_json_is_identical_to_json() {
 
 #[test]
 fn direction_round_trip() {
-    use my_pet::sprite::sheet::TagDirection;
+    use ferrite::sprite::sheet::TagDirection;
     let cases = [
         (TagDirection::Forward,         "forward"),
         (TagDirection::Reverse,         "reverse"),
@@ -101,7 +101,7 @@ fn direction_round_trip() {
         let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
             .unwrap()
             .into_rgba8();
-        let sheet = my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image).unwrap();
+        let sheet = ferrite::sprite::sheet::SpriteSheet::from_json_and_image(&json, image).unwrap();
         assert_eq!(sheet.tags[0].direction, state.tags[0].direction);
     }
 }
@@ -181,7 +181,7 @@ fn flip_h_true_round_trips_through_json() {
     // Parse back: FrameTag.flip_h must be true
     let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
         .unwrap().into_rgba8();
-    let sheet = my_pet::sprite::sheet::SpriteSheet::from_json_and_image(&json, image).unwrap();
+    let sheet = ferrite::sprite::sheet::SpriteSheet::from_json_and_image(&json, image).unwrap();
     let walk_tag = sheet.tags.iter().find(|t| t.name == "walk").expect("walk tag present");
     assert!(walk_tag.flip_h, "flip_h must survive JSON round-trip");
 }
@@ -208,7 +208,7 @@ fn flip_h_false_omits_field_from_json() {
 fn esheep_walk_and_run_tags_have_flip_h() {
     let json_bytes = include_bytes!("../../assets/esheep.json");
     let png_bytes = include_bytes!("../../assets/esheep.png");
-    let sheet = my_pet::sprite::sheet::load_embedded(json_bytes, png_bytes)
+    let sheet = ferrite::sprite::sheet::load_embedded(json_bytes, png_bytes)
         .expect("esheep sheet must load");
 
     let walk = sheet.tags.iter().find(|t| t.name == "walk").expect("walk tag");

@@ -1,5 +1,5 @@
 /// E2E: click-through and interaction logic.
-use my_pet::{
+use ferrite::{
     app::PetInstance,
     config::schema::PetConfig,
     sprite::{
@@ -10,7 +10,7 @@ use my_pet::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CYSCREEN};
 
-fn test_sheet() -> my_pet::sprite::sheet::SpriteSheet {
+fn test_sheet() -> ferrite::sprite::sheet::SpriteSheet {
     load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),
@@ -53,7 +53,7 @@ fn pet_click_triggers_petted_state() {
 fn petted_state_resolves_back_to_idle() {
     let mut pet = make_pet();
     // Land the pet and wait for Idle.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..500 {
         if matches!(&pet.runner.active, ActiveState::Named(n) if n == "idle") {
             break;
@@ -71,7 +71,7 @@ fn petted_state_resolves_back_to_idle() {
     pet.window.move_to(pet.x, ground_y);
     // Trigger petted interrupt
     pet.runner.interrupt("petted", None);
-    let mut cache2 = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache2 = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..50 {
         pet.tick(20, &mut cache2).unwrap();
     }

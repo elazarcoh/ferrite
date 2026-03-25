@@ -62,7 +62,7 @@ impl AppWindowState {
 pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
     let viewport_id = egui::ViewportId::from_hash_of("app_window");
     let viewport_builder = egui::ViewportBuilder::default()
-        .with_title("My Pet")
+        .with_title("Ferrite")
         .with_inner_size([1000.0, 640.0]);
 
     ctx.show_viewport_deferred(viewport_id, viewport_builder, move |ctx, vp_class| {

@@ -3,7 +3,7 @@
 /// SURFACE_LOCK serialises all tests in this module — Win32 Z-order and
 /// WindowFromPoint are global and would produce flaky results if tests
 /// create windows concurrently.
-use my_pet::window::surfaces::find_floor;
+use ferrite::window::surfaces::find_floor;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use windows_sys::Win32::{
@@ -109,7 +109,7 @@ fn find_floor_detects_window_below_pet() {
     let pet_x = win_x + win_w / 4;
     let pet_y = rc.top - 100;
 
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     let floor = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache);
     unsafe { DestroyWindow(hwnd) };
 
@@ -138,7 +138,7 @@ fn find_floor_keeps_pet_on_surface_when_standing() {
     let pet_x = win_x + win_w / 4;
     let pet_y = rc.top - pet_h; // pet_bottom == win_top exactly
 
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     let floor = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache);
     unsafe { DestroyWindow(hwnd) };
 
@@ -160,13 +160,13 @@ fn find_floor_ignores_non_overlapping_window() {
     let pet_y = 0;
     let pet_w = 32; let pet_h = 32;
 
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     let floor_before = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache);
 
     let hwnd = unsafe { make_test_window(0, screen_h / 2, 50, 100) };
     assert!(!hwnd.is_null());
 
-    let mut cache2 = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache2 = ferrite::window::surfaces::SurfaceCache::default();
     let floor_after = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache2);
     unsafe { DestroyWindow(hwnd) };
 
@@ -197,7 +197,7 @@ fn find_floor_ignores_occluded_surface() {
     let pet_y = base_rc.top - 100;
 
     // Without cover: base surface must be visible and detected.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     let floor_uncovered = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache);
     assert_eq!(
         floor_uncovered, base_rc.top - pet_h,
@@ -212,7 +212,7 @@ fn find_floor_ignores_occluded_surface() {
     let cover_hwnd = unsafe { make_test_window(base_x, cover_y, base_w, 30) };
     assert!(!cover_hwnd.is_null());
 
-    let mut cache2 = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache2 = ferrite::window::surfaces::SurfaceCache::default();
     let floor_covered = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache2);
 
     unsafe { DestroyWindow(cover_hwnd) };
@@ -242,7 +242,7 @@ fn find_floor_ignores_window_too_close_to_screen_top() {
 
     let pet_x = win_x + win_w / 4;
     let pet_y = -100;
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     let floor = find_floor(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, &mut cache);
     unsafe { DestroyWindow(hwnd) };
 

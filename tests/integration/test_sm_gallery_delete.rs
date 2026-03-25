@@ -1,6 +1,6 @@
 // Integration test: SmGallery::delete removes the file and drops the entry from the list.
 
-use my_pet::sprite::sm_gallery::SmGallery;
+use ferrite::sprite::sm_gallery::SmGallery;
 
 fn valid_sm_toml(name: &str) -> String {
     format!(

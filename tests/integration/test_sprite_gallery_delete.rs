@@ -1,6 +1,6 @@
 // Integration test: SpriteGallery::delete_installed removes the JSON and PNG files.
 
-use my_pet::window::sprite_gallery::{SpriteGallery, SpriteKey};
+use ferrite::window::sprite_gallery::{SpriteGallery, SpriteKey};
 
 /// Write minimal placeholder files to act as a fake installed sprite.
 /// Returns (json_path, png_path).

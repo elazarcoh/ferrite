@@ -1,5 +1,5 @@
 use crossbeam_channel::bounded;
-use my_pet::{
+use ferrite::{
     config::{save, schema::Config, watcher::spawn_watcher},
     event::AppEvent,
 };

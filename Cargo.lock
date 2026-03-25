@@ -1106,6 +1106,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrite"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "crossbeam-channel",
+ "eframe",
+ "env_logger",
+ "image",
+ "log",
+ "muda",
+ "notify",
+ "once_cell",
+ "rfd",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 1.0.6+spec-1.1.0",
+ "tray-icon",
+ "wgpu",
+ "windows-sys 0.61.2",
+ "zip",
+]
+
+[[package]]
 name = "field-offset"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2275,32 +2301,6 @@ dependencies = [
  "png 0.17.16",
  "thiserror 2.0.18",
  "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "my-pet"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "criterion",
- "crossbeam-channel",
- "eframe",
- "env_logger",
- "image",
- "log",
- "muda",
- "notify",
- "once_cell",
- "rfd",
- "rust-embed",
- "serde",
- "serde_json",
- "tempfile",
- "toml 1.0.6+spec-1.1.0",
- "tray-icon",
- "wgpu",
- "windows-sys 0.61.2",
- "zip",
 ]
 
 [[package]]

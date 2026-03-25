@@ -1,6 +1,6 @@
-use my_pet::sprite::{animation::AnimationState, sheet::load_embedded};
+use ferrite::sprite::{animation::AnimationState, sheet::load_embedded};
 
-fn sheet() -> my_pet::sprite::sheet::SpriteSheet {
+fn sheet() -> ferrite::sprite::sheet::SpriteSheet {
     load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),
@@ -55,7 +55,7 @@ fn absolute_frame_reflects_tag_offset() {
 
 #[test]
 fn ping_pong_reversal() {
-    use my_pet::sprite::sheet::{Frame, FrameTag, SpriteSheet, TagDirection};
+    use ferrite::sprite::sheet::{Frame, FrameTag, SpriteSheet, TagDirection};
     use image::RgbaImage;
 
     let image = RgbaImage::new(96, 32);

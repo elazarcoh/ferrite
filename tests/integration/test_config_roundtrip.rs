@@ -1,4 +1,4 @@
-use my_pet::config::{config_path, load, save, schema::Config};
+use ferrite::config::{config_path, load, save, schema::Config};
 use tempfile::tempdir;
 
 #[test]
@@ -33,7 +33,7 @@ fn load_missing_returns_default() {
 
 #[test]
 fn multi_pet_roundtrip() {
-    use my_pet::config::schema::PetConfig;
+    use ferrite::config::schema::PetConfig;
     let dir = tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let mut cfg = Config::default();

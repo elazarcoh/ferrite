@@ -1,4 +1,4 @@
-use my_pet::sprite::sheet::{load_embedded, TagDirection};
+use ferrite::sprite::sheet::{load_embedded, TagDirection};
 
 fn test_json() -> &'static [u8] {
     include_bytes!("../../assets/test_pet.json")
@@ -46,7 +46,7 @@ fn array_format_parsed() {
     let image = image::load_from_memory_with_format(test_png(), image::ImageFormat::Png)
         .unwrap()
         .into_rgba8();
-    let sheet = my_pet::sprite::sheet::SpriteSheet::from_json_and_image(json.as_bytes(), image).unwrap();
+    let sheet = ferrite::sprite::sheet::SpriteSheet::from_json_and_image(json.as_bytes(), image).unwrap();
     assert_eq!(sheet.frames.len(), 2);
     assert_eq!(sheet.frames[1].duration_ms, 200);
     let tag = sheet.tag("walk").unwrap();

@@ -1,5 +1,5 @@
-use my_pet::sprite::sm_runner::{ActiveState, SMRunner, load_default_sm};
-use my_pet::sprite::sheet::{SpriteSheet, Frame, FrameTag, TagDirection};
+use ferrite::sprite::sm_runner::{ActiveState, SMRunner, load_default_sm};
+use ferrite::sprite::sheet::{SpriteSheet, Frame, FrameTag, TagDirection};
 use image::RgbaImage;
 
 fn mock_sheet() -> SpriteSheet {

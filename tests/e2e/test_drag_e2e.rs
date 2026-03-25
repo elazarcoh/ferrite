@@ -3,7 +3,7 @@
 /// Uses SendMessage + SetCursorPos to simulate real mouse interaction.
 /// The global EVENT_TX OnceCell is set up once via DRAG_CHANNEL; all drag
 /// tests share the same receiver and drain it before each assertion.
-use my_pet::{
+use ferrite::{
     app::PetInstance,
     config::schema::PetConfig,
     event::AppEvent,
@@ -18,7 +18,7 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::*,
 };
 
-fn test_sheet() -> my_pet::sprite::sheet::SpriteSheet {
+fn test_sheet() -> ferrite::sprite::sheet::SpriteSheet {
     load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),
@@ -75,7 +75,7 @@ fn nchittest_opaque_pixel_returns_htclient() {
 
     // Land pet so it has a rendered frame.
     let mut pet = make_pet();
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
@@ -104,7 +104,7 @@ fn click_sends_pet_clicked_event() {
 
     let mut pet = make_pet();
     // Land pet first.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
@@ -138,7 +138,7 @@ fn drag_sends_drag_start_and_end_events() {
 
     let mut pet = make_pet();
     // Land pet first.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;
@@ -209,7 +209,7 @@ fn grab_then_slow_release_makes_fall_state() {
 fn alpha_buf_center_pixel_is_opaque_after_render() {
     let mut pet = make_pet();
     // Land pet so render_current_frame has been called.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
             break;

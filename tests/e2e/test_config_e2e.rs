@@ -1,12 +1,12 @@
 /// E2E: config load → pet creation → hot-reload cycle.
-use my_pet::{
+use ferrite::{
     app::PetInstance,
     config::{load, save, schema::{Config, PetConfig}},
     sprite::sheet::load_embedded,
 };
 use tempfile::tempdir;
 
-fn test_sheet() -> my_pet::sprite::sheet::SpriteSheet {
+fn test_sheet() -> ferrite::sprite::sheet::SpriteSheet {
     load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),

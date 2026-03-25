@@ -31,7 +31,7 @@ fn main() {
     };
 
     if let Err(e) = eframe::run_native(
-        "my-pet",
+        "ferrite",
         native_options,
         Box::new(|_cc| Ok(Box::new(app))),
     ) {
@@ -45,7 +45,7 @@ fn fatal(msg: &str) {
     log::error!("{msg}");
     // Show a Windows message box so the error is visible even without a console.
     let wide: Vec<u16> = msg.encode_utf16().chain(std::iter::once(0)).collect();
-    let caption: Vec<u16> = "my-pet — fatal error\0".encode_utf16().collect();
+    let caption: Vec<u16> = "ferrite — fatal error\0".encode_utf16().collect();
     unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
             std::ptr::null_mut() as _,

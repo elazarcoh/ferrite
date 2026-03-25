@@ -1,4 +1,4 @@
-use my_pet::window::pet_window::PetWindow;
+use ferrite::window::pet_window::PetWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 #[test]
@@ -26,7 +26,7 @@ fn two_windows_distinct_hwnds() {
 #[test]
 fn render_frame_succeeds() {
     let mut win = PetWindow::create(0, 0, 64, 64).unwrap();
-    let sheet = my_pet::sprite::sheet::load_embedded(
+    let sheet = ferrite::sprite::sheet::load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),
     )
@@ -39,7 +39,7 @@ fn render_frame_succeeds() {
 #[test]
 fn render_frame_flip_succeeds() {
     let mut win = PetWindow::create(0, 0, 64, 64).unwrap();
-    let sheet = my_pet::sprite::sheet::load_embedded(
+    let sheet = ferrite::sprite::sheet::load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),
     )

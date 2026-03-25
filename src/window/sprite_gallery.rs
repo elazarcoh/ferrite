@@ -152,13 +152,13 @@ impl SpriteGallery {
     }
 
     /// Returns the directory where custom sprites are stored.
-    /// In tests, overridable via `MY_PET_SPRITES_DIR` environment variable.
+    /// In tests, overridable via `FERRITE_SPRITES_DIR` environment variable.
     pub fn appdata_sprites_dir() -> PathBuf {
-        if let Ok(dir) = std::env::var("MY_PET_SPRITES_DIR") {
+        if let Ok(dir) = std::env::var("FERRITE_SPRITES_DIR") {
             return PathBuf::from(dir);
         }
         let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".into());
-        PathBuf::from(base).join("my-pet").join("sprites")
+        PathBuf::from(base).join("ferrite").join("sprites")
     }
 
     /// Validate and copy a `.json` + adjacent `.png` into the sprites directory.

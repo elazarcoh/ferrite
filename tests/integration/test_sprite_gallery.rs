@@ -1,28 +1,28 @@
 // Tests for SpriteGallery — gallery load, install, and appdata resolution.
-// Uses MY_PET_SPRITES_DIR env var to redirect installs to a tempdir.
+// Uses FERRITE_SPRITES_DIR env var to redirect installs to a tempdir.
 
-use my_pet::window::sprite_gallery::SpriteGallery;
+use ferrite::window::sprite_gallery::SpriteGallery;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tempfile::TempDir;
 
-// Serialise all tests that touch MY_PET_SPRITES_DIR to avoid env-var races.
+// Serialise all tests that touch FERRITE_SPRITES_DIR to avoid env-var races.
 static SPRITES_DIR_LOCK: Mutex<()> = Mutex::new(());
 
-/// Returns a TempDir and sets MY_PET_SPRITES_DIR to its path.
+/// Returns a TempDir and sets FERRITE_SPRITES_DIR to its path.
 /// Also returns the lock guard — must be kept alive for the duration of the test.
 fn temp_sprites_dir() -> (TempDir, PathBuf, std::sync::MutexGuard<'static, ()>) {
     let guard = SPRITES_DIR_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_path_buf();
-    unsafe { std::env::set_var("MY_PET_SPRITES_DIR", &path) };
+    unsafe { std::env::set_var("FERRITE_SPRITES_DIR", &path) };
     (dir, path, guard)
 }
 
 /// Copy test_pet assets from the embedded store to a temp dir to act as a
 /// source for install() tests. Returns paths to the .json and .png files.
 fn write_test_sprite_source(dir: &TempDir) -> (PathBuf, PathBuf) {
-    use my_pet::assets::Assets;
+    use ferrite::assets::Assets;
     use rust_embed::Embed;
     let json_bytes = Assets::get("test_pet.json").unwrap();
     let png_bytes = Assets::get("test_pet.png").unwrap();

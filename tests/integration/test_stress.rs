@@ -2,7 +2,7 @@
 // Uses real Win32 windows — no mocking needed for UpdateLayeredWindow/SetWindowPos/GetWindowRect.
 // These are smoke tests that verify correctness (no panics, no errors) while catching catastrophic regressions.
 
-use my_pet::{
+use ferrite::{
     app::PetInstance,
     config::schema::PetConfig,
     sprite::{
@@ -32,7 +32,7 @@ fn make_pet() -> PetInstance {
 }
 
 /// Build a sheet whose "walk" tag has flip_h=true, "idle" has flip_h=false.
-fn make_flip_sheet() -> my_pet::sprite::sheet::SpriteSheet {
+fn make_flip_sheet() -> ferrite::sprite::sheet::SpriteSheet {
     let json = r#"{
         "frames": [
             {"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100},
@@ -51,7 +51,7 @@ fn make_flip_sheet() -> my_pet::sprite::sheet::SpriteSheet {
     let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
         .unwrap()
         .into_rgba8();
-    my_pet::sprite::sheet::SpriteSheet::from_json_and_image(json.as_bytes(), image).unwrap()
+    ferrite::sprite::sheet::SpriteSheet::from_json_and_image(json.as_bytes(), image).unwrap()
 }
 
 fn make_pet_with_flip_sheet() -> PetInstance {

@@ -50,7 +50,7 @@ main.rs → App::new() → eframe event loop → App::update() (per frame)
 - Embedded sprites use `embedded://esheep` path; external sprites use absolute path
 
 **Config** (`config/`):
-- Stored at `%LOCALAPPDATA%\my-pet\config.toml`
+- Stored at `%LOCALAPPDATA%\ferrite\config.toml`
 - `config/watcher.rs` hot-reloads on file change → `AppEvent::ConfigChanged`
 - `config/schema.rs`: `Config` (app-level) + `PetConfig` (per-pet, including `tag_map`)
 

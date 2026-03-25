@@ -60,7 +60,7 @@ impl SystemTray {
 
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
-            .with_tooltip("My Pet")
+            .with_tooltip("Ferrite")
             .with_icon(icon)
             .build()?;
 

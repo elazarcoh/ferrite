@@ -1,5 +1,5 @@
 /// E2E: animation advances and renders over time.
-use my_pet::{
+use ferrite::{
     app::PetInstance,
     config::schema::PetConfig,
     sprite::{
@@ -8,7 +8,7 @@ use my_pet::{
     },
 };
 
-fn test_sheet() -> my_pet::sprite::sheet::SpriteSheet {
+fn test_sheet() -> ferrite::sprite::sheet::SpriteSheet {
     load_embedded(
         include_bytes!("../../assets/test_pet.json"),
         include_bytes!("../../assets/test_pet.png"),
@@ -24,14 +24,14 @@ fn make_pet() -> PetInstance {
 
 #[test]
 fn animation_frame_advances_after_one_frame_duration() {
-    use my_pet::sprite::animation::AnimationState;
+    use ferrite::sprite::animation::AnimationState;
     let mut pet = make_pet();
     // Pet starts in Fall state; force into Idle + idle animation for this test.
     pet.runner.active = ActiveState::Named("idle".to_string());
     pet.anim = AnimationState::new("idle");
     let start = pet.anim.absolute_frame(&pet.sheet);
     // Single tick longer than one idle frame duration (200 ms)
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     pet.tick(210, &mut cache).unwrap();
     let end = pet.anim.absolute_frame(&pet.sheet);
     assert_ne!(start, end, "frame must advance after 210ms (idle frame dur = 200ms)");
@@ -42,7 +42,7 @@ fn animation_cycles_forward_over_multiple_ticks() {
     let mut pet = make_pet();
     // idle is pingpong with 200 ms frames: 0 → 1 → 0 in 400 ms total.
     // Accumulate 400ms via small ticks.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..40 {
         pet.tick(10, &mut cache).unwrap();
     }
@@ -79,7 +79,7 @@ fn position_advances_when_walking_right() {
     pet.runner.force_state = Some("walk".to_string());
     pet.runner.facing = Facing::Right;
     let x0 = pet.x;
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     pet.tick(500, &mut cache).unwrap(); // 0.5 s × 200 px/s = 100 px
     // Walk might have occurred — just verify no panic and x changed or stayed
     // (the force is applied on next tick, so x may differ)
@@ -94,7 +94,7 @@ fn position_retreats_when_walking_left() {
     pet.x = 500;
     pet.runner.force_state = Some("walk".to_string());
     pet.runner.facing = Facing::Left;
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     pet.tick(500, &mut cache).unwrap();
     // No panic — walk direction is set; position may change
 }
@@ -105,7 +105,7 @@ fn position_retreats_when_walking_left() {
 fn thrown_pet_lands_and_returns_to_idle() {
     let mut pet = make_pet();
     // Land the pet first so the real window y matches a grounded position.
-    let mut cache = my_pet::window::surfaces::SurfaceCache::default();
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
         if matches!(&pet.runner.active,
             ActiveState::Named(n) if n == "idle" || n == "walk" || n == "sit"

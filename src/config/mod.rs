@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 pub use schema::Config;
 
-/// Returns `%LOCALAPPDATA%\my-pet\config.toml`.
+/// Returns `%LOCALAPPDATA%\ferrite\config.toml`.
 pub fn config_path() -> PathBuf {
     let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
-    PathBuf::from(base).join("my-pet").join("config.toml")
+    PathBuf::from(base).join("ferrite").join("config.toml")
 }
 
 /// Load config from disk, or return `Config::default()` if not found.
