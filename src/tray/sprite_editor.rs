@@ -139,9 +139,6 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
             ui.horizontal(|ui| {
                 ui.label(format!("File: {}", s.state.png_path.display()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
-                        s.dark_mode_out = Some(s.dark_mode);
-                    }
                     if ui.button("Export Bundle").clicked() {
                         s.show_export_bundle_dialog = true;
                     }
