@@ -1,0 +1,20 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}
+      - name: cargo test
+        run: cargo test
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings -A dead-code

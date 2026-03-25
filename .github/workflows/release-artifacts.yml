@@ -1,0 +1,31 @@
+name: Release Artifacts
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-release
+      - name: Build release binary
+        run: cargo build --release
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $archive = "ferrite-${version}-windows.zip"
+          Compress-Archive -Path target/release/ferrite.exe -DestinationPath $archive
+          echo "ARCHIVE=$archive" >> $env:GITHUB_ENV
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
