@@ -12,6 +12,10 @@ pub struct SmFile {
     pub states: HashMap<String, SmStateDef>,
 }
 
+pub const META_FIELD_NAMES: &[&str] = &[
+    "name", "version", "engine_min_version", "default_fallback",
+];
+
 #[derive(Deserialize, Debug)]
 pub struct SmMeta {
     pub name: String,
@@ -26,6 +30,8 @@ pub struct SmInterruptDef {
     pub condition: Option<String>,
     pub ignore: Option<bool>,
 }
+
+pub const INTERRUPT_FIELD_NAMES: &[&str] = &["goto", "condition", "ignore"];
 
 /// Covers both atomic and composite states; validation distinguishes them.
 #[derive(Deserialize, Debug, Default)]
@@ -48,6 +54,11 @@ pub struct SmStateDef {
     pub steps: Option<Vec<String>>,
 }
 
+pub const STATE_FIELD_NAMES: &[&str] = &[
+    "action", "required", "fallback", "duration", "dir", "speed",
+    "distance", "gravity_scale", "transitions", "steps",
+];
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct SmTransitionDef {
     pub goto: String,
@@ -55,6 +66,8 @@ pub struct SmTransitionDef {
     pub after: Option<String>,
     pub condition: Option<String>,
 }
+
+pub const TRANSITION_FIELD_NAMES: &[&str] = &["goto", "weight", "after", "condition"];
 
 #[cfg(test)]
 mod tests {
