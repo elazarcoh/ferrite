@@ -27,6 +27,7 @@ pub struct AppWindowState {
     pub sprite_editor: Option<SpriteEditorViewport>,
     pub pending_png_pick: Option<crossbeam_channel::Receiver<Option<std::path::PathBuf>>>,
     pub saved_json_path: Option<std::path::PathBuf>,
+    pub pending_sprite_delete: Option<SpriteKey>,
 
     // ── SM tab ──
     pub sm: SmEditorViewport,
@@ -52,6 +53,7 @@ impl AppWindowState {
             sprite_editor: None,
             pending_png_pick: None,
             saved_json_path: None,
+            pending_sprite_delete: None,
             sm,
         }))
     }
@@ -188,25 +190,31 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                 let entries: Vec<_> = s.sprite_gallery.entries.iter().map(|e| (e.key.clone(), e.display_name.clone())).collect();
                 for (key, display_name) in entries {
                     let selected = s.selected_sprite_key.as_ref() == Some(&key);
-                    if ui.selectable_label(selected, &display_name).clicked() {
-                        s.selected_sprite_key = Some(key.clone());
-                        match &key {
-                            SpriteKey::Embedded(stem) => {
-                                let sheet_path = format!("embedded://{stem}");
-                                if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                                    let mut ed = SpriteEditorViewport::new(es);
-                                    ed.is_builtin = true;
-                                    s.sprite_editor = Some(ed);
+                    let is_installed = matches!(key, SpriteKey::Installed(_));
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(selected, &display_name).clicked() {
+                            s.selected_sprite_key = Some(key.clone());
+                            match &key {
+                                SpriteKey::Embedded(stem) => {
+                                    let sheet_path = format!("embedded://{stem}");
+                                    if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
+                                        let mut ed = SpriteEditorViewport::new(es);
+                                        ed.is_builtin = true;
+                                        s.sprite_editor = Some(ed);
+                                    }
                                 }
-                            }
-                            SpriteKey::Installed(path) => {
-                                let sheet_path = path.to_string_lossy().to_string();
-                                if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                                    s.sprite_editor = Some(SpriteEditorViewport::new(es));
+                                SpriteKey::Installed(path) => {
+                                    let sheet_path = path.to_string_lossy().to_string();
+                                    if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
+                                        s.sprite_editor = Some(SpriteEditorViewport::new(es));
+                                    }
                                 }
                             }
                         }
-                    }
+                        if is_installed && ui.small_button("🗑").clicked() {
+                            s.pending_sprite_delete = Some(key.clone());
+                        }
+                    });
                 }
             });
             ui.separator();

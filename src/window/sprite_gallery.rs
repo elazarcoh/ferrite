@@ -309,6 +309,21 @@ impl SpriteGallery {
         }
     }
 
+    /// Remove an installed sprite's `.json` and `.png` files from disk.
+    /// Returns an error if `key` is not `SpriteKey::Installed`.
+    pub fn delete_installed(key: &SpriteKey) -> std::io::Result<()> {
+        if let SpriteKey::Installed(path) = key {
+            // Remove the .json file
+            if path.exists() { std::fs::remove_file(path)?; }
+            // Remove the paired .png file
+            let png = path.with_extension("png");
+            if png.exists() { std::fs::remove_file(&png)?; }
+            Ok(())
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Cannot delete built-in sprites"))
+        }
+    }
+
     /// Delete all GDI HBITMAP handles. Must be called from `WM_DESTROY`.
     #[allow(dead_code)]
     #[cfg(target_os = "windows")]
