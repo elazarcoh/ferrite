@@ -31,7 +31,14 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) {
             Stroke::new(1.0, Color32::from_rgba_premultiplied(100, 120, 200, 60));
         vis.widgets.inactive.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_premultiplied(100, 120, 200, 60));
-        vis.override_text_color = Some(Color32::from_rgb(210, 215, 230));
+        // Set text colors per widget state so selected items (green bg) keep contrast.
+        // override_text_color is avoided: it flattens all states to one color,
+        // giving gray text on the green selection highlight (poor contrast).
+        let text = Color32::from_rgb(210, 215, 230);
+        vis.widgets.noninteractive.fg_stroke = Stroke::new(1.0, text);
+        vis.widgets.inactive.fg_stroke = Stroke::new(1.0, text);
+        vis.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+        // active = selected state; keep egui default (WHITE) — good on green bg
     } else {
         vis.window_fill = Color32::from_rgb(244, 244, 248);
         vis.panel_fill = Color32::from_rgb(255, 255, 255);
@@ -42,7 +49,11 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) {
             Stroke::new(1.0, Color32::from_rgba_premultiplied(140, 150, 200, 120));
         vis.widgets.inactive.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_premultiplied(140, 150, 200, 120));
-        vis.override_text_color = Some(Color32::from_rgb(30, 30, 50));
+        let text = Color32::from_rgb(30, 30, 50);
+        vis.widgets.noninteractive.fg_stroke = Stroke::new(1.0, text);
+        vis.widgets.inactive.fg_stroke = Stroke::new(1.0, text);
+        vis.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::BLACK);
+        // active = selected state; keep egui default (BLACK) — good on green bg
     }
 
     ctx.set_visuals(vis);

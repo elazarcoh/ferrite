@@ -161,7 +161,20 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                     if save_resp.clicked() {
                         // Sync sm_mappings from viewport into editor state before saving
                         s.state.sm_mappings = s.sm_mappings.clone();
-                        let save_dir = s.state.png_path.parent().map(|p| p.to_path_buf());
+                        // Always save into the app sprites directory so that new sprites
+                        // are registered and don't try to overwrite the source PNG.
+                        let sprites_dir = crate::window::sprite_gallery::SpriteGallery::appdata_sprites_dir();
+                        let already_installed = s.state.png_path.parent()
+                            .map(|p| p == sprites_dir)
+                            .unwrap_or(false);
+                        let save_dir = if already_installed {
+                            s.state.png_path.parent().map(|p| p.to_path_buf())
+                        } else {
+                            match std::fs::create_dir_all(&sprites_dir) {
+                                Ok(()) => Some(sprites_dir),
+                                Err(e) => { log::warn!("save sprite editor: create sprites dir: {e}"); None }
+                            }
+                        };
                         if let Some(dir) = save_dir {
                             if let Err(e) = s.state.save_to_dir(&dir) {
                                 log::warn!("save sprite editor: {e}");
@@ -169,6 +182,8 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                 let stem = s.state.png_path.file_stem()
                                     .map(|n| n.to_string_lossy().into_owned())
                                     .unwrap_or_default();
+                                // Update png_path so subsequent saves stay in the sprites dir
+                                s.state.png_path = dir.join(format!("{stem}.png"));
                                 s.saved_json_path = Some(dir.join(format!("{stem}.json")));
                                 s.dirty = false;
                             }
