@@ -122,8 +122,10 @@ impl SpriteEditorState {
         let dest_png = dir.join(format!("{stem}.png"));
         std::fs::write(&dest_json, self.to_json())
             .with_context(|| format!("write {}", dest_json.display()))?;
-        std::fs::copy(&self.png_path, &dest_png)
-            .with_context(|| format!("copy PNG to {}", dest_png.display()))?;
+        if self.png_path != dest_png {
+            std::fs::copy(&self.png_path, &dest_png)
+                .with_context(|| format!("copy PNG to {}", dest_png.display()))?;
+        }
         Ok(())
     }
 

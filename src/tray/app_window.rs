@@ -188,7 +188,10 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
         // Collect saved_json_path from sprite editor
         if let Some(ref mut ed) = s.sprite_editor
             && let Some(p) = ed.saved_json_path.take() {
-                s.saved_json_path = Some(p);
+                s.saved_json_path = Some(p.clone());
+                // Reload gallery so newly saved sprites show up in the list
+                s.sprite_gallery = SpriteGallery::load();
+                s.selected_sprite_key = Some(SpriteKey::Installed(p));
             }
     });
 }
