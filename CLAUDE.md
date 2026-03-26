@@ -5,78 +5,74 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-cargo build --release        # Optimized binary (strips debug info, LTO)
-cargo build                  # Debug build (console visible)
-cargo run --release          # Run release build
-cargo run                    # Run with debug console
+# Build
+cargo build
+cargo build --release
 
-cargo test                   # All tests (unit + integration)
-cargo test --test integration  # Integration tests only
-cargo test <name>            # Single test by name
+# Run
+cargo run
+RUST_LOG=debug cargo run
 
-cargo bench                  # All Criterion benchmarks
-cargo bench surfaces         # Single benchmark suite
+# Test
+cargo test
+cargo test --test integration   # integration tests only
+
+# Lint (strict — warnings are errors, dead_code allowed)
+cargo clippy -- -D warnings -A dead-code
+
+# Benchmarks
+cargo bench
+```
+
+To run a single test: `cargo test <test_name>` (e.g., `cargo test test_animation`).
+
+## Commit Convention
+
+Commits must follow Conventional Commits format, enforced by pre-commit hook and CI:
+```
+type(scope): description
+# e.g.: feat(window): add drag, fix(config): handle invalid paths
 ```
 
 ## Architecture
 
-This is a Windows desktop pet application — a transparent, always-on-top window with an animated sprite that walks around the screen, sits on windows, and reacts to user interaction.
+Ferrite is a Windows-native desktop pet simulator. Animated pets live on the desktop; users interact via system tray. Config is stored at `%LOCALAPPDATA%\ferrite\config.toml`.
 
-### Execution Flow
+**Entry point flow:**
+1. `main.rs` → initializes logger, creates `App`
+2. `app.rs::App::new()` → loads config, spawns `PetInstance`s, starts file watcher
+3. eframe event loop calls `App::update()` each frame
+4. Each `PetInstance::tick()` advances animation/state machine, triggers render
 
+**Key modules:**
+
+| Module | Responsibility |
+|--------|----------------|
+| `app.rs` | Runtime loop, `PetInstance` coordination, event dispatch |
+| `sprite/` | Spritesheet loading, `AnimationState` (frame timing), state machine compiler + runner (`SMRunner`), TOML DSL (`SmFile`), sprite/SM galleries |
+| `config/` | `PetConfig`/`Config` load/save, hot-reload via file watcher |
+| `tray/` | System tray menus, unified app window with Config/Sprites/SM tabs, sprite editor, SM editor |
+| `window/` | HWND creation, per-pixel hit testing (transparent areas click-through), desktop surface detection, bitmap blending |
+| `bundle.rs` | `.petbundle` ZIP import/export |
+| `event.rs` | `AppEvent` channel between components |
+
+**Sprite/State machine pipeline:**
 ```
-main.rs → App::new() → eframe event loop → App::update() (per frame)
+PetConfig.sheet_path → SpriteSheet (Aseprite JSON/PNG)
+                     → AnimationState.tick() → current frame
+                     → PetWindow.render() → blit to screen
+
+SmFile (TOML) → sm_compiler → CompiledSM → SMRunner.tick() → drives AnimationState
 ```
 
-- `App` manages multiple `PetInstance`s, config, system tray, and file watcher
-- Each `PetInstance` owns its Win32 window, sprite sheet, animation state, and behavior AI
-- Events flow through a `crossbeam-channel` (`AppEvent` enum in `event.rs`)
+**Asset references:** `embedded://esheep` (bundled via `rust-embed`) or absolute filesystem paths.
 
-### Key Design Points
+**Windows API surface:** `windows-sys` for HWND management, alpha blending (`UpdateLayeredWindow`), per-pixel regions (`SetWindowRgn`), monitor/surface enumeration.
 
-**Two rendering layers:**
-- `eframe/egui` runs a hidden viewport for UI dialogs (config dialog, sprite editor)
-- Each pet lives in its own transparent Win32 layered window rendered via GDI DIB — completely separate from egui
+**UI:** `egui`/`eframe` with WGPU renderer. The main window is hidden; all UI surfaces are egui windows or the system tray.
 
-**Physics and behavior** (`sprite/behavior.rs`):
-- `BehaviorAi` is a state machine: Idle → Walk/Run → Sit/Sleep, plus Fall/Thrown/Grabbed/Petted
-- Gravity = 980 px/s². Surface detection scans actual pixels of other windows
-- Facing direction is `Left`/`Right`; per-tag `flip_h` in the sprite sheet determines which direction the sprite natively faces (standard = right, `flip_h=true` means the sheet art faces left and must be flipped to walk right)
+## Testing
 
-**Sprite format** (`sprite/sheet.rs`):
-- Aseprite JSON (hash or array format), paired with PNG
-- Tags: `idle` (required), `walk`, `run`, `sit`, `sleep`, `wake`, `grabbed`, `petted`, `react`, `fall`, `thrown`
-- Tag fields: `direction` (Forward/Reverse/PingPong/PingPongReverse), `flipH` (bool)
-- Embedded sprites use `embedded://esheep` path; external sprites use absolute path
-
-**Config** (`config/`):
-- Stored at `%LOCALAPPDATA%\ferrite\config.toml`
-- `config/watcher.rs` hot-reloads on file change → `AppEvent::ConfigChanged`
-- `config/schema.rs`: `Config` (app-level) + `PetConfig` (per-pet, including `tag_map`)
-
-**Win32 window** (`window/`):
-- `pet_window.rs`: Layered window with per-pixel alpha via `UpdateLayeredWindow`
-- `wndproc.rs`: Message proc — handles drag, throw velocity, click-through hit testing
-- `blender.rs`: BGRA premultiplied alpha blending
-- `surfaces.rs`: Scans screen pixels to find solid surfaces for landing
-
-**UI** (`tray/`):
-- `config_window.rs`: egui dialog for per-pet settings (live-apply via channel)
-- `sprite_editor.rs`: Grid/tag editor for defining animations on a spritesheet
-- `ui_theme.rs`: Dark/light theme helpers for egui
-
-### Module Map
-
-| Path | Responsibility |
-|------|---------------|
-| `src/app.rs` | App state, per-frame tick, event dispatch |
-| `src/event.rs` | `AppEvent` enum (all inter-thread events) |
-| `src/sprite/behavior.rs` | Pet AI state machine + physics |
-| `src/sprite/animation.rs` | Frame sequencing, ping-pong |
-| `src/sprite/sheet.rs` | Aseprite JSON parser, `SpriteSheet` |
-| `src/window/pet_window.rs` | Transparent Win32 window, GDI rendering |
-| `src/window/wndproc.rs` | Win32 message handler, drag/throw |
-| `src/window/surfaces.rs` | Screen surface collision detection |
-| `src/config/schema.rs` | `Config`, `PetConfig` data structures |
-| `src/tray/config_window.rs` | egui config dialog |
-| `src/tray/sprite_editor.rs` | egui sprite editor |
+- Unit tests: inline in modules
+- Integration tests: `tests/integration/` — cover animation, behavior/SM transitions, config roundtrip, sprite parsing, hot-reload, window creation, drag/interaction E2E
+- No mocking of Windows APIs — integration tests that require a real HWND run on Windows only
