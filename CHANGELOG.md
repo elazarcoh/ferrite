@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1](https://github.com/elazarcoh/ferrite/compare/ferrite-v0.2.0...ferrite-v0.2.1) (2026-03-26)
+
+
+### Bug Fixes
+
+* **.gitignore:** expand ignored files for build artifacts and IDE settings ([54bad31](https://github.com/elazarcoh/ferrite/commit/54bad3192605baa3ebb23cda65d541f66ffe666f))
+* **settings:** remove deprecated permissions configuration ([542d41a](https://github.com/elazarcoh/ferrite/commit/542d41a3498291a5e4eea4e41fb623908bb11c93))
+* **tray:** save new sprites to appdata dir and fix selection text contrast ([e33e583](https://github.com/elazarcoh/ferrite/commit/e33e583801524027b81df9642bf5af146f3f145d))
+* **tray:** save new sprites to appdata dir and fix selection text contrast ([36e4732](https://github.com/elazarcoh/ferrite/commit/36e4732ab716391e35e2adacb9ee92507ea10cba))
+
 ## [0.2.0](https://github.com/elazarcoh/ferrite/compare/ferrite-v0.1.0...ferrite-v0.2.0) (2026-03-26)
 
 
