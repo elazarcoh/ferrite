@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run clippy with strict settings.
+# -D warnings  — treat all warnings as errors
+# -A dead-code — allow dead_code (work-in-progress APIs are common here)
+cargo clippy -- -D warnings -A dead-code

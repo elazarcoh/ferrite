@@ -1,0 +1,27 @@
+#!/bin/sh
+# Validate commit message follows Conventional Commits format.
+
+commit_msg_file="$1"
+commit_msg=$(cat "$commit_msg_file")
+
+# Allow Merge commits
+case "$commit_msg" in
+  Merge\ *) exit 0 ;;
+esac
+
+# Allow release-please automated bump commits
+case "$commit_msg" in
+  chore\(release\):*) exit 0 ;;
+esac
+
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+'
+
+if ! printf '%s' "$commit_msg" | grep -qE "$pattern"; then
+  printf 'ERROR: Commit message does not follow Conventional Commits format.\n'
+  printf 'Expected: type(scope): description\n'
+  printf 'Example:  feat(window): add drag handle\n'
+  printf 'Got: %s\n' "$commit_msg"
+  exit 1
+fi
+
+exit 0
