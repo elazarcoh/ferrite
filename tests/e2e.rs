@@ -13,3 +13,6 @@ mod surfaces_e2e {
 mod drag_e2e {
     include!("e2e/test_drag_e2e.rs");
 }
+mod ui_kittest_e2e {
+    include!("e2e/test_ui_kittest.rs");
+}
