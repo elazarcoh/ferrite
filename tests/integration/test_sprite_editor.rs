@@ -1,7 +1,8 @@
 // Integration tests for SpriteEditorState — pure Rust, no Win32.
 
-use ferrite::sprite::editor_state::{EditorTag, SpriteEditorState};
+use ferrite::sprite::editor_state::{EditorTag, SpriteEditorState, sanitize_name};
 use ferrite::sprite::sheet::TagDirection;
+use ferrite::tray::sprite_editor::clamp_step;
 use tempfile::{tempdir, TempDir};
 
 fn test_png_bytes() -> &'static [u8] {
@@ -218,4 +219,76 @@ fn esheep_walk_and_run_tags_have_flip_h() {
 
     let idle = sheet.tags.iter().find(|t| t.name == "idle").expect("idle tag");
     assert!(!idle.flip_h, "esheep idle must have flip_h=false");
+}
+
+#[test]
+fn sprite_name_initialized_from_path() {
+    let tmp = tempdir().unwrap();
+    let png_path = tmp.path().join("cool_pet.png");
+    std::fs::write(&png_path, test_png_bytes()).unwrap();
+    let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
+        .unwrap().into_rgba8();
+    let state = SpriteEditorState::new(png_path, image);
+    assert_eq!(state.sprite_name, "cool_pet");
+}
+
+#[test]
+fn save_uses_sprite_name() {
+    let (mut state, _state_dir) = make_state();
+    let save_dir = tempdir().unwrap();
+    state.rows = 1;
+    state.cols = 2;
+    state.sprite_name = "my_ferret".to_string();
+    state.tags.push(EditorTag {
+        name: "idle".into(), from: 0, to: 1,
+        direction: TagDirection::Forward, flip_h: false, color: 0,
+    });
+    state.save_to_dir(save_dir.path()).expect("save_to_dir must succeed");
+    assert!(save_dir.path().join("my_ferret.json").exists(), "JSON must be named my_ferret.json");
+    assert!(save_dir.path().join("my_ferret.png").exists(), "PNG must be named my_ferret.png");
+}
+
+#[test]
+fn save_sanitizes_sprite_name() {
+    let (mut state, _state_dir) = make_state();
+    let save_dir = tempdir().unwrap();
+    state.rows = 1;
+    state.cols = 2;
+    state.sprite_name = "my ferret/2!".to_string();
+    state.tags.push(EditorTag {
+        name: "idle".into(), from: 0, to: 1,
+        direction: TagDirection::Forward, flip_h: false, color: 0,
+    });
+    state.save_to_dir(save_dir.path()).expect("save_to_dir must succeed");
+    // Sanitized: "my_ferret_2_"
+    let sanitized = sanitize_name("my ferret/2!");
+    let json_path = save_dir.path().join(format!("{sanitized}.json"));
+    let png_path = save_dir.path().join(format!("{sanitized}.png"));
+    assert!(json_path.exists(), "JSON must use sanitized name");
+    assert!(png_path.exists(), "PNG must use sanitized name");
+    // Must not contain path-unsafe characters
+    assert!(!sanitized.contains('/'), "sanitized name must not contain '/'");
+    assert!(!sanitized.contains(' '), "sanitized name must not contain spaces");
+}
+
+// ─── clamp_step tests ────────────────────────────────────────────────────────
+
+#[test]
+fn clamp_step_up() {
+    assert_eq!(clamp_step(3, true, 5), 4);
+}
+
+#[test]
+fn clamp_step_up_at_max() {
+    assert_eq!(clamp_step(5, true, 5), 5);
+}
+
+#[test]
+fn clamp_step_down() {
+    assert_eq!(clamp_step(3, false, 5), 2);
+}
+
+#[test]
+fn clamp_step_down_at_zero() {
+    assert_eq!(clamp_step(0, false, 5), 0);
 }

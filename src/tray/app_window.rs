@@ -34,21 +34,22 @@ pub struct AppWindowState {
 }
 
 impl AppWindowState {
-    pub fn new(config: Config, tx: Sender<AppEvent>, dark_mode: bool, config_dir: PathBuf) -> Arc<Mutex<Self>> {
-        let config_state = ConfigWindowState::new(config, tx.clone());
+    pub fn new(config: Config, tx: Sender<AppEvent>, dark_mode: bool, config_dir: PathBuf, gallery: SpriteGallery) -> Arc<Mutex<Self>> {
+        // Load a second gallery instance for the config tab (SpriteGallery doesn't impl Clone).
+        let config_gallery = SpriteGallery::load();
+        let config_state = ConfigWindowState::new(config, tx.clone(), config_gallery);
         let sm_arc = SmEditorViewport::new(dark_mode, config_dir.clone());
         let sm = match Arc::try_unwrap(sm_arc) {
             Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
             Err(_) => panic!("SmEditorViewport Arc has unexpected extra references"),
         };
-        let sprite_gallery = SpriteGallery::load();
         Arc::new(Mutex::new(Self {
             selected_tab: AppTab::Config,
             should_close: false,
             dark_mode,
             dark_mode_out: None,
             config_state,
-            sprite_gallery,
+            sprite_gallery: gallery,
             selected_sprite_key: None,
             sprite_editor: None,
             pending_png_pick: None,
@@ -59,8 +60,8 @@ impl AppWindowState {
     }
 }
 
-pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
-    let viewport_id = egui::ViewportId::from_hash_of("app_window");
+pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>, window_gen: u64) {
+    let viewport_id = egui::ViewportId::from_hash_of(format!("app_window_{window_gen}"));
     let viewport_builder = egui::ViewportBuilder::default()
         .with_title("Ferrite")
         .with_inner_size([1000.0, 640.0]);

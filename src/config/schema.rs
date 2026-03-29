@@ -20,8 +20,8 @@ pub struct PetConfig {
     pub state_machine: String,
     pub x: i32,
     pub y: i32,
-    /// Integer pixel-art upscale factor.
-    pub scale: u32,
+    /// Pixel-art upscale factor (fractional values supported, e.g. 1.5).
+    pub scale: f32,
     /// Pixels per second for walk.
     pub walk_speed: f32,
 }
@@ -34,7 +34,7 @@ impl Default for PetConfig {
             state_machine: "embedded://default".to_string(),
             x: 100,
             y: 800,
-            scale: 2,
+            scale: 2.0,
             walk_speed: 80.0,
         }
     }

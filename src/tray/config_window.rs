@@ -28,9 +28,8 @@ pub enum OpenEditorRequest {
 }
 
 impl ConfigWindowState {
-    pub fn new(config: Config, tx: Sender<AppEvent>) -> Self {
+    pub fn new(config: Config, tx: Sender<AppEvent>, gallery: SpriteGallery) -> Self {
         let selected_pet_idx = if config.pets.is_empty() { None } else { Some(0) };
-        let gallery = SpriteGallery::load();
         Self {
             config,
             selected_pet_idx,
@@ -204,14 +203,14 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
                 ui.label("Scale:");
                 let mut scale = s.config.pets[idx].scale;
                 if ui
-                    .add(egui::DragValue::new(&mut scale).range(1..=4))
+                    .add(egui::DragValue::new(&mut scale).range(0.25_f32..=4.0_f32).speed(0.05))
                     .changed()
                 {
                     s.config.pets[idx].scale = scale;
                     s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
                 }
             });
-            crate::tray::ui_theme::hint(ui, "Pixel upscale factor. 2× is recommended for 32px sprites.");
+            crate::tray::ui_theme::hint(ui, "Pixel upscale factor. 2× is recommended for 32px sprites. Fractional values (e.g. 1.5) are supported.");
 
             // Walk speed
             ui.horizontal(|ui| {

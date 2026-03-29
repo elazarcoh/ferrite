@@ -32,7 +32,7 @@ fn render_frame_succeeds() {
     )
     .unwrap();
     let f = &sheet.frames[0];
-    win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1, false)
+    win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1.0, false)
         .expect("render_frame");
 }
 
@@ -45,6 +45,6 @@ fn render_frame_flip_succeeds() {
     )
     .unwrap();
     let f = &sheet.frames[0];
-    win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1, true)
+    win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1.0, true)
         .expect("render_frame flipped");
 }

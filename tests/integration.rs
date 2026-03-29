@@ -41,3 +41,11 @@ mod sprite_gallery_delete {
 mod sm_gallery_delete {
     include!("integration/test_sm_gallery_delete.rs");
 }
+
+mod window_state {
+    include!("integration/test_window_state.rs");
+}
+
+mod float_scale {
+    include!("integration/test_float_scale.rs");
+}

@@ -47,8 +47,10 @@ pub struct PetInstance {
 
 impl PetInstance {
     pub fn new(cfg: PetConfig, sheet: SpriteSheet) -> Result<Self> {
-        let dw = sheet.frames.first().map(|f| f.w).unwrap_or(32) * cfg.scale;
-        let dh = sheet.frames.first().map(|f| f.h).unwrap_or(32) * cfg.scale;
+        let frame_w = sheet.frames.first().map(|f| f.w).unwrap_or(32);
+        let frame_h = sheet.frames.first().map(|f| f.h).unwrap_or(32);
+        let dw = (frame_w as f32 * cfg.scale).round() as u32;
+        let dh = (frame_h as f32 * cfg.scale).round() as u32;
 
         // Spawn above the top of the screen so the pet falls into view.
         let spawn_y = -(dh as i32);
@@ -221,7 +223,9 @@ pub struct App {
     _tray: SystemTray,
     _watcher: notify::RecommendedWatcher,
     last_tick_ms: std::time::Instant,
-    app_window: Option<Arc<Mutex<AppWindowState>>>,
+    app_window: Arc<Mutex<AppWindowState>>,
+    app_window_open: bool,
+    app_window_gen: u64,
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
     dark_mode: bool,
@@ -247,7 +251,14 @@ impl App {
         }
 
         let tray = SystemTray::new(tx.clone()).context("create tray")?;
-        let watcher = spawn_watcher(cfg_path, tx.clone()).context("create watcher")?;
+        let watcher = spawn_watcher(cfg_path.clone(), tx.clone()).context("create watcher")?;
+
+        let gallery = crate::window::sprite_gallery::SpriteGallery::load();
+        let config_dir = cfg_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let app_window = AppWindowState::new(cfg, tx.clone(), true, config_dir, gallery);
 
         Ok(App {
             tx,
@@ -256,7 +267,9 @@ impl App {
             _tray: tray,
             _watcher: watcher,
             last_tick_ms: std::time::Instant::now(),
-            app_window: None,
+            app_window,
+            app_window_open: false,
+            app_window_gen: 0,
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
@@ -366,26 +379,19 @@ impl App {
                 self.pets.remove(&pet_id);
             }
             AppEvent::TrayOpenWindow => {
-                // Check if the window is actually still alive (not closed by the user)
-                let is_open = self.app_window.as_ref().is_some_and(|w| {
-                    w.lock().ok().map(|s| !s.should_close).unwrap_or(false)
-                });
-
-                if is_open {
+                if self.app_window_open {
                     // Already open — bring to front
                     ctx.send_viewport_cmd_to(
-                        egui::ViewportId::from_hash_of("app_window"),
+                        egui::ViewportId::from_hash_of(format!("app_window_{}", self.app_window_gen)),
                         egui::ViewportCommand::Focus,
                     );
                 } else {
-                    // Create fresh state (also clears stale Some)
-                    let config_dir = config::config_path()
-                        .parent()
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let current = config::load(&config::config_path()).unwrap_or_default();
-                    let state = AppWindowState::new(current, self.tx.clone(), self.dark_mode, config_dir);
-                    self.app_window = Some(state);
+                    // Reset should_close and open with a new generation
+                    if let Ok(mut s) = self.app_window.lock() {
+                        s.should_close = false;
+                    }
+                    self.app_window_gen += 1;
+                    self.app_window_open = true;
                 }
             }
             AppEvent::TrayOpenConfig | AppEvent::TrayOpenSmEditor => {}
@@ -510,7 +516,6 @@ impl eframe::App for App {
 
         // Show unified app window if open.
         {
-            let mut win_should_close = false;
             let mut saved_json_path: Option<std::path::PathBuf> = None;
             let mut sm_saved_name: Option<String> = None;
             let mut force_state: Option<String> = None;
@@ -518,9 +523,16 @@ impl eframe::App for App {
             let mut step_mode = false;
             let mut step_advance = false;
 
-            if let Some(ref state) = self.app_window {
+            if self.app_window_open
+                && let Ok(s) = self.app_window.try_lock()
+                && s.should_close
+            {
+                self.app_window_open = false;
+            }
+
+            if self.app_window_open {
                 // Push live pet state into SM editor
-                if let Ok(mut s) = state.try_lock() {
+                if let Ok(mut s) = self.app_window.try_lock() {
                     if let Some(pet) = self.pets.values().next() {
                         s.sm.from_app.active_state = Some(pet.runner.current_state_name().to_string());
                         let cvars = pet.runner.last_condition_vars();
@@ -547,7 +559,6 @@ impl eframe::App for App {
                     if let Some(new_dark) = s.dark_mode_out.take() {
                         self.dark_mode = new_dark;
                     }
-                    win_should_close = s.should_close;
                     saved_json_path = s.saved_json_path.take();
                     sm_saved_name = s.sm.from_ui.saved_sm_name.take();
                     force_state = s.sm.from_ui.force_state.take();
@@ -558,9 +569,7 @@ impl eframe::App for App {
                     if step_advance { s.sm.from_ui.step_advance = false; }
                 }
 
-                if !win_should_close {
-                    open_app_window(ctx, state.clone());
-                }
+                open_app_window(ctx, self.app_window.clone(), self.app_window_gen);
             }
 
             // Apply SM debug commands to pets
@@ -597,10 +606,6 @@ impl eframe::App for App {
                     }
                 }
                 let _ = self.tx.send(AppEvent::SMCollectionChanged);
-            }
-
-            if win_should_close {
-                self.app_window = None;
             }
         }
 

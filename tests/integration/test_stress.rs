@@ -23,7 +23,7 @@ fn make_pet() -> PetInstance {
         id: "stress_pet".into(),
         sheet_path: "embedded://test_pet".into(),
         state_machine: "embedded://default".into(),
-        scale: 2,
+        scale: 2.0,
         x: 100,
         y: 100,
         walk_speed: 100.0,
@@ -60,7 +60,7 @@ fn make_pet_with_flip_sheet() -> PetInstance {
         id: "flip_pet".into(),
         sheet_path: "embedded://test".into(),
         state_machine: "embedded://default".into(),
-        scale: 1,
+        scale: 1.0,
         x: 100,
         y: 100,
         walk_speed: 100.0,
@@ -154,7 +154,7 @@ fn render_frame_100_times() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2, false)
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2.0, false)
             .expect("render must not error");
     }
     let elapsed = start.elapsed();
