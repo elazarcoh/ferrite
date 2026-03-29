@@ -1,3 +1,16 @@
+[workspace]
+members  = [".", "crates/ferrite-core", "crates/ferrite-web"]
+resolver = "2"
+
+[workspace.dependencies]
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = "1"
+anyhow     = "1"
+log        = "0.4"
+once_cell  = "1"
+image      = { version = "0.25", default-features = false, features = ["png"] }
+
 [package]
 name = "ferrite"
 version = "0.2.0"
@@ -12,6 +25,7 @@ name = "ferrite"
 path = "src/main.rs"
 
 [dependencies]
+ferrite-core = { path = "crates/ferrite-core" }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
@@ -23,18 +37,18 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_SystemServices",
 ] }
-image = { version = "0.25", default-features = false, features = ["png"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-toml = "1"
-anyhow = "1"
+image      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+toml       = { workspace = true }
+anyhow     = { workspace = true }
 tray-icon = "0.21"
 muda = "0.17"
 notify = "6"
 crossbeam-channel = "0.5"
-once_cell = "1"
+once_cell  = { workspace = true }
 rust-embed = "8"
-log = "0.4"
+log        = { workspace = true }
 env_logger = "0.11"
 eframe = { version = "0.33", default-features = false, features = [
     "default_fonts", "wgpu",

@@ -1,0 +1,66 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crates/ferrite-core -> target
+            crates/ferrite-web  -> target
+
+      - name: Install dioxus-cli
+        run: cargo install dioxus-cli --version "^0.6" --locked
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build Tailwind CSS
+        working-directory: crates/ferrite-web
+        run: npx tailwindcss -i input.css -o public/assets/tailwind.css --minify
+
+      - name: Copy runtime assets
+        run: |
+          cp assets/esheep.json       crates/ferrite-web/public/esheep.json
+          cp assets/esheep.png        crates/ferrite-web/public/esheep.png
+          cp assets/default.petstate  crates/ferrite-web/public/default.petstate
+
+      - name: Build ferrite-web
+        working-directory: crates/ferrite-web
+        run: dx build --release --platform web
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/ferrite-web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

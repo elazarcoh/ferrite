@@ -1,0 +1,9 @@
+[application]
+name = "ferrite-web"
+default_platform = "web"
+
+[web.app]
+base_path = "ferrite"
+
+[web.resource]
+style = ["/ferrite/assets/tailwind.css"]

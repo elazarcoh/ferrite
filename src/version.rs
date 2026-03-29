@@ -1,1 +1,2 @@
-pub const ENGINE_VERSION: &str = "1.0";
+#[allow(unused_imports)]
+pub use ferrite_core::version::ENGINE_VERSION;

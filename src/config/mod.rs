@@ -1,10 +1,11 @@
-pub mod schema;
+pub use ferrite_core::config::schema;
+pub use schema::Config;
+#[allow(unused_imports)]
+pub use schema::PetConfig;
 pub mod watcher;
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-
-pub use schema::Config;
 
 /// Returns `%LOCALAPPDATA%\ferrite\config.toml`.
 pub fn config_path() -> PathBuf {
