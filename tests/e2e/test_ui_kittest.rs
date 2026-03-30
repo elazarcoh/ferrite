@@ -159,3 +159,23 @@ fn new_sm_button_loads_template() {
     assert!(borrowed.is_dirty, "New SM must set is_dirty=true");
     assert!(borrowed.selected_sm.is_none(), "New SM must clear selected_sm");
 }
+
+#[test]
+fn dark_light_toggle_flips_mode() {
+    use egui_kittest::kittest::Queryable;
+    let mut s = make_app_window_state();
+    s.dark_mode = true;
+    let state = Rc::new(RefCell::new(s));
+    let state_c = Rc::clone(&state);
+    let mut harness = Harness::new(move |ctx| {
+        render_app_tab_bar(ctx, &mut state_c.borrow_mut());
+    });
+    harness.run();
+    // When dark_mode=true, the icon shown is "☀" (click to switch to light)
+    harness.get_by_label("☀").click();
+    harness.run();
+    assert!(
+        !state.borrow().dark_mode,
+        "toggle from dark must set dark_mode=false"
+    );
+}
