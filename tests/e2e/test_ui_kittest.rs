@@ -7,7 +7,7 @@ use ferrite::{
     config::schema::{Config, PetConfig},
     event::AppEvent,
     tray::{
-        app_window::{AppTab, AppWindowState},
+        app_window::{AppTab, AppWindowState, render_app_tab_bar},
         config_window::{render_config_panel, ConfigWindowState},
         sm_editor::{render_sm_panel, SmEditorViewport},
     },
@@ -40,4 +40,20 @@ fn make_app_window_state() -> AppWindowState {
         .unwrap_or_else(|_| panic!("Arc has multiple owners"))
         .into_inner()
         .unwrap()
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn tab_click_switches_to_sprites() {
+    use egui_kittest::kittest::Queryable;
+    let state = Rc::new(RefCell::new(make_app_window_state()));
+    let state_c = Rc::clone(&state);
+    let mut harness = Harness::new(move |ctx| {
+        render_app_tab_bar(ctx, &mut state_c.borrow_mut());
+    });
+    harness.run();
+    harness.get_by_label("🖼 Sprites").click();
+    harness.run();
+    assert_eq!(state.borrow().selected_tab, AppTab::Sprites);
 }

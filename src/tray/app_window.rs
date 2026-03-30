@@ -9,7 +9,7 @@ use crate::tray::config_window::{render_config_panel, ConfigWindowState};
 use crate::tray::sprite_editor::{render_sprite_editor_panel, SpriteEditorViewport};
 use crate::tray::sm_editor::{render_sm_panel, SmEditorViewport};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AppTab { Config, Sprites, Sm }
 
 pub struct AppWindowState {
@@ -60,6 +60,24 @@ impl AppWindowState {
     }
 }
 
+pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
+    egui::TopBottomPanel::top("app_tab_bar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
+            ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
+            ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("✕").clicked() {
+                    s.should_close = true;
+                }
+                if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
+                    s.dark_mode_out = Some(s.dark_mode);
+                }
+            });
+        });
+    });
+}
+
 pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>, window_gen: u64) {
     let viewport_id = egui::ViewportId::from_hash_of(format!("app_window_{window_gen}"));
     let viewport_builder = egui::ViewportBuilder::default()
@@ -95,21 +113,7 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>, w
         crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
         // Top tab bar
-        egui::TopBottomPanel::top("app_tab_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
-                ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
-                ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("✕").clicked() {
-                        s.should_close = true;
-                    }
-                    if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
-                        s.dark_mode_out = Some(s.dark_mode);
-                    }
-                });
-            });
-        });
+        render_app_tab_bar(ctx, &mut s);
 
         let tab = s.selected_tab;
         match tab {
