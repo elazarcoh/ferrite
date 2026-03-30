@@ -96,3 +96,66 @@ fn remove_pet_decreases_count() {
     harness.run();
     assert_eq!(state.borrow().config.pets.len(), 1);
 }
+
+#[test]
+fn save_button_label_clean_when_not_dirty() {
+    use egui_kittest::kittest::Queryable;
+    let mut vp = make_sm_state();
+    vp.is_dirty = false;
+    // Pre-populate cached_gallery from a temp dir so render_sm_panel doesn't hit "."
+    vp.cached_gallery = Some(ferrite::sprite::sm_gallery::SmGallery::load(
+        &std::env::temp_dir(),
+    ));
+    let vp_rc = Rc::new(RefCell::new(vp));
+    let vp_c = Rc::clone(&vp_rc);
+    let mut harness = Harness::new(move |ctx| {
+        render_sm_panel(ctx, &mut vp_c.borrow_mut());
+    });
+    harness.run();
+    // Should find "💾 Save" (not dirty variant)
+    harness.get_by_label("💾 Save"); // panics if not found
+}
+
+#[test]
+fn save_button_label_dirty_when_dirty() {
+    use egui_kittest::kittest::Queryable;
+    let mut vp = make_sm_state();
+    vp.is_dirty = true;
+    // Pre-populate cached_gallery from a temp dir so render_sm_panel doesn't hit "."
+    vp.cached_gallery = Some(ferrite::sprite::sm_gallery::SmGallery::load(
+        &std::env::temp_dir(),
+    ));
+    let vp_rc = Rc::new(RefCell::new(vp));
+    let vp_c = Rc::clone(&vp_rc);
+    let mut harness = Harness::new(move |ctx| {
+        render_sm_panel(ctx, &mut vp_c.borrow_mut());
+    });
+    harness.run();
+    harness.get_by_label("💾 Save*"); // panics if not found
+}
+
+#[test]
+fn new_sm_button_loads_template() {
+    use egui_kittest::kittest::Queryable;
+    let mut vp = make_sm_state();
+    // Pre-populate cached_gallery from a temp dir so render_sm_panel doesn't hit "."
+    vp.cached_gallery = Some(ferrite::sprite::sm_gallery::SmGallery::load(
+        &std::env::temp_dir(),
+    ));
+    let vp_rc = Rc::new(RefCell::new(vp));
+    let vp_c = Rc::clone(&vp_rc);
+    let mut harness = Harness::new(move |ctx| {
+        render_sm_panel(ctx, &mut vp_c.borrow_mut());
+    });
+    harness.run();
+    harness.get_by_label("📄 New SM").click();
+    harness.run();
+    let borrowed = vp_rc.borrow();
+    assert!(
+        borrowed.editor_text.contains("[states.idle]"),
+        "template must contain [states.idle], got: {:?}",
+        &borrowed.editor_text[..borrowed.editor_text.len().min(80)]
+    );
+    assert!(borrowed.is_dirty, "New SM must set is_dirty=true");
+    assert!(borrowed.selected_sm.is_none(), "New SM must clear selected_sm");
+}
