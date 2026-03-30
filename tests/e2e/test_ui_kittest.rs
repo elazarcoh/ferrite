@@ -57,3 +57,42 @@ fn tab_click_switches_to_sprites() {
     harness.run();
     assert_eq!(state.borrow().selected_tab, AppTab::Sprites);
 }
+
+#[test]
+fn add_pet_increases_count() {
+    use egui_kittest::kittest::Queryable;
+    let (cs, _rx) = make_config_state();
+    let before = cs.config.pets.len();
+    let state = Rc::new(RefCell::new(cs));
+    let state_c = Rc::clone(&state);
+    let mut harness = Harness::new(move |ctx| {
+        render_config_panel(ctx, &mut state_c.borrow_mut());
+    });
+    harness.run();
+    harness.get_by_label("Add Pet").click();
+    harness.run();
+    assert_eq!(state.borrow().config.pets.len(), before + 1);
+}
+
+#[test]
+fn remove_pet_decreases_count() {
+    use egui_kittest::kittest::Queryable;
+    let (tx, _rx) = crossbeam_channel::unbounded::<AppEvent>();
+    let config = Config {
+        pets: vec![
+            PetConfig { id: "a".into(), ..PetConfig::default() },
+            PetConfig { id: "b".into(), ..PetConfig::default() },
+        ],
+    };
+    let mut cs = ConfigWindowState::new(config, tx, SpriteGallery::load());
+    cs.selected_pet_idx = Some(0);
+    let state = Rc::new(RefCell::new(cs));
+    let state_c = Rc::clone(&state);
+    let mut harness = Harness::new(move |ctx| {
+        render_config_panel(ctx, &mut state_c.borrow_mut());
+    });
+    harness.run();
+    harness.get_by_label("Remove").click();
+    harness.run();
+    assert_eq!(state.borrow().config.pets.len(), 1);
+}
