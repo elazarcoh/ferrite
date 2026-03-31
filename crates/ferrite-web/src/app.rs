@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use crate::pages::{home::Home, guide_index::GuideIndex, guide_page::GuidePage};
 use crate::components::nav::NavLayout;
+use crate::components::pet_canvas::PetCanvas;
 
 #[derive(Routable, Clone, PartialEq)]
 pub enum Route {
@@ -19,6 +20,7 @@ pub enum Route {
 #[component]
 pub fn App() -> Element {
     rsx! {
+        PetCanvas {}
         Router::<Route> {}
     }
 }

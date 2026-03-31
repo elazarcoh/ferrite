@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use crate::components::pet_canvas::PetCanvas;
 use crate::app::Route;
 
 #[component]
@@ -20,10 +19,11 @@ pub fn Home() -> Element {
             }
         }
 
-        // Pet demo
-        section { class: "max-w-3xl mx-auto px-6 py-12",
-            h2 { class: "text-slate-900 text-xl font-bold mb-4 text-center", "Meet your new desktop companion" }
-            PetCanvas {}
+        // Pet hint
+        section { class: "max-w-3xl mx-auto px-6 py-12 text-center",
+            p { class: "text-slate-500 text-base",
+                "There's a little sheep wandering this page — try dragging and throwing it!"
+            }
         }
 
         // Features

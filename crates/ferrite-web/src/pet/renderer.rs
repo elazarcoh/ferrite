@@ -13,8 +13,13 @@ pub fn tick_and_draw(
     let delta_ms = ((ts - s.last_ts) as u32).min(100);
     s.last_ts = ts;
 
-    let screen_w = canvas.width() as i32;
-    let floor_y  = canvas.height() as i32;
+    let win = web_sys::window().unwrap();
+    let screen_w = win.inner_width().unwrap().as_f64().unwrap() as i32;
+    let floor_y  = win.inner_height().unwrap().as_f64().unwrap() as i32;
+    if canvas.width() != screen_w as u32 || canvas.height() != floor_y as u32 {
+        canvas.set_width(screen_w as u32);
+        canvas.set_height(floor_y as u32);
+    }
     let first = s.sheet.frames.first().cloned();
     let pet_w = first.as_ref().map(|f| (f.w as f64 * SCALE) as i32).unwrap_or(64);
     let pet_h = first.as_ref().map(|f| (f.h as f64 * SCALE) as i32).unwrap_or(64);

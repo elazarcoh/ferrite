@@ -4,6 +4,7 @@ use web_sys::{HtmlCanvasElement, HtmlImageElement};
 
 pub fn start(state: Rc<RefCell<super::state::PetWebState>>,
              canvas: HtmlCanvasElement, img: HtmlImageElement) {
+    #[allow(clippy::type_complexity)]
     let f: Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>> = Rc::new(RefCell::new(None));
     let g = f.clone();
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move |ts: f64| {
