@@ -14,18 +14,22 @@ pub fn tick_and_draw(
     s.last_ts = ts;
 
     let win = web_sys::window().unwrap();
-    let screen_w = win.inner_width().unwrap().as_f64().unwrap() as i32;
-    let floor_y  = win.inner_height().unwrap().as_f64().unwrap() as i32;
-    if canvas.width() != screen_w as u32 || canvas.height() != floor_y as u32 {
-        canvas.set_width(screen_w as u32);
-        canvas.set_height(floor_y as u32);
+    let win_w = win.inner_width().unwrap().as_f64().unwrap() as i32;
+    let win_h = win.inner_height().unwrap().as_f64().unwrap() as i32;
+    if canvas.width() != win_w as u32 || canvas.height() != win_h as u32 {
+        canvas.set_width(win_w as u32);
+        canvas.set_height(win_h as u32);
     }
     let first = s.sheet.frames.first().cloned();
     let pet_w = first.as_ref().map(|f| (f.w as f64 * SCALE) as i32).unwrap_or(64);
     let pet_h = first.as_ref().map(|f| (f.h as f64 * SCALE) as i32).unwrap_or(64);
 
+    // floor_y is the sprite-top y-coordinate when resting on the viewport bottom,
+    // matching the convention used by find_floor() on Windows (returns best - pet_h).
+    let floor_y = win_h - pet_h;
+
     let tag_name = s.runner.tick(delta_ms, &mut s.x, &mut s.y,
-                                  screen_w, pet_w, pet_h, floor_y, &s.sheet);
+                                  win_w, pet_w, pet_h, floor_y, &s.sheet);
     s.anim.set_tag(tag_name);
     s.anim.tick(&s.sheet, delta_ms);
 
