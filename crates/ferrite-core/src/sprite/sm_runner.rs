@@ -178,6 +178,14 @@ impl SMRunner {
         self.state_time_ms = 0;
     }
 
+    /// Transition from any Named state into a free-fall.
+    /// Called by the web renderer when the pet walks off the edge of a DOM surface.
+    pub fn start_fall(&mut self) {
+        self.set_previous_from_current();
+        self.active = ActiveState::Fall { vy: 0.0 };
+        self.state_time_ms = 0;
+    }
+
     fn enter_state(&mut self, name: &str) {
         self.state_time_ms = 0;
         self.step_index = 0;
@@ -686,6 +694,14 @@ mod tests {
         let mut r = make_runner();
         r.grab((0, 0));
         assert!(matches!(&r.active, ActiveState::Grabbed { .. }));
+    }
+
+    #[test]
+    fn start_fall_transitions_named_to_fall() {
+        let mut r = make_runner();
+        assert!(matches!(&r.active, ActiveState::Named(_)));
+        r.start_fall();
+        assert!(matches!(&r.active, ActiveState::Fall { vy } if *vy == 0.0));
     }
 
     #[test]
