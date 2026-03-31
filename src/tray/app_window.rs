@@ -1,5 +1,8 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use eframe::egui;
 use crossbeam_channel::Sender;
 use crate::event::AppEvent;
@@ -78,7 +81,12 @@ pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
     });
 }
 
-pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>, window_gen: u64) {
+pub fn open_app_window(
+    ctx: &egui::Context,
+    state: Arc<Mutex<AppWindowState>>,
+    window_gen: u64,
+    close_flag: Arc<AtomicBool>,
+) {
     let viewport_id = egui::ViewportId::from_hash_of(format!("app_window_{window_gen}"));
     let viewport_builder = egui::ViewportBuilder::default()
         .with_title("Ferrite")
@@ -89,10 +97,9 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>, w
             // egui handles embedded viewports
         }
 
+        // OS close button: signal the main loop via the per-generation flag.
         if ctx.input(|i| i.viewport().close_requested()) {
-            if let Ok(mut s) = state.lock() {
-                s.should_close = true;
-            }
+            close_flag.store(true, Ordering::Relaxed);
             return;
         }
 
@@ -100,6 +107,13 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>, w
             Ok(g) => g,
             Err(_) => return,
         };
+
+        // In-window ✕ button: mirror into the per-generation flag so the main
+        // loop can detect it without touching the mutex.
+        if s.should_close {
+            close_flag.store(true, Ordering::Relaxed);
+            return;
+        }
 
         // Sync dark mode into sub-states
         let current_dark = s.dark_mode;

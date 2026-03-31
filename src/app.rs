@@ -9,6 +9,7 @@ use crate::{
     },
     tray::{
         app_window::{open_app_window, AppWindowState},
+        window_lifecycle::AppWindowLifecycle,
         SystemTray,
     },
     window::pet_window::PetWindow,
@@ -224,8 +225,7 @@ pub struct App {
     _watcher: notify::RecommendedWatcher,
     last_tick_ms: std::time::Instant,
     app_window: Arc<Mutex<AppWindowState>>,
-    app_window_open: bool,
-    app_window_gen: u64,
+    app_window_lifecycle: AppWindowLifecycle,
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
     dark_mode: bool,
@@ -268,8 +268,7 @@ impl App {
             _watcher: watcher,
             last_tick_ms: std::time::Instant::now(),
             app_window,
-            app_window_open: false,
-            app_window_gen: 0,
+            app_window_lifecycle: AppWindowLifecycle::new(),
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
@@ -379,19 +378,25 @@ impl App {
                 self.pets.remove(&pet_id);
             }
             AppEvent::TrayOpenWindow => {
-                if self.app_window_open {
+                if self.app_window_lifecycle.open {
+                    log::debug!(
+                        "TrayOpenWindow: already open (gen {}), focusing",
+                        self.app_window_lifecycle.generation
+                    );
                     // Already open — bring to front
                     ctx.send_viewport_cmd_to(
-                        egui::ViewportId::from_hash_of(format!("app_window_{}", self.app_window_gen)),
+                        egui::ViewportId::from_hash_of(
+                            format!("app_window_{}", self.app_window_lifecycle.generation),
+                        ),
                         egui::ViewportCommand::Focus,
                     );
                 } else {
-                    // Reset should_close and open with a new generation
-                    if let Ok(mut s) = self.app_window.lock() {
-                        s.should_close = false;
-                    }
-                    self.app_window_gen += 1;
-                    self.app_window_open = true;
+                    // Fresh generation: new close flag, no mutex access needed.
+                    self.app_window_lifecycle.open();
+                    log::debug!(
+                        "TrayOpenWindow: opening gen {}",
+                        self.app_window_lifecycle.generation
+                    );
                 }
             }
             AppEvent::TrayOpenConfig | AppEvent::TrayOpenSmEditor => {}
@@ -523,14 +528,20 @@ impl eframe::App for App {
             let mut step_mode = false;
             let mut step_advance = false;
 
-            if self.app_window_open
-                && let Ok(s) = self.app_window.try_lock()
-                && s.should_close
-            {
-                self.app_window_open = false;
+            if self.app_window_lifecycle.poll_close() {
+                log::debug!(
+                    "app_window: close detected for gen {}, sending ViewportCommand::Close",
+                    self.app_window_lifecycle.generation
+                );
+                ctx.send_viewport_cmd_to(
+                    egui::ViewportId::from_hash_of(
+                        format!("app_window_{}", self.app_window_lifecycle.generation),
+                    ),
+                    egui::ViewportCommand::Close,
+                );
             }
 
-            if self.app_window_open {
+            if self.app_window_lifecycle.open {
                 // Push live pet state into SM editor
                 if let Ok(mut s) = self.app_window.try_lock() {
                     if let Some(pet) = self.pets.values().next() {
@@ -569,7 +580,12 @@ impl eframe::App for App {
                     if step_advance { s.sm.from_ui.step_advance = false; }
                 }
 
-                open_app_window(ctx, self.app_window.clone(), self.app_window_gen);
+                open_app_window(
+                    ctx,
+                    self.app_window.clone(),
+                    self.app_window_lifecycle.generation,
+                    self.app_window_lifecycle.current_close_flag(),
+                );
             }
 
             // Apply SM debug commands to pets

@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use dioxus_router::prelude::*;
 use crate::pages::{home::Home, guide_index::GuideIndex, guide_page::GuidePage};
 use crate::components::nav::NavLayout;
 

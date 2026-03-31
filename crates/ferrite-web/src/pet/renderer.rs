@@ -42,12 +42,14 @@ pub fn tick_and_draw(
     let dst_x = s.x as f64;
     let dst_y = s.y as f64;
 
+    if !img.complete() { return; }
+
     let draw = |cx: f64, cy: f64| {
-        ctx.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+        let _ = ctx.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
             img,
             frame.x as f64, frame.y as f64, frame.w as f64, frame.h as f64,
             cx, cy, dst_w, dst_h,
-        ).unwrap();
+        );
     };
 
     if should_flip {

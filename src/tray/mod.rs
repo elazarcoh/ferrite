@@ -1,4 +1,5 @@
 pub mod app_window;
+pub mod window_lifecycle;
 pub mod config_window;
 pub mod sm_editor;
 pub mod sm_highlighter;

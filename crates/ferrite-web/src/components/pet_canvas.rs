@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use wasm_bindgen::JsCast;
 use ferrite_core::sprite::{animation::AnimationState, sm_runner::SMRunner, sheet::SpriteSheet};
 use crate::pet::{state::PetWebState, loop_};
 use std::{cell::RefCell, rc::Rc};
@@ -19,10 +20,14 @@ pub fn PetCanvas() -> Element {
                 toml::from_str(&sm_toml).expect("parse sm");
             let compiled = ferrite_core::sprite::sm_compiler::compile(&sm_file)
                 .expect("compile sm");
+            // Place pet at floor level (canvas height=200, scale=2)
+            let pet_h = sheet.frames.first()
+                .map(|f| (f.h as f64 * 2.0) as i32).unwrap_or(80);
+            let floor_y = 200;
             let state = Rc::new(RefCell::new(PetWebState {
                 runner: SMRunner::new(compiled, 80.0),
                 anim: AnimationState::new("idle"),
-                x: 100, y: 380,
+                x: 100, y: floor_y - pet_h,
                 last_ts: web_sys::window().unwrap().performance().unwrap().now(),
                 sheet,
             }));

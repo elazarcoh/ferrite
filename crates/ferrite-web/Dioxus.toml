@@ -7,3 +7,5 @@ base_path = "ferrite"
 
 [web.resource]
 style = ["/ferrite/assets/tailwind.css"]
+
+[web.resource.dev]
