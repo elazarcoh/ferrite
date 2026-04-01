@@ -47,6 +47,26 @@ an `egui::ComboBox` showing all tags available in the loaded spritesheet.
 - Rows with an explicit override set show a left-side colour accent
 - Rows using auto-match show the ComboBox with muted text (`(auto)`)
 - Status icon (✓/✗/○) recomputes live after every selection change
+- A legend at the bottom of the panel explains: `✓ resolved · ✗ required missing · ○ optional missing · left bar = explicit override`
+
+### Discoverability and help text
+
+Tag mapping is a non-obvious feature. The spec requires these affordances:
+
+1. **Section help icon** — place `ui_theme::help_icon()` next to the "SM Coverage" heading with
+   text: *"States are matched to spritesheet tags by name. If your tags have different names, use
+   the dropdown on each row to map them explicitly. 'auto' means the state name and tag name
+   match — no override needed."*
+
+2. **Clickable row affordance** — rows show a subtle highlight on hover so users discover
+   they are interactive (standard `egui` hover response is sufficient; no extra code needed).
+
+3. **`(auto)` tooltip** — when `(auto)` is the selected value in the ComboBox, display a
+   tooltip on hover: *"No explicit mapping. Uses the tag named identically to this state. Select
+   a tag to override."*
+
+4. **Unsaved-changes indicator** — after any mapping change the existing "● unsaved changes"
+   indicator (already present in the sprite editor) must activate, so users know to hit Save.
 
 ### State transitions on selection
 
@@ -92,8 +112,25 @@ No changes to `ferrite-core`, `PetConfig`, or any other module.
 
 | File | Change |
 |------|--------|
-| `src/tray/sprite_editor.rs` | Replace read-only coverage rows (lines 434–477) with `egui::ComboBox` rows; remove TODO(Task-13) comment at line 772 |
+| `src/tray/sprite_editor.rs` | Replace read-only coverage rows (lines 434–477) with `egui::ComboBox` rows + help icon + legend; remove TODO(Task-13) comment at line 772 |
 | `tests/e2e/test_ui_kittest.rs` | Add 2 new UI tests |
+| `crates/ferrite-web/guides/custom-sprites.md` | Expand with sprite editor walkthrough and tag mapping section (see below) |
+| `assets/README.md` | Add note on non-standard tag names and how to map them |
+
+### Doc updates required
+
+**`crates/ferrite-web/guides/custom-sprites.md`** must cover:
+- How to open the Sprite Editor (tray → Open → Sprites tab)
+- What the SM Coverage panel shows and what ✓/✗/○ mean
+- How to use the tag dropdown to fix unresolved states (✗ or ○)
+- That changes must be saved with the Save button to persist
+
+**`assets/README.md`** must add (after the existing tag name list):
+- A note that these are the *default* tag names recognised automatically
+- That custom tag names can be mapped in the Sprite Editor's SM Coverage panel
+- Example: *"If your sprite uses `walk_right` instead of `walk`, open the sprite in the
+  Sprite Editor, find the `walk` row in the SM Coverage panel, and select `walk_right`
+  from the dropdown."*
 
 ---
 
