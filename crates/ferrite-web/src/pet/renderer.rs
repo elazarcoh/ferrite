@@ -1,6 +1,6 @@
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
-use ferrite_core::sprite::sm_runner::Facing;
+use ferrite_core::sprite::sm_runner::{ActiveState, Facing};
 
 const SCALE: f64 = 2.0;
 
@@ -24,13 +24,25 @@ pub fn tick_and_draw(
     let pet_w = first.as_ref().map(|f| (f.w as f64 * SCALE) as i32).unwrap_or(64);
     let pet_h = first.as_ref().map(|f| (f.h as f64 * SCALE) as i32).unwrap_or(64);
 
-    // floor_y is the sprite-top y-coordinate when resting on the viewport bottom,
-    // matching the convention used by find_floor() on Windows (returns best - pet_h).
-    let floor_y = win_h - pet_h;
+    // Refresh DOM surface cache (250 ms TTL) and compute floor_y via find_floor.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let doc = web_sys::window().unwrap().document().unwrap();
+        super::surfaces::refresh_if_expired(
+            &mut s.surfaces, &doc, win_h, &super::surfaces::DEFAULT_CONFIG,
+        );
+    }
+    let floor_y = super::surfaces::find_floor(s.x, s.y, pet_w, pet_h, win_h, &s.surfaces);
 
     let tag_name = s.runner.tick(delta_ms, &mut s.x, &mut s.y,
-                                  win_w, pet_w, pet_h, floor_y, &s.sheet);
-    s.anim.set_tag(tag_name);
+                                  win_w, pet_w, pet_h, floor_y, &s.sheet).to_owned();
+
+    // Edge-fall: if the pet walked off the edge of a DOM surface, start falling.
+    if matches!(s.runner.active, ActiveState::Named(_)) && !s.is_dragging && floor_y > s.y {
+        s.runner.start_fall();
+    }
+
+    s.anim.set_tag(&tag_name);
     s.anim.tick(&s.sheet, delta_ms);
 
     let ctx: CanvasRenderingContext2d = canvas

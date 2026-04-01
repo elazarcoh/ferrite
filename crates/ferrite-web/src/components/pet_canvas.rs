@@ -39,6 +39,7 @@ pub fn PetCanvas() -> Element {
                 drag_offset: (0, 0),
                 vel_prev: None,
                 vel_cur: None,
+                surfaces: crate::pet::surfaces::SurfaceCache::default(),
             }));
 
             let doc = win.document().unwrap();

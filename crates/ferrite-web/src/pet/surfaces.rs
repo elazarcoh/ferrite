@@ -50,6 +50,7 @@ pub fn refresh_if_expired(
     win_h:  i32,
     config: &SurfaceConfig,
 ) {
+    use wasm_bindgen::JsCast;
     let now = web_sys::window().unwrap().performance().unwrap().now();
     if now < cache.expires_at { return; }
 

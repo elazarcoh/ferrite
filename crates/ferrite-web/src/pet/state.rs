@@ -1,4 +1,5 @@
 use ferrite_core::sprite::{animation::AnimationState, sm_runner::SMRunner, sheet::SpriteSheet};
+use crate::pet::surfaces::SurfaceCache;
 
 pub struct PetWebState {
     pub sheet: SpriteSheet,
@@ -12,4 +13,6 @@ pub struct PetWebState {
     pub drag_offset: (i32, i32),
     pub vel_prev: Option<((i32, i32), f64)>,
     pub vel_cur: Option<((i32, i32), f64)>,
+    // surfaces
+    pub surfaces: SurfaceCache,
 }
