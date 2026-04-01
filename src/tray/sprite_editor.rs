@@ -434,46 +434,136 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                     if let Some(sm_name) = s.selected_sm_name.clone()
                         && let Some(sm) = gallery.get(&sm_name) {
                             ui.separator();
-                            ui.label(egui::RichText::new("SM Coverage").strong());
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("SM Coverage").strong());
+                                crate::tray::ui_theme::help_icon(
+                                    ui,
+                                    "States are matched to spritesheet tags by name. If your tags have \
+                                     different names, use the dropdown on each row to map them explicitly. \
+                                     '(auto)' means the state name and tag name match — no override needed.",
+                                );
+                            });
 
-                            // Collect current tag names for auto-match
-                            let tag_names: Vec<String> = s.state.tags.iter().map(|t| t.name.clone()).collect();
+                            let mut sorted_tags: Vec<String> =
+                                s.state.tags.iter().map(|t| t.name.clone()).collect();
+                            sorted_tags.sort();
 
-                            for (state_name, state_def) in &sm.states {
-                                // Resolve: explicit alias in sm_mappings, then auto-match
-                                let resolved = s.sm_mappings
+                            // Stable display order
+                            let mut state_entries: Vec<(&String, &ferrite_core::sprite::sm_compiler::CompiledState)> =
+                                sm.states.iter().collect();
+                            state_entries.sort_by_key(|(n, _)| n.as_str());
+
+                            let mut mapping_change: Option<(String, Option<String>)> = None;
+
+                            for (state_name, state_def) in &state_entries {
+                                let explicit = s.sm_mappings
                                     .get(&sm_name)
                                     .and_then(|m| m.get(state_name.as_str()))
-                                    .map(|tag| tag.as_str())
-                                    .or_else(|| {
-                                        if tag_names.iter().any(|t| t == state_name) {
-                                            Some(state_name.as_str())
-                                        } else {
-                                            None
-                                        }
-                                    });
+                                    .cloned();
+                                let auto_matches = sorted_tags.iter().any(|t| t == *state_name);
+                                let resolved = explicit.as_deref().or({
+                                    if auto_matches { Some(state_name.as_str()) } else { None }
+                                });
 
-                                let (icon, label, color) = match resolved {
-                                    Some(tag) if tag == state_name.as_str() => {
-                                        ("✓", format!("auto  {}", state_name), egui::Color32::GREEN)
-                                    }
-                                    Some(tag) => {
-                                        ("✓", format!("alias  {} → {}", state_name, tag), egui::Color32::GREEN)
-                                    }
-                                    None => {
-                                        if state_def.required {
-                                            ("✗", format!("REQUIRED  {}", state_name), egui::Color32::RED)
-                                        } else {
-                                            ("○", format!("optional  {}", state_name), egui::Color32::YELLOW)
-                                        }
-                                    }
+                                let (icon, color) = match resolved {
+                                    Some(_) => ("✓", egui::Color32::LIGHT_GREEN),
+                                    None if state_def.required => ("✗", egui::Color32::LIGHT_RED),
+                                    None => ("○", egui::Color32::LIGHT_YELLOW),
                                 };
 
-                                ui.horizontal(|ui| {
-                                    ui.colored_label(color, icon);
-                                    ui.label(label);
-                                });
+                                let has_explicit = explicit.is_some();
+                                let mut selected = explicit.clone().unwrap_or_else(|| "(auto)".to_string());
+                                let old_selected = selected.clone();
+
+                                let stroke = if has_explicit {
+                                    egui::Stroke::new(2.0, egui::Color32::from_rgb(60, 160, 80))
+                                } else {
+                                    egui::Stroke::NONE
+                                };
+
+                                egui::Frame::new()
+                                    .inner_margin(egui::Margin::symmetric(4, 1))
+                                    .stroke(stroke)
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.colored_label(color, icon);
+                                            let suffix = if resolved.is_none() && state_def.required {
+                                                " required"
+                                            } else if resolved.is_none() {
+                                                " optional"
+                                            } else {
+                                                ""
+                                            };
+                                            ui.label(format!("{}{}", state_name, suffix));
+
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    let cb = egui::ComboBox::from_id_salt((
+                                                        "tag_map",
+                                                        sm_name.as_str(),
+                                                        state_name.as_str(),
+                                                    ))
+                                                    .selected_text(selected.clone())
+                                                    .width(110.0)
+                                                    .show_ui(ui, |ui| {
+                                                        ui.selectable_value(
+                                                            &mut selected,
+                                                            "(auto)".to_string(),
+                                                            "(auto)",
+                                                        );
+                                                        for tag in &sorted_tags {
+                                                            ui.selectable_value(
+                                                                &mut selected,
+                                                                tag.clone(),
+                                                                tag.as_str(),
+                                                            );
+                                                        }
+                                                    });
+                                                    if selected == "(auto)" {
+                                                        cb.response.on_hover_text(
+                                                            "No explicit mapping. Uses the tag named identically \
+                                                             to this state. Select a tag to override.",
+                                                        );
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    });
+
+                                if selected != old_selected {
+                                    mapping_change = Some((
+                                        state_name.to_string(),
+                                        if selected == "(auto)" { None } else { Some(selected) },
+                                    ));
+                                }
                             }
+
+                            // Apply any mapping change outside the borrow on sm.states
+                            if let Some((state_name, tag)) = mapping_change {
+                                update_tag_mapping(
+                                    &mut s.sm_mappings,
+                                    &sm_name,
+                                    &state_name,
+                                    tag.as_deref(),
+                                );
+                                s.dirty = true;
+                            }
+
+                            // Legend
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.colored_label(egui::Color32::LIGHT_GREEN, "✓");
+                                ui.label("resolved");
+                                ui.separator();
+                                ui.colored_label(egui::Color32::LIGHT_RED, "✗");
+                                ui.label("required missing");
+                                ui.separator();
+                                ui.colored_label(egui::Color32::LIGHT_YELLOW, "○");
+                                ui.label("optional missing");
+                                ui.separator();
+                                ui.label(egui::RichText::new("│ = explicit override").weak().small());
+                            });
                         }
                 }
             }); // end ScrollArea
