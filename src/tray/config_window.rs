@@ -252,12 +252,12 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState, sm_ga
 
             ui.separator();
 
-            // SM selector
+            // SM selector — gallery is reloaded from disk every frame (cheap for typical
+            // gallery sizes). sm_gallery_dirty is cleared here so the flag doesn't
+            // accumulate; a future optimization could cache the gallery and only reload
+            // when this flag is set.
             {
-                if *sm_gallery_dirty {
-                    *sm_gallery_dirty = false;
-                    // SmGallery::load() below will pick up any new SMs on this frame
-                }
+                *sm_gallery_dirty = false;
                 let config_dir = crate::config::config_path()
                     .parent()
                     .map(|p| p.to_path_buf())
