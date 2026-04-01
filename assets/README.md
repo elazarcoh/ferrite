@@ -3,7 +3,7 @@
 ## Export from Aseprite
 
 1. File → Export Sprite Sheet
-2. Layout: Pack / By Rows
+2. Layout: Pack or By Rows
 3. Output: check "JSON Data", format "Hash"
 4. Save as `yourpet.png` (JSON saved as `yourpet.json` automatically)
 
@@ -47,7 +47,9 @@ hand.
 
 1. Open the tray menu → **Open…** → **Sprites** tab → select your sprite
 2. In the left panel, select the state machine you're using from the **SM:** dropdown
-3. The **SM Coverage** section shows each SM state and its current animation tag
+3. The **SM Coverage** section shows each SM state with its status: ✓ resolved,
+   ✗ required missing, ○ optional missing; rows with explicit overrides have a
+   coloured left border
 4. For any state with a ✗ (missing) or the wrong tag, click the dropdown on that row
    and select the tag from your spritesheet
 5. Click **Save** to write the mapping to the spritesheet JSON
