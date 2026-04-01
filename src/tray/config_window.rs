@@ -50,7 +50,7 @@ impl ConfigWindowState {
     }
 }
 
-pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
+pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState, sm_gallery_dirty: &mut bool) {
     // Apply theme for this frame.
     crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
@@ -254,6 +254,10 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
 
             // SM selector
             {
+                if *sm_gallery_dirty {
+                    *sm_gallery_dirty = false;
+                    // SmGallery::load() below will pick up any new SMs on this frame
+                }
                 let config_dir = crate::config::config_path()
                     .parent()
                     .map(|p| p.to_path_buf())

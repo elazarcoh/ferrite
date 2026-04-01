@@ -482,7 +482,10 @@ impl App {
 
     fn notify_sm_collection_changed(&mut self) {
         log::debug!("SM collection changed — notifying UI");
-        // TODO: set sm_gallery_dirty on open app window (Step 4)
+        if self.app_window_lifecycle.open
+            && let Ok(mut s) = self.app_window.try_lock() {
+                s.sm_gallery_dirty = true;
+            }
     }
 
     fn apply_config(&mut self, new_cfg: crate::config::schema::Config) -> Result<()> {

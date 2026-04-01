@@ -34,6 +34,11 @@ pub struct AppWindowState {
 
     // ── SM tab ──
     pub sm: SmEditorViewport,
+
+    // ── Dirty flags ──
+    /// Set when the SM gallery has changed (e.g. after a bundle import).
+    /// The config tab clears this each frame after re-loading the gallery.
+    pub sm_gallery_dirty: bool,
 }
 
 impl AppWindowState {
@@ -59,6 +64,7 @@ impl AppWindowState {
             saved_json_path: None,
             pending_sprite_delete: None,
             sm,
+            sm_gallery_dirty: false,
         }))
     }
 }
@@ -216,7 +222,7 @@ pub fn open_app_window(
 }
 
 fn render_config_tab(ctx: &egui::Context, s: &mut AppWindowState) {
-    render_config_panel(ctx, &mut s.config_state);
+    render_config_panel(ctx, &mut s.config_state, &mut s.sm_gallery_dirty);
 }
 
 fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
