@@ -55,7 +55,7 @@ Tag mapping is a non-obvious feature. The spec requires these affordances:
 
 1. **Section help icon** — place `ui_theme::help_icon()` next to the "SM Coverage" heading with
    text: *"States are matched to spritesheet tags by name. If your tags have different names, use
-   the dropdown on each row to map them explicitly. 'auto' means the state name and tag name
+   the dropdown on each row to map them explicitly. '(auto)' means the state name and tag name
    match — no override needed."*
 
 2. **Clickable row affordance** — rows show a subtle highlight on hover so users discover

@@ -475,15 +475,8 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                 let mut selected = explicit.clone().unwrap_or_else(|| "(auto)".to_string());
                                 let old_selected = selected.clone();
 
-                                let stroke = if has_explicit {
-                                    egui::Stroke::new(2.0, egui::Color32::from_rgb(60, 160, 80))
-                                } else {
-                                    egui::Stroke::NONE
-                                };
-
-                                egui::Frame::new()
+                                let frame_response = egui::Frame::new()
                                     .inner_margin(egui::Margin::symmetric(4, 1))
-                                    .stroke(stroke)
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.colored_label(color, icon);
@@ -530,6 +523,14 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                             );
                                         });
                                     });
+
+                                if has_explicit {
+                                    let rect = frame_response.response.rect;
+                                    ui.painter().line_segment(
+                                        [rect.left_top(), rect.left_bottom()],
+                                        egui::Stroke::new(3.0, egui::Color32::from_rgb(60, 160, 80)),
+                                    );
+                                }
 
                                 if selected != old_selected {
                                     mapping_changes.push((
