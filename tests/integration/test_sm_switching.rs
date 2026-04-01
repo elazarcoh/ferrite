@@ -294,3 +294,64 @@ transitions = []
         "pet.cfg must be fully equal to new_cfg after fast-path hot-swap"
     );
 }
+
+/// Test: BundleImported handler core logic — find pet by sprite_id, look up SM
+/// from gallery, call replace_sm, update pet.cfg.state_machine.
+///
+/// Since building a full App in integration tests is infeasible (requires a real
+/// event loop and system tray), this test exercises the logic directly at the
+/// SMRunner/PetConfig level, consistent with the pattern used in the other tests
+/// in this file.
+#[test]
+fn bundle_import_auto_assigns_sm() {
+    // SM "A" — initial state machine with default "idle"
+    let sm_a = make_sm_with_default("idle");
+
+    let mut runner = SMRunner::new(sm_a, 60.0);
+
+    // Initial runner state must be "idle"
+    assert!(
+        matches!(&runner.active, ActiveState::Named(n) if n == "idle"),
+        "initial state should be idle; got {:?}", runner.active
+    );
+
+    // SM "B" — bundled SM with default "sit"
+    let sm_b = make_sm_with_default("sit");
+    let sm_b_name = sm_b.name.clone(); // "TestSM_sit"
+
+    // Simulate the BundleImported handler's core logic:
+    // find pet by sprite_id (mocked: we just have the runner), look up SM "B"
+    // from gallery, call replace_sm, update cfg.state_machine.
+    let mut cfg = ferrite::config::schema::PetConfig {
+        id: "test_bundle_pet".to_string(),
+        sheet_path: "sprites/my-bundle-sprite.json".to_string(), // contains "my-bundle"
+        state_machine: "TestSM_idle".to_string(),
+        x: 0,
+        y: 0,
+        scale: 1.0,
+        walk_speed: 60.0,
+    };
+
+    // Simulate: sprite_id = "my-bundle", sheet_path.contains(sprite_id) == true
+    let sprite_id = "my-bundle";
+    assert!(
+        cfg.sheet_path.contains(sprite_id),
+        "sheet_path must contain sprite_id for pet matching to work"
+    );
+
+    // Perform the auto-assign (mirrors the BundleImported handler logic)
+    runner.replace_sm(sm_b);
+    cfg.state_machine = sm_b_name.clone();
+
+    // Assert: cfg.state_machine updated
+    assert_eq!(
+        cfg.state_machine, sm_b_name,
+        "cfg.state_machine must be updated to the new SM name after bundle import"
+    );
+
+    // Assert: runner active state is SM B's default ("sit")
+    assert!(
+        matches!(&runner.active, ActiveState::Named(n) if n == "sit"),
+        "runner active state must be SM B's default after replace_sm; got {:?}", runner.active
+    );
+}

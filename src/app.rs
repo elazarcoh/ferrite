@@ -446,14 +446,43 @@ impl App {
                 self.pending_bundle_pick = Some(rx_pick);
             }
             AppEvent::BundleImported { sprite_id, sm_name } => {
-                log::info!("Bundle imported: sprite={}, sm={:?}", sprite_id, sm_name);
-                // TODO(Plan-3): update config dialog to show new sprite/SM
+                if let Some(sm_name) = sm_name {
+                    // Reload gallery to pick up newly saved SM
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    // Auto-assign to the first pet whose sheet_path contains sprite_id
+                    if let Some(pet) = self.pets.values_mut()
+                        .find(|p| p.cfg.sheet_path.contains(&sprite_id))
+                        && let Some(sm) = gallery.get(&sm_name)
+                    {
+                        pet.runner.replace_sm(sm);
+                        pet.cfg.state_machine = sm_name.clone();
+                        log::info!("Bundle import: auto-assigned SM '{}' to pet '{}'", sm_name, pet.cfg.id);
+                    }
+                    // Persist updated config
+                    let current_cfg = crate::config::schema::Config {
+                        pets: self.pets.values().map(|p| p.cfg.clone()).collect(),
+                    };
+                    if let Err(e) = config::save(&config::config_path(), &current_cfg) {
+                        log::warn!("Failed to persist config after bundle import: {}", e);
+                    }
+                }
+                // Notify open windows to refresh SM lists
+                self.notify_sm_collection_changed();
             }
             AppEvent::SMCollectionChanged => {
                 // TODO(Plan-3): refresh SM lists in open UI windows
             }
         }
         Ok(())
+    }
+
+    fn notify_sm_collection_changed(&mut self) {
+        log::debug!("SM collection changed — notifying UI");
+        // TODO: set sm_gallery_dirty on open app window (Step 4)
     }
 
     fn apply_config(&mut self, new_cfg: crate::config::schema::Config) -> Result<()> {
