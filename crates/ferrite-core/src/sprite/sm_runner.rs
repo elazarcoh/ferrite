@@ -626,6 +626,26 @@ impl SMRunner {
         self.enter_state(target);
     }
 
+    /// Replace the running state machine with a new one, resetting all transient state.
+    /// Preserved across the swap: `facing`, `walk_speed`, `rng`, `last_vars`.
+    pub fn replace_sm(&mut self, new_sm: Arc<CompiledSM>) {
+        let default = new_sm.default_fallback.clone();
+        self.sm = new_sm;
+        self.active = ActiveState::Named(default.clone());
+        self.previous_named = None;
+        self.state_time_ms = 0;
+        self.step_index = 0;
+        self.walk_remaining_px = 0.0;
+        self.next_transition_ms = 0;
+        self.force_state = None;
+        self.release_force = false;
+        self.step_mode = false;
+        self.step_advance = false;
+        self.transition_log.clear();
+        self.current_tag = default;
+        // Preserved: facing, walk_speed, rng, last_vars
+    }
+
     fn resolve_tag(&mut self, sheet: &SpriteSheet) -> &str {
         let sm_name = self.sm.name.clone();
         let display_name = self.active_display_state_name().to_string();
@@ -800,6 +820,86 @@ transitions = [{ goto = "idle" }]
         assert!(matches!(&r.active, ActiveState::Named(n) if n == "petted"));
         // previous_named should be "idle"
         assert_eq!(r.previous_named.as_deref(), Some("idle"));
+    }
+
+    fn make_minimal_sm(name: &str, default_state: &str) -> Arc<CompiledSM> {
+        let toml_str = format!(r#"
+[meta]
+name = "{name}"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "{default_state}"
+
+[states.{default_state}]
+required = true
+action = "idle"
+transitions = []
+
+[states.grabbed]
+required = true
+action = "grabbed"
+transitions = []
+
+[states.fall]
+required = true
+action = "fall"
+transitions = []
+
+[states.thrown]
+required = true
+action = "thrown"
+transitions = []
+"#);
+        let file: SmFile = toml::from_str(&toml_str).unwrap();
+        compile(&file).unwrap()
+    }
+
+    #[test]
+    fn replace_sm_resets_state() {
+        let mut r = make_runner();
+        // Advance into a non-default state
+        r.force_state = Some("petted".to_string());
+        r.state_time_ms = 999;
+        r.step_index = 3;
+        r.walk_remaining_px = 150.0;
+        r.transition_log.push(TransitionLogEntry {
+            from_state: "idle".to_string(),
+            to_state: "petted".to_string(),
+            reason: "test".to_string(),
+        });
+
+        let second_sm = make_minimal_sm("second", "idle");
+        r.replace_sm(second_sm.clone());
+
+        assert!(
+            matches!(&r.active, ActiveState::Named(n) if *n == second_sm.default_fallback),
+            "active should be Named(default_fallback)"
+        );
+        assert_eq!(r.state_time_ms, 0);
+        assert_eq!(r.step_index, 0);
+        assert_eq!(r.walk_remaining_px, 0.0);
+        assert!(r.transition_log.is_empty());
+    }
+
+    #[test]
+    fn replace_sm_preserves_facing() {
+        let mut r = make_runner();
+        r.facing = Facing::Left;
+        let second_sm = make_minimal_sm("second", "idle");
+        r.replace_sm(second_sm);
+        assert_eq!(r.facing, Facing::Left);
+    }
+
+    #[test]
+    fn replace_sm_preserves_walk_speed() {
+        let sm_toml = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/default.petstate"));
+        let file: SmFile = toml::from_str(sm_toml).unwrap();
+        let compiled = compile(&file).unwrap();
+        let mut r = SMRunner::new(compiled, 2.5);
+
+        let second_sm = make_minimal_sm("second", "idle");
+        r.replace_sm(second_sm);
+        assert_eq!(r.walk_speed, 2.5);
     }
 
     #[test]
