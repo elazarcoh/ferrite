@@ -769,4 +769,48 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
     ctx.request_repaint_after(std::time::Duration::from_millis(16));
 }
 
-// TODO(Task-13): tag_map_ui and helpers removed — will be replaced by SM mapping UI
+/// Sets or clears an explicit tag mapping for one SM state.
+///
+/// - `tag = Some("walk_right")` → inserts `sm_mappings[sm_name][state_name] = "walk_right"`
+/// - `tag = None`               → removes the entry (reverts to auto-match)
+pub(crate) fn update_tag_mapping(
+    sm_mappings: &mut std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    sm_name: &str,
+    state_name: &str,
+    tag: Option<&str>,
+) {
+    match tag {
+        Some(t) => {
+            sm_mappings
+                .entry(sm_name.to_string())
+                .or_default()
+                .insert(state_name.to_string(), t.to_string());
+        }
+        None => {
+            if let Some(m) = sm_mappings.get_mut(sm_name) {
+                m.remove(state_name);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::update_tag_mapping;
+    use std::collections::HashMap;
+
+    #[test]
+    fn tag_mapping_set_explicit_override() {
+        let mut mappings: HashMap<String, HashMap<String, String>> = HashMap::new();
+        update_tag_mapping(&mut mappings, "default", "walk", Some("walk_right"));
+        assert_eq!(mappings["default"]["walk"], "walk_right");
+    }
+
+    #[test]
+    fn tag_mapping_clear_override_reverts_to_auto() {
+        let mut mappings: HashMap<String, HashMap<String, String>> = HashMap::new();
+        update_tag_mapping(&mut mappings, "default", "walk", Some("walk_right"));
+        update_tag_mapping(&mut mappings, "default", "walk", None);
+        assert_eq!(mappings["default"].get("walk"), None);
+    }
+}
