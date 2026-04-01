@@ -461,6 +461,27 @@ impl App {
             new_cfg.pets.iter().map(|p| p.id.clone()).collect();
         self.pets.retain(|id, _| new_ids.contains(id));
         for pet_cfg in new_cfg.pets {
+            // Fast path: only SM changed → hot-swap, no window rebuild
+            if let Some(pet) = self.pets.get_mut(&pet_cfg.id) {
+                let old_cfg = &pet.cfg;
+                if old_cfg.sheet_path == pet_cfg.sheet_path
+                    && old_cfg.scale == pet_cfg.scale
+                    && old_cfg.walk_speed == pet_cfg.walk_speed
+                    && old_cfg.state_machine != pet_cfg.state_machine
+                {
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    let new_sm = resolve_sm(&pet_cfg.state_machine, &gallery);
+                    pet.runner.replace_sm(new_sm);
+                    pet.cfg.state_machine = pet_cfg.state_machine.clone();
+                    log::info!("hot-swapped SM for pet '{}' → '{}'", pet_cfg.id, pet_cfg.state_machine);
+                    continue; // skip full rebuild
+                }
+            }
+
             let needs_rebuild = self.pets.get(&pet_cfg.id)
                 .map(|inst| inst.cfg != pet_cfg)
                 .unwrap_or(true);
@@ -630,6 +651,23 @@ impl eframe::App for App {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+fn resolve_sm(
+    name: &str,
+    gallery: &crate::sprite::sm_gallery::SmGallery,
+) -> std::sync::Arc<crate::sprite::sm_compiler::CompiledSM> {
+    if name == "embedded://default" || name.is_empty() {
+        crate::sprite::sm_runner::load_default_sm()
+    } else {
+        match gallery.get(name) {
+            Some(sm) => sm,
+            None => {
+                log::warn!("SM '{}' not found in gallery, falling back to default", name);
+                crate::sprite::sm_runner::load_default_sm()
+            }
+        }
+    }
+}
 
 fn sanitize_id(name: &str) -> String {
     name.chars()

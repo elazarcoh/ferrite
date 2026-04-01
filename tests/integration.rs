@@ -49,3 +49,7 @@ mod window_state {
 mod float_scale {
     include!("integration/test_float_scale.rs");
 }
+
+mod sm_switching {
+    include!("integration/test_sm_switching.rs");
+}
