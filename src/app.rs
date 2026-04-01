@@ -464,6 +464,8 @@ impl App {
             // Fast path: only SM changed → hot-swap, no window rebuild
             if let Some(pet) = self.pets.get_mut(&pet_cfg.id) {
                 let old_cfg = &pet.cfg;
+                // f32 equality is safe here: both values come from TOML-deserialized config,
+                // never from arithmetic — we are detecting whether the user changed the field.
                 if old_cfg.sheet_path == pet_cfg.sheet_path
                     && old_cfg.scale == pet_cfg.scale
                     && old_cfg.walk_speed == pet_cfg.walk_speed
@@ -476,7 +478,7 @@ impl App {
                     let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
                     let new_sm = resolve_sm(&pet_cfg.state_machine, &gallery);
                     pet.runner.replace_sm(new_sm);
-                    pet.cfg.state_machine = pet_cfg.state_machine.clone();
+                    pet.cfg = pet_cfg.clone();
                     log::info!("hot-swapped SM for pet '{}' → '{}'", pet_cfg.id, pet_cfg.state_machine);
                     continue; // skip full rebuild
                 }
@@ -709,4 +711,52 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
         .context("decode PNG")?
         .into_rgba8();
     sheet::SpriteSheet::from_json_and_image(&json, image)
+}
+
+// ─── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    /// `resolve_sm` with an unknown name falls back to the embedded default SM.
+    #[test]
+    fn resolve_sm_unknown_name_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        // Ask for a name that doesn't exist in the empty gallery.
+        let sm = resolve_sm("nonexistent-sm", &gallery);
+
+        // The embedded default SM is named "Default Pet" (from assets/default.petstate).
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(
+            sm.name, default_sm.name,
+            "resolve_sm should fall back to default SM for unknown names; got '{}'",
+            sm.name
+        );
+    }
+
+    /// `resolve_sm` with the sentinel "embedded://default" also returns the default SM.
+    #[test]
+    fn resolve_sm_embedded_sentinel_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        let sm = resolve_sm("embedded://default", &gallery);
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(sm.name, default_sm.name);
+    }
+
+    /// `resolve_sm` with an empty string also returns the default SM.
+    #[test]
+    fn resolve_sm_empty_string_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        let sm = resolve_sm("", &gallery);
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(sm.name, default_sm.name);
+    }
 }

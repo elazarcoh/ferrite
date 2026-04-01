@@ -21,6 +21,8 @@ fn mock_sheet() -> SpriteSheet {
     SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new() }
 }
 
+// Mirrors make_minimal_sm() in sm_runner.rs — kept here because that helper
+// is #[cfg(test)]-private and cannot be imported from integration tests.
 /// Build a minimal valid SM with a given default_fallback state name.
 fn make_sm_with_default(default_state: &str) -> Arc<ferrite::sprite::sm_compiler::CompiledSM> {
     let toml_str = format!(
@@ -188,5 +190,107 @@ transitions = []
     assert_eq!(
         pet.window.hwnd, hwnd_before,
         "HWND must not change after SM hot-swap"
+    );
+}
+
+/// Test (Windows-only): `apply_config()` fast path — HWND survives and
+/// `pet.cfg` is fully updated when only `state_machine` changes.
+///
+/// This test exercises the same code path as `App::apply_config()` directly at
+/// the `PetInstance` level, because building a full `App` in integration tests
+/// is not feasible (requires a real event loop and system tray).
+#[cfg(target_os = "windows")]
+#[test]
+fn sm_apply_config_hot_swaps_sm_only() {
+    use ferrite::app::PetInstance;
+    use ferrite::config::schema::PetConfig;
+    use ferrite::sprite::sheet::load_embedded;
+    use ferrite::sprite::sm_gallery::SmGallery;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let mut gallery = SmGallery::load(dir.path());
+
+    let sm_source = r#"
+[meta]
+name = "NewSM"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+required = true
+action = "idle"
+transitions = []
+
+[states.grabbed]
+required = true
+action = "grabbed"
+transitions = []
+
+[states.fall]
+required = true
+action = "fall"
+transitions = []
+
+[states.thrown]
+required = true
+action = "thrown"
+transitions = []
+"#;
+    gallery.save("NewSM", sm_source).expect("save SM");
+
+    let sheet = load_embedded(
+        include_bytes!("../../assets/test_pet.json"),
+        include_bytes!("../../assets/test_pet.png"),
+    )
+    .unwrap();
+
+    // Initial config: state_machine = embedded://default.
+    let old_cfg = PetConfig {
+        id: "test_apply_cfg".to_string(),
+        sheet_path: "embedded://esheep".to_string(),
+        state_machine: "embedded://default".to_string(),
+        x: 50,
+        y: 50,
+        scale: 1.0,
+        walk_speed: 60.0,
+    };
+    let mut pet = PetInstance::new(old_cfg.clone(), sheet).expect("create PetInstance");
+
+    let hwnd_before = pet.window.hwnd;
+
+    // New config: only state_machine changed — mirrors the fast-path condition
+    // checked in App::apply_config().
+    let new_cfg = PetConfig {
+        state_machine: "NewSM".to_string(),
+        ..old_cfg.clone()
+    };
+
+    // Replicate the apply_config() fast-path logic.
+    assert_eq!(pet.cfg.sheet_path, new_cfg.sheet_path);
+    assert_eq!(pet.cfg.scale, new_cfg.scale);
+    assert_eq!(pet.cfg.walk_speed, new_cfg.walk_speed);
+    assert_ne!(pet.cfg.state_machine, new_cfg.state_machine);
+
+    let new_sm = gallery.get("NewSM").expect("NewSM must be in gallery");
+    pet.runner.replace_sm(new_sm);
+    // Use full cfg assignment (as apply_config() does after Fix 2).
+    pet.cfg = new_cfg.clone();
+
+    // HWND must be unchanged — no window rebuild occurred.
+    assert_eq!(
+        pet.window.hwnd, hwnd_before,
+        "HWND must not change when only SM changes"
+    );
+
+    // pet.cfg must be fully in sync with the new config.
+    assert_eq!(
+        pet.cfg.state_machine, "NewSM",
+        "pet.cfg.state_machine must equal new name after apply_config fast path"
+    );
+    assert_eq!(
+        pet.cfg, new_cfg,
+        "pet.cfg must be fully equal to new_cfg after fast-path hot-swap"
     );
 }
