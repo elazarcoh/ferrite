@@ -432,8 +432,38 @@ impl App {
                     p.runner.release(velocity);
                 }
             }
-            AppEvent::SMImported { .. } | AppEvent::SMChanged { .. } => {
-                // TODO(Plan-2): handle SM import and per-pet SM switching
+            AppEvent::SMImported { name } => {
+                log::info!("SM imported: {}", name);
+                self.notify_sm_collection_changed();
+            }
+            AppEvent::SMChanged { pet_id, sm_name } => {
+                // Reload gallery to get the named SM
+                let config_dir = config::config_path()
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                let mut applied = false;
+                if let Some(pet) = self.pets.get_mut(&pet_id) {
+                    if let Some(sm) = gallery.get(&sm_name) {
+                        pet.runner.replace_sm(sm);
+                        pet.cfg.state_machine = sm_name.clone();
+                        log::info!("SMChanged: applied '{}' to pet '{}'", sm_name, pet_id);
+                        applied = true;
+                    } else {
+                        log::warn!("SMChanged: SM '{}' not found in gallery", sm_name);
+                    }
+                } else {
+                    log::warn!("SMChanged: pet '{}' not found", pet_id);
+                }
+                if applied {
+                    let current_cfg = crate::config::schema::Config {
+                        pets: self.pets.values().map(|p| p.cfg.clone()).collect(),
+                    };
+                    if let Err(e) = config::save(&config::config_path(), &current_cfg) {
+                        log::warn!("Failed to persist config after SMChanged: {}", e);
+                    }
+                }
             }
             AppEvent::TrayImportBundle => {
                 let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
@@ -474,7 +504,7 @@ impl App {
                 self.notify_sm_collection_changed();
             }
             AppEvent::SMCollectionChanged => {
-                // TODO(Plan-3): refresh SM lists in open UI windows
+                self.notify_sm_collection_changed();
             }
         }
         Ok(())
