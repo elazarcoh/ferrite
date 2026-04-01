@@ -453,7 +453,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                 sm.states.iter().collect();
                             state_entries.sort_by_key(|(n, _)| n.as_str());
 
-                            let mut mapping_change: Option<(String, Option<String>)> = None;
+                            let mut mapping_changes: Vec<(String, Option<String>)> = Vec::new();
 
                             for (state_name, state_def) in &state_entries {
                                 let explicit = s.sm_mappings
@@ -504,7 +504,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                                         sm_name.as_str(),
                                                         state_name.as_str(),
                                                     ))
-                                                    .selected_text(selected.clone())
+                                                    .selected_text(selected.as_str())
                                                     .width(110.0)
                                                     .show_ui(ui, |ui| {
                                                         ui.selectable_value(
@@ -532,15 +532,15 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                     });
 
                                 if selected != old_selected {
-                                    mapping_change = Some((
+                                    mapping_changes.push((
                                         state_name.to_string(),
                                         if selected == "(auto)" { None } else { Some(selected) },
                                     ));
                                 }
                             }
 
-                            // Apply any mapping change outside the borrow on sm.states
-                            if let Some((state_name, tag)) = mapping_change {
+                            // Apply mapping changes outside the borrow on sm.states
+                            for (state_name, tag) in mapping_changes {
                                 update_tag_mapping(
                                     &mut s.sm_mappings,
                                     &sm_name,
