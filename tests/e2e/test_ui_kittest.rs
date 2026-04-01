@@ -66,7 +66,7 @@ fn add_pet_increases_count() {
     let state = Rc::new(RefCell::new(cs));
     let state_c = Rc::clone(&state);
     let mut harness = Harness::new(move |ctx| {
-        render_config_panel(ctx, &mut state_c.borrow_mut());
+        render_config_panel(ctx, &mut state_c.borrow_mut(), &mut false);
     });
     harness.run();
     harness.get_by_label("Add Pet").click();
@@ -89,7 +89,7 @@ fn remove_pet_decreases_count() {
     let state = Rc::new(RefCell::new(cs));
     let state_c = Rc::clone(&state);
     let mut harness = Harness::new(move |ctx| {
-        render_config_panel(ctx, &mut state_c.borrow_mut());
+        render_config_panel(ctx, &mut state_c.borrow_mut(), &mut false);
     });
     harness.run();
     harness.get_by_label("Remove").click();
