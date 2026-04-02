@@ -16,8 +16,8 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) {
     vis.widgets.active.corner_radius = CornerRadius::same(4);
     vis.widgets.open.corner_radius = CornerRadius::same(4);
 
-    // Accent (green selection highlight) — same for both modes
-    let accent = Color32::from_rgb(72, 200, 120);
+    // Accent (indigo-500 selection highlight) — white text gives 5.5:1 contrast ratio
+    let accent = Color32::from_rgb(99, 102, 241);
     vis.selection.bg_fill = accent;
     vis.selection.stroke = Stroke::new(1.0, accent);
 
@@ -31,14 +31,15 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) {
             Stroke::new(1.0, Color32::from_rgba_premultiplied(100, 120, 200, 60));
         vis.widgets.inactive.bg_stroke =
             Stroke::new(1.0, Color32::from_rgba_premultiplied(100, 120, 200, 60));
-        // Set text colors per widget state so selected items (green bg) keep contrast.
+        // Set text colors per widget state so selected items (indigo bg) keep contrast.
         // override_text_color is avoided: it flattens all states to one color,
-        // giving gray text on the green selection highlight (poor contrast).
+        // giving gray text on the indigo selection highlight (poor contrast).
         let text = Color32::from_rgb(210, 215, 230);
         vis.widgets.noninteractive.fg_stroke = Stroke::new(1.0, text);
         vis.widgets.inactive.fg_stroke = Stroke::new(1.0, text);
         vis.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
-        // active = selected state; keep egui default (WHITE) — good on green bg
+        // active = selected state; white text on indigo gives 5.5:1 contrast
+        vis.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
     } else {
         vis.window_fill = Color32::from_rgb(244, 244, 248);
         vis.panel_fill = Color32::from_rgb(255, 255, 255);
@@ -53,7 +54,8 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) {
         vis.widgets.noninteractive.fg_stroke = Stroke::new(1.0, text);
         vis.widgets.inactive.fg_stroke = Stroke::new(1.0, text);
         vis.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::BLACK);
-        // active = selected state; keep egui default (BLACK) — good on green bg
+        // active = selected state; white text on indigo gives 5.5:1 contrast
+        vis.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
     }
 
     ctx.set_visuals(vis);

@@ -1,5 +1,8 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use eframe::egui;
 use crossbeam_channel::Sender;
 use crate::event::AppEvent;
@@ -9,7 +12,7 @@ use crate::tray::config_window::{render_config_panel, ConfigWindowState};
 use crate::tray::sprite_editor::{render_sprite_editor_panel, SpriteEditorViewport};
 use crate::tray::sm_editor::{render_sm_panel, SmEditorViewport};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AppTab { Config, Sprites, Sm }
 
 pub struct AppWindowState {
@@ -31,36 +34,66 @@ pub struct AppWindowState {
 
     // ── SM tab ──
     pub sm: SmEditorViewport,
+
+    // ── Dirty flags ──
+    /// Set when the SM gallery has changed (e.g. after a bundle import).
+    /// The config tab clears this each frame after re-loading the gallery.
+    pub sm_gallery_dirty: bool,
 }
 
 impl AppWindowState {
-    pub fn new(config: Config, tx: Sender<AppEvent>, dark_mode: bool, config_dir: PathBuf) -> Arc<Mutex<Self>> {
-        let config_state = ConfigWindowState::new(config, tx.clone());
+    pub fn new(config: Config, tx: Sender<AppEvent>, dark_mode: bool, config_dir: PathBuf, gallery: SpriteGallery) -> Arc<Mutex<Self>> {
+        // Load a second gallery instance for the config tab (SpriteGallery doesn't impl Clone).
+        let config_gallery = SpriteGallery::load();
+        let config_state = ConfigWindowState::new(config, tx.clone(), config_gallery);
         let sm_arc = SmEditorViewport::new(dark_mode, config_dir.clone());
         let sm = match Arc::try_unwrap(sm_arc) {
             Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
             Err(_) => panic!("SmEditorViewport Arc has unexpected extra references"),
         };
-        let sprite_gallery = SpriteGallery::load();
         Arc::new(Mutex::new(Self {
             selected_tab: AppTab::Config,
             should_close: false,
             dark_mode,
             dark_mode_out: None,
             config_state,
-            sprite_gallery,
+            sprite_gallery: gallery,
             selected_sprite_key: None,
             sprite_editor: None,
             pending_png_pick: None,
             saved_json_path: None,
             pending_sprite_delete: None,
             sm,
+            sm_gallery_dirty: false,
         }))
     }
 }
 
-pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
-    let viewport_id = egui::ViewportId::from_hash_of("app_window");
+pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
+    egui::TopBottomPanel::top("app_tab_bar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
+            ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
+            ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("✕").clicked() {
+                    s.should_close = true;
+                }
+                if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
+                    s.dark_mode_out = Some(s.dark_mode);
+                }
+            });
+        });
+    });
+}
+
+pub fn open_app_window(
+    ctx: &egui::Context,
+    state: Arc<Mutex<AppWindowState>>,
+    window_gen: u64,
+    close_flag: Arc<AtomicBool>,
+) {
+    let viewport_id = egui::ViewportId::from_hash_of(format!("app_window_{window_gen}"));
     let viewport_builder = egui::ViewportBuilder::default()
         .with_title("Ferrite")
         .with_inner_size([1000.0, 640.0]);
@@ -70,10 +103,9 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
             // egui handles embedded viewports
         }
 
+        // OS close button: signal the main loop via the per-generation flag.
         if ctx.input(|i| i.viewport().close_requested()) {
-            if let Ok(mut s) = state.lock() {
-                s.should_close = true;
-            }
+            close_flag.store(true, Ordering::Relaxed);
             return;
         }
 
@@ -81,6 +113,13 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
             Ok(g) => g,
             Err(_) => return,
         };
+
+        // In-window ✕ button: mirror into the per-generation flag so the main
+        // loop can detect it without touching the mutex.
+        if s.should_close {
+            close_flag.store(true, Ordering::Relaxed);
+            return;
+        }
 
         // Sync dark mode into sub-states
         let current_dark = s.dark_mode;
@@ -94,21 +133,7 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
         crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
         // Top tab bar
-        egui::TopBottomPanel::top("app_tab_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
-                ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
-                ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("✕").clicked() {
-                        s.should_close = true;
-                    }
-                    if crate::tray::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
-                        s.dark_mode_out = Some(s.dark_mode);
-                    }
-                });
-            });
-        });
+        render_app_tab_bar(ctx, &mut s);
 
         let tab = s.selected_tab;
         match tab {
@@ -197,7 +222,7 @@ pub fn open_app_window(ctx: &egui::Context, state: Arc<Mutex<AppWindowState>>) {
 }
 
 fn render_config_tab(ctx: &egui::Context, s: &mut AppWindowState) {
-    render_config_panel(ctx, &mut s.config_state);
+    render_config_panel(ctx, &mut s.config_state, &mut s.sm_gallery_dirty);
 }
 
 fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {

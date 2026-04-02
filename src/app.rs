@@ -9,6 +9,7 @@ use crate::{
     },
     tray::{
         app_window::{open_app_window, AppWindowState},
+        window_lifecycle::AppWindowLifecycle,
         SystemTray,
     },
     window::pet_window::PetWindow,
@@ -47,8 +48,10 @@ pub struct PetInstance {
 
 impl PetInstance {
     pub fn new(cfg: PetConfig, sheet: SpriteSheet) -> Result<Self> {
-        let dw = sheet.frames.first().map(|f| f.w).unwrap_or(32) * cfg.scale;
-        let dh = sheet.frames.first().map(|f| f.h).unwrap_or(32) * cfg.scale;
+        let frame_w = sheet.frames.first().map(|f| f.w).unwrap_or(32);
+        let frame_h = sheet.frames.first().map(|f| f.h).unwrap_or(32);
+        let dw = (frame_w as f32 * cfg.scale).round() as u32;
+        let dh = (frame_h as f32 * cfg.scale).round() as u32;
 
         // Spawn above the top of the screen so the pet falls into view.
         let spawn_y = -(dh as i32);
@@ -221,7 +224,8 @@ pub struct App {
     _tray: SystemTray,
     _watcher: notify::RecommendedWatcher,
     last_tick_ms: std::time::Instant,
-    app_window: Option<Arc<Mutex<AppWindowState>>>,
+    app_window: Arc<Mutex<AppWindowState>>,
+    app_window_lifecycle: AppWindowLifecycle,
     should_quit: bool,
     surface_cache: crate::window::surfaces::SurfaceCache,
     dark_mode: bool,
@@ -247,7 +251,14 @@ impl App {
         }
 
         let tray = SystemTray::new(tx.clone()).context("create tray")?;
-        let watcher = spawn_watcher(cfg_path, tx.clone()).context("create watcher")?;
+        let watcher = spawn_watcher(cfg_path.clone(), tx.clone()).context("create watcher")?;
+
+        let gallery = crate::window::sprite_gallery::SpriteGallery::load();
+        let config_dir = cfg_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let app_window = AppWindowState::new(cfg, tx.clone(), true, config_dir, gallery);
 
         Ok(App {
             tx,
@@ -256,7 +267,8 @@ impl App {
             _tray: tray,
             _watcher: watcher,
             last_tick_ms: std::time::Instant::now(),
-            app_window: None,
+            app_window,
+            app_window_lifecycle: AppWindowLifecycle::new(),
             should_quit: false,
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
@@ -366,26 +378,25 @@ impl App {
                 self.pets.remove(&pet_id);
             }
             AppEvent::TrayOpenWindow => {
-                // Check if the window is actually still alive (not closed by the user)
-                let is_open = self.app_window.as_ref().is_some_and(|w| {
-                    w.lock().ok().map(|s| !s.should_close).unwrap_or(false)
-                });
-
-                if is_open {
+                if self.app_window_lifecycle.open {
+                    log::debug!(
+                        "TrayOpenWindow: already open (gen {}), focusing",
+                        self.app_window_lifecycle.generation
+                    );
                     // Already open — bring to front
                     ctx.send_viewport_cmd_to(
-                        egui::ViewportId::from_hash_of("app_window"),
+                        egui::ViewportId::from_hash_of(
+                            format!("app_window_{}", self.app_window_lifecycle.generation),
+                        ),
                         egui::ViewportCommand::Focus,
                     );
                 } else {
-                    // Create fresh state (also clears stale Some)
-                    let config_dir = config::config_path()
-                        .parent()
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| std::path::PathBuf::from("."));
-                    let current = config::load(&config::config_path()).unwrap_or_default();
-                    let state = AppWindowState::new(current, self.tx.clone(), self.dark_mode, config_dir);
-                    self.app_window = Some(state);
+                    // Fresh generation: new close flag, no mutex access needed.
+                    self.app_window_lifecycle.open();
+                    log::debug!(
+                        "TrayOpenWindow: opening gen {}",
+                        self.app_window_lifecycle.generation
+                    );
                 }
             }
             AppEvent::TrayOpenConfig | AppEvent::TrayOpenSmEditor => {}
@@ -421,8 +432,38 @@ impl App {
                     p.runner.release(velocity);
                 }
             }
-            AppEvent::SMImported { .. } | AppEvent::SMChanged { .. } => {
-                // TODO(Plan-2): handle SM import and per-pet SM switching
+            AppEvent::SMImported { name } => {
+                log::info!("SM imported: {}", name);
+                self.notify_sm_collection_changed();
+            }
+            AppEvent::SMChanged { pet_id, sm_name } => {
+                // Reload gallery to get the named SM
+                let config_dir = config::config_path()
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                let mut applied = false;
+                if let Some(pet) = self.pets.get_mut(&pet_id) {
+                    if let Some(sm) = gallery.get(&sm_name) {
+                        pet.runner.replace_sm(sm);
+                        pet.cfg.state_machine = sm_name.clone();
+                        log::info!("SMChanged: applied '{}' to pet '{}'", sm_name, pet_id);
+                        applied = true;
+                    } else {
+                        log::warn!("SMChanged: SM '{}' not found in gallery", sm_name);
+                    }
+                } else {
+                    log::warn!("SMChanged: pet '{}' not found", pet_id);
+                }
+                if applied {
+                    let current_cfg = crate::config::schema::Config {
+                        pets: self.pets.values().map(|p| p.cfg.clone()).collect(),
+                    };
+                    if let Err(e) = config::save(&config::config_path(), &current_cfg) {
+                        log::warn!("Failed to persist config after SMChanged: {}", e);
+                    }
+                }
             }
             AppEvent::TrayImportBundle => {
                 let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
@@ -435,14 +476,46 @@ impl App {
                 self.pending_bundle_pick = Some(rx_pick);
             }
             AppEvent::BundleImported { sprite_id, sm_name } => {
-                log::info!("Bundle imported: sprite={}, sm={:?}", sprite_id, sm_name);
-                // TODO(Plan-3): update config dialog to show new sprite/SM
+                if let Some(sm_name) = sm_name {
+                    // Reload gallery to pick up newly saved SM
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    // Auto-assign to the first pet whose sheet_path contains sprite_id
+                    if let Some(pet) = self.pets.values_mut()
+                        .find(|p| p.cfg.sheet_path.contains(&sprite_id))
+                        && let Some(sm) = gallery.get(&sm_name)
+                    {
+                        pet.runner.replace_sm(sm);
+                        pet.cfg.state_machine = sm_name.clone();
+                        log::info!("Bundle import: auto-assigned SM '{}' to pet '{}'", sm_name, pet.cfg.id);
+                    }
+                    // Persist updated config
+                    let current_cfg = crate::config::schema::Config {
+                        pets: self.pets.values().map(|p| p.cfg.clone()).collect(),
+                    };
+                    if let Err(e) = config::save(&config::config_path(), &current_cfg) {
+                        log::warn!("Failed to persist config after bundle import: {}", e);
+                    }
+                }
+                // Notify open windows to refresh SM lists
+                self.notify_sm_collection_changed();
             }
             AppEvent::SMCollectionChanged => {
-                // TODO(Plan-3): refresh SM lists in open UI windows
+                self.notify_sm_collection_changed();
             }
         }
         Ok(())
+    }
+
+    fn notify_sm_collection_changed(&mut self) {
+        log::debug!("SM collection changed — notifying UI");
+        if self.app_window_lifecycle.open
+            && let Ok(mut s) = self.app_window.try_lock() {
+                s.sm_gallery_dirty = true;
+            }
     }
 
     fn apply_config(&mut self, new_cfg: crate::config::schema::Config) -> Result<()> {
@@ -450,6 +523,29 @@ impl App {
             new_cfg.pets.iter().map(|p| p.id.clone()).collect();
         self.pets.retain(|id, _| new_ids.contains(id));
         for pet_cfg in new_cfg.pets {
+            // Fast path: only SM changed → hot-swap, no window rebuild
+            if let Some(pet) = self.pets.get_mut(&pet_cfg.id) {
+                let old_cfg = &pet.cfg;
+                // f32 equality is safe here: both values come from TOML-deserialized config,
+                // never from arithmetic — we are detecting whether the user changed the field.
+                if old_cfg.sheet_path == pet_cfg.sheet_path
+                    && old_cfg.scale == pet_cfg.scale
+                    && old_cfg.walk_speed == pet_cfg.walk_speed
+                    && old_cfg.state_machine != pet_cfg.state_machine
+                {
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    let new_sm = resolve_sm(&pet_cfg.state_machine, &gallery);
+                    pet.runner.replace_sm(new_sm);
+                    pet.cfg = pet_cfg.clone();
+                    log::info!("hot-swapped SM for pet '{}' → '{}'", pet_cfg.id, pet_cfg.state_machine);
+                    continue; // skip full rebuild
+                }
+            }
+
             let needs_rebuild = self.pets.get(&pet_cfg.id)
                 .map(|inst| inst.cfg != pet_cfg)
                 .unwrap_or(true);
@@ -510,7 +606,6 @@ impl eframe::App for App {
 
         // Show unified app window if open.
         {
-            let mut win_should_close = false;
             let mut saved_json_path: Option<std::path::PathBuf> = None;
             let mut sm_saved_name: Option<String> = None;
             let mut force_state: Option<String> = None;
@@ -518,9 +613,22 @@ impl eframe::App for App {
             let mut step_mode = false;
             let mut step_advance = false;
 
-            if let Some(ref state) = self.app_window {
+            if self.app_window_lifecycle.poll_close() {
+                log::debug!(
+                    "app_window: close detected for gen {}, sending ViewportCommand::Close",
+                    self.app_window_lifecycle.generation
+                );
+                ctx.send_viewport_cmd_to(
+                    egui::ViewportId::from_hash_of(
+                        format!("app_window_{}", self.app_window_lifecycle.generation),
+                    ),
+                    egui::ViewportCommand::Close,
+                );
+            }
+
+            if self.app_window_lifecycle.open {
                 // Push live pet state into SM editor
-                if let Ok(mut s) = state.try_lock() {
+                if let Ok(mut s) = self.app_window.try_lock() {
                     if let Some(pet) = self.pets.values().next() {
                         s.sm.from_app.active_state = Some(pet.runner.current_state_name().to_string());
                         let cvars = pet.runner.last_condition_vars();
@@ -547,7 +655,6 @@ impl eframe::App for App {
                     if let Some(new_dark) = s.dark_mode_out.take() {
                         self.dark_mode = new_dark;
                     }
-                    win_should_close = s.should_close;
                     saved_json_path = s.saved_json_path.take();
                     sm_saved_name = s.sm.from_ui.saved_sm_name.take();
                     force_state = s.sm.from_ui.force_state.take();
@@ -558,9 +665,12 @@ impl eframe::App for App {
                     if step_advance { s.sm.from_ui.step_advance = false; }
                 }
 
-                if !win_should_close {
-                    open_app_window(ctx, state.clone());
-                }
+                open_app_window(
+                    ctx,
+                    self.app_window.clone(),
+                    self.app_window_lifecycle.generation,
+                    self.app_window_lifecycle.current_close_flag(),
+                );
             }
 
             // Apply SM debug commands to pets
@@ -598,10 +708,6 @@ impl eframe::App for App {
                 }
                 let _ = self.tx.send(AppEvent::SMCollectionChanged);
             }
-
-            if win_should_close {
-                self.app_window = None;
-            }
         }
 
         ctx.request_repaint_after(Duration::from_millis(16));
@@ -609,6 +715,23 @@ impl eframe::App for App {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+fn resolve_sm(
+    name: &str,
+    gallery: &crate::sprite::sm_gallery::SmGallery,
+) -> std::sync::Arc<crate::sprite::sm_compiler::CompiledSM> {
+    if name == "embedded://default" || name.is_empty() {
+        crate::sprite::sm_runner::load_default_sm()
+    } else {
+        match gallery.get(name) {
+            Some(sm) => sm,
+            None => {
+                log::warn!("SM '{}' not found in gallery, falling back to default", name);
+                crate::sprite::sm_runner::load_default_sm()
+            }
+        }
+    }
+}
 
 fn sanitize_id(name: &str) -> String {
     name.chars()
@@ -650,4 +773,52 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
         .context("decode PNG")?
         .into_rgba8();
     sheet::SpriteSheet::from_json_and_image(&json, image)
+}
+
+// ─── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    /// `resolve_sm` with an unknown name falls back to the embedded default SM.
+    #[test]
+    fn resolve_sm_unknown_name_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        // Ask for a name that doesn't exist in the empty gallery.
+        let sm = resolve_sm("nonexistent-sm", &gallery);
+
+        // The embedded default SM is named "Default Pet" (from assets/default.petstate).
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(
+            sm.name, default_sm.name,
+            "resolve_sm should fall back to default SM for unknown names; got '{}'",
+            sm.name
+        );
+    }
+
+    /// `resolve_sm` with the sentinel "embedded://default" also returns the default SM.
+    #[test]
+    fn resolve_sm_embedded_sentinel_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        let sm = resolve_sm("embedded://default", &gallery);
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(sm.name, default_sm.name);
+    }
+
+    /// `resolve_sm` with an empty string also returns the default SM.
+    #[test]
+    fn resolve_sm_empty_string_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        let sm = resolve_sm("", &gallery);
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(sm.name, default_sm.name);
+    }
 }

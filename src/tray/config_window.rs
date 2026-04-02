@@ -28,9 +28,8 @@ pub enum OpenEditorRequest {
 }
 
 impl ConfigWindowState {
-    pub fn new(config: Config, tx: Sender<AppEvent>) -> Self {
+    pub fn new(config: Config, tx: Sender<AppEvent>, gallery: SpriteGallery) -> Self {
         let selected_pet_idx = if config.pets.is_empty() { None } else { Some(0) };
-        let gallery = SpriteGallery::load();
         Self {
             config,
             selected_pet_idx,
@@ -51,7 +50,7 @@ impl ConfigWindowState {
     }
 }
 
-pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
+pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState, sm_gallery_dirty: &mut bool) {
     // Apply theme for this frame.
     crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
@@ -204,14 +203,14 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
                 ui.label("Scale:");
                 let mut scale = s.config.pets[idx].scale;
                 if ui
-                    .add(egui::DragValue::new(&mut scale).range(1..=4))
+                    .add(egui::DragValue::new(&mut scale).range(0.25_f32..=4.0_f32).speed(0.05))
                     .changed()
                 {
                     s.config.pets[idx].scale = scale;
                     s.tx.send(AppEvent::ConfigChanged(s.config.clone())).ok();
                 }
             });
-            crate::tray::ui_theme::hint(ui, "Pixel upscale factor. 2× is recommended for 32px sprites.");
+            crate::tray::ui_theme::hint(ui, "Pixel upscale factor. 2× is recommended for 32px sprites. Fractional values (e.g. 1.5) are supported.");
 
             // Walk speed
             ui.horizontal(|ui| {
@@ -253,8 +252,12 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigWindowState) {
 
             ui.separator();
 
-            // SM selector
+            // SM selector — gallery is reloaded from disk every frame (cheap for typical
+            // gallery sizes). sm_gallery_dirty is cleared here so the flag doesn't
+            // accumulate; a future optimization could cache the gallery and only reload
+            // when this flag is set.
             {
+                *sm_gallery_dirty = false;
                 let config_dir = crate::config::config_path()
                     .parent()
                     .map(|p| p.to_path_buf())

@@ -169,13 +169,13 @@ impl PetWindow {
         src_y: u32,
         src_w: u32,
         src_h: u32,
-        scale: u32,
+        scale: f32,
         flip_h: bool,
     ) -> Result<()> {
         blit_frame(src, src_x, src_y, src_w, src_h, &mut self.frame_buf, scale, flip_h);
 
-        let dw = src_w * scale;
-        let dh = src_h * scale;
+        let dw = (src_w as f32 * scale).round() as u32;
+        let dh = (src_h as f32 * scale).round() as u32;
 
         // Reallocate GDI cache if dimensions changed (e.g. scale change).
         if dw != self.cached_w || dh != self.cached_h {
@@ -306,7 +306,7 @@ mod tests {
         )
         .unwrap();
         let f = &sheet.frames[0];
-        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1, false)
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1.0, false)
             .expect("render");
     }
 
@@ -319,7 +319,7 @@ mod tests {
         )
         .unwrap();
         let f = &sheet.frames[0];
-        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1, true)
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 1.0, true)
             .expect("render flipped");
     }
 
@@ -332,10 +332,10 @@ mod tests {
         )
         .unwrap();
         let f = &sheet.frames[0];
-        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2, false)
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2.0, false)
             .expect("first render");
         let buf1 = win.frame_buf.clone();
-        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2, false)
+        win.render_frame(&sheet.image, f.x, f.y, f.w, f.h, 2.0, false)
             .expect("second render");
         assert_eq!(buf1, win.frame_buf, "frame buffer must be identical on repeated render");
     }

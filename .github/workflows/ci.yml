@@ -14,7 +14,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ runner.os }}
-      - name: cargo test
-        run: cargo test
-      - name: cargo clippy
-        run: cargo clippy -- -D warnings -A dead-code
+      - name: cargo test (ferrite)
+        run: cargo test --package ferrite
+      - name: cargo test (ferrite-core)
+        run: cargo test --package ferrite-core
+      - name: cargo clippy (ferrite)
+        run: cargo clippy --package ferrite -- -D warnings -A dead-code
+      - name: cargo clippy (ferrite-core)
+        run: cargo clippy --package ferrite-core -- -D warnings -A dead-code

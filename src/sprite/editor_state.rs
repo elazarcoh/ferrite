@@ -44,6 +44,8 @@ pub struct SpriteEditorState {
     pub selected_tag: Option<usize>,
     /// smMappings: sm_name → (state_name → tag_name). Written back to JSON on save.
     pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    /// User-editable name for this sprite; used as the file stem on save.
+    pub sprite_name: String,
 }
 
 // ─── impl SpriteEditorState ───────────────────────────────────────────────────
@@ -53,6 +55,10 @@ impl SpriteEditorState {
     /// `rows` and `cols` default to 1×1; set them before calling `frame_rect`
     /// or `build_json`.
     pub fn new(png_path: PathBuf, image: RgbaImage) -> Self {
+        let sprite_name = png_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "sprite".to_string());
         SpriteEditorState {
             png_path,
             image,
@@ -61,6 +67,7 @@ impl SpriteEditorState {
             tags: Vec::new(),
             selected_tag: None,
             sm_mappings: std::collections::HashMap::new(),
+            sprite_name,
         }
     }
 
@@ -114,10 +121,10 @@ impl SpriteEditorState {
     /// Write JSON + copy PNG to `dir`, overwriting any existing files.
     /// Copies the source PNG file; does not re-encode from the in-memory image.
     pub fn save_to_dir(&self, dir: &Path) -> Result<()> {
-        let stem = self.png_path
-            .file_stem()
-            .ok_or_else(|| anyhow!("png_path has no stem"))?
-            .to_string_lossy();
+        let stem = sanitize_name(&self.sprite_name);
+        if stem.is_empty() {
+            return Err(anyhow!("sprite_name is empty after sanitization"));
+        }
         let dest_json = dir.join(format!("{stem}.json"));
         let dest_png = dir.join(format!("{stem}.png"));
         std::fs::write(&dest_json, self.to_json())
@@ -184,6 +191,16 @@ impl SpriteEditorState {
 }
 
 // ─── Free helpers ─────────────────────────────────────────────────────────────
+
+/// Sanitize a sprite name to produce a safe file stem.
+/// Allowed characters: alphanumeric, `-`, `_`. Everything else becomes `_`.
+/// Leading/trailing whitespace is trimmed first.
+pub fn sanitize_name(s: &str) -> String {
+    s.trim()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect()
+}
 
 fn direction_to_str(d: &TagDirection) -> &'static str {
     match d {

@@ -26,11 +26,11 @@ fn pet_instance_uses_config_position() {
 #[test]
 fn pet_instance_uses_config_scale() {
     // scale=1 → window 32×32; scale=2 (default) → 64×64
-    let cfg_s1 = PetConfig { scale: 1, ..PetConfig::default() };
+    let cfg_s1 = PetConfig { scale: 1.0, ..PetConfig::default() };
     let pet1 = PetInstance::new(cfg_s1, test_sheet()).unwrap();
     assert_eq!(pet1.window_width(), 32);
 
-    let cfg_s2 = PetConfig { scale: 2, ..PetConfig::default() };
+    let cfg_s2 = PetConfig { scale: 2.0, ..PetConfig::default() };
     let pet2 = PetInstance::new(cfg_s2, test_sheet()).unwrap();
     assert_eq!(pet2.window_width(), 64);
 }
@@ -41,7 +41,7 @@ fn config_roundtrip_preserves_all_pet_fields() {
     let path = dir.path().join("config.toml");
     let original = Config {
         pets: vec![
-            PetConfig { id: "a".into(), x: 10, y: 20, scale: 3, walk_speed: 42.0, ..PetConfig::default() },
+            PetConfig { id: "a".into(), x: 10, y: 20, scale: 3.0, walk_speed: 42.0, ..PetConfig::default() },
             PetConfig { id: "b".into(), x: 100, y: 200, ..PetConfig::default() },
         ],
     };

@@ -50,10 +50,7 @@ impl SpriteEditorViewport {
     }
 
     fn do_export_bundle(&self, sm_source: Option<&str>) {
-        let bundle_name = self.state.png_path
-            .file_stem()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "sprite".to_string());
+        let bundle_name = crate::sprite::editor_state::sanitize_name(&self.state.sprite_name);
 
         let json_bytes = self.state.to_json();
         let json_str = match std::str::from_utf8(&json_bytes) {
@@ -116,6 +113,11 @@ impl SpriteEditorViewport {
     }
 }
 
+/// Clamp-step: increment or decrement `val` by 1, clamped to [0, max].
+pub fn clamp_step(val: usize, up: bool, max: usize) -> usize {
+    if up { val.saturating_add(1).min(max) } else { val.saturating_sub(1) }
+}
+
 pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewport) {
     crate::tray::ui_theme::apply_theme(ctx, s.dark_mode);
 
@@ -136,7 +138,13 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
     // Top bar
     egui::TopBottomPanel::top("editor_top").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(format!("File: {}", s.state.png_path.display()));
+                ui.label("Name:");
+                if ui.add_enabled(
+                    !s.is_builtin,
+                    egui::TextEdit::singleline(&mut s.state.sprite_name).hint_text("sprite name"),
+                ).changed() {
+                    s.dirty = true;
+                }
                 if s.is_builtin {
                     ui.colored_label(egui::Color32::GRAY, "(Built-in \u{2014} read only)");
                 }
@@ -179,9 +187,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                             if let Err(e) = s.state.save_to_dir(&dir) {
                                 log::warn!("save sprite editor: {e}");
                             } else {
-                                let stem = s.state.png_path.file_stem()
-                                    .map(|n| n.to_string_lossy().into_owned())
-                                    .unwrap_or_default();
+                                let stem = crate::sprite::editor_state::sanitize_name(&s.state.sprite_name);
                                 // Update png_path so subsequent saves stay in the sprites dir
                                 s.state.png_path = dir.join(format!("{stem}.png"));
                                 s.saved_json_path = Some(dir.join(format!("{stem}.json")));
@@ -203,20 +209,44 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                 });
                 ui.horizontal(|ui| {
                     ui.label("Cols:");
-                    let mut cols = s.state.cols;
-                    if ui.add(egui::DragValue::new(&mut cols).range(1..=64)).changed() {
-                        s.state.cols = cols;
+                    let mut cols = s.state.cols as usize;
+                    let mut changed = false;
+                    let resp = ui.add(egui::DragValue::new(&mut cols).range(1_usize..=64_usize));
+                    if resp.has_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                            cols = clamp_step(cols, true, 64);
+                            changed = true;
+                        }
+                        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                            cols = clamp_step(cols, false, 64).max(1);
+                            changed = true;
+                        }
+                    }
+                    if resp.changed() || changed {
+                        s.state.cols = cols as u32;
                         s.dirty = true;
-                        s.preview_sheet = None; // force rebuild
+                        s.preview_sheet = None;
                     }
                 });
                 ui.horizontal(|ui| {
                     ui.label("Rows:");
-                    let mut rows = s.state.rows;
-                    if ui.add(egui::DragValue::new(&mut rows).range(1..=64)).changed() {
-                        s.state.rows = rows;
+                    let mut rows = s.state.rows as usize;
+                    let mut changed = false;
+                    let resp = ui.add(egui::DragValue::new(&mut rows).range(1_usize..=64_usize));
+                    if resp.has_focus() {
+                        if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                            rows = clamp_step(rows, true, 64);
+                            changed = true;
+                        }
+                        if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                            rows = clamp_step(rows, false, 64).max(1);
+                            changed = true;
+                        }
+                    }
+                    if resp.changed() || changed {
+                        s.state.rows = rows as u32;
                         s.dirty = true;
-                        s.preview_sheet = None; // force rebuild
+                        s.preview_sheet = None;
                     }
                 });
                 let total = s.total_frames();
@@ -251,10 +281,23 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                         let total = s.total_frames();
 
                         // From / To frame range
+                        let max_frame = total.saturating_sub(1);
                         ui.horizontal(|ui| {
                             ui.label("From:");
                             let mut from = s.state.tags[tag_idx].from;
-                            if ui.add(egui::DragValue::new(&mut from).range(0..=total.saturating_sub(1))).changed() {
+                            let mut changed = false;
+                            let resp = ui.add(egui::DragValue::new(&mut from).range(0..=max_frame));
+                            if resp.has_focus() {
+                                if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                                    from = clamp_step(from, true, max_frame);
+                                    changed = true;
+                                }
+                                if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                                    from = clamp_step(from, false, max_frame);
+                                    changed = true;
+                                }
+                            }
+                            if resp.changed() || changed {
                                 s.state.tags[tag_idx].from = from;
                                 s.dirty = true;
                                 s.preview_sheet = None;
@@ -263,7 +306,19 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                         ui.horizontal(|ui| {
                             ui.label("To:");
                             let mut to = s.state.tags[tag_idx].to;
-                            if ui.add(egui::DragValue::new(&mut to).range(0..=total.saturating_sub(1))).changed() {
+                            let mut changed = false;
+                            let resp = ui.add(egui::DragValue::new(&mut to).range(0..=max_frame));
+                            if resp.has_focus() {
+                                if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                                    to = clamp_step(to, true, max_frame);
+                                    changed = true;
+                                }
+                                if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                                    to = clamp_step(to, false, max_frame);
+                                    changed = true;
+                                }
+                            }
+                            if resp.changed() || changed {
                                 s.state.tags[tag_idx].to = to;
                                 s.dirty = true;
                                 s.preview_sheet = None;
@@ -578,7 +633,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                             );
                             let painter = ui.painter();
                             let grid_color = egui::Color32::from_rgba_premultiplied(200, 200, 200, 60);
-                            let accent = egui::Color32::from_rgb(72, 200, 120);
+                            let accent = egui::Color32::from_rgb(99, 102, 241);
 
                             // Compute live drag range for preview.
                             let live_range: Option<(usize, usize)> =
