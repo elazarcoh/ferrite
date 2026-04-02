@@ -186,7 +186,8 @@ impl SpriteEditorState {
             meta["smMappings"] = sm_mappings_json;
         }
         if self.chromakey.enabled {
-            meta["chromakey"] = serde_json::to_value(&self.chromakey).unwrap_or_default();
+            meta["chromakey"] = serde_json::to_value(&self.chromakey)
+                .unwrap_or_else(|e| unreachable!("ChromakeyConfig serialize failed: {e}"));
         }
 
         serde_json::json!({
