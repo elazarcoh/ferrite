@@ -271,6 +271,41 @@ fn save_sanitizes_sprite_name() {
     assert!(!sanitized.contains(' '), "sanitized name must not contain spaces");
 }
 
+// ─── chromakey tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn chromakey_config_round_trips_through_save_and_reload() {
+    use ferrite::sprite::sheet::{ChromakeyConfig, SpriteSheet};
+
+    let (mut state, _tmp) = make_state();
+    state.rows = 1;
+    state.cols = 2;
+    state.chromakey = ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 15 };
+
+    let json_bytes = state.to_json();
+
+    let image = image::load_from_memory_with_format(test_png_bytes(), image::ImageFormat::Png)
+        .unwrap()
+        .into_rgba8();
+    let sheet = SpriteSheet::from_json_and_image(&json_bytes, image).unwrap();
+
+    assert!(sheet.chromakey.enabled);
+    assert_eq!(sheet.chromakey.color, [0, 255, 0]);
+    assert_eq!(sheet.chromakey.tolerance, 15);
+}
+
+#[test]
+fn chromakey_disabled_not_written_to_json() {
+    let (state, _tmp) = make_state();
+    // chromakey is default (enabled = false)
+
+    let json_bytes = state.to_json();
+    let json_str = String::from_utf8(json_bytes).unwrap();
+
+    assert!(!json_str.contains("\"chromakey\""),
+        "disabled chromakey must not appear in serialized JSON, got: {json_str}");
+}
+
 // ─── clamp_step tests ────────────────────────────────────────────────────────
 
 #[test]
