@@ -4,7 +4,7 @@ use crate::{
     event::AppEvent,
     sprite::{
         animation::AnimationState,
-        sheet::{self, SpriteSheet},
+        sheet::{self, apply_chromakey, SpriteSheet},
         sm_runner::SMRunner,
     },
     tray::{
@@ -762,7 +762,9 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
     if let Some(stem) = path.strip_prefix("embedded://") {
         let (json, png) = assets::embedded_sheet(stem)
             .with_context(|| format!("embedded sheet '{stem}' not found"))?;
-        return sheet::load_embedded(&json, &png);
+        let mut sheet = sheet::load_embedded(&json, &png)?;
+        apply_chromakey(&mut sheet.image, &sheet.chromakey);
+        return Ok(sheet);
     }
     let json = std::fs::read(path).with_context(|| format!("read {path}"))?;
     let json_path = std::path::Path::new(path);
@@ -772,7 +774,9 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
     let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
         .context("decode PNG")?
         .into_rgba8();
-    sheet::SpriteSheet::from_json_and_image(&json, image)
+    let mut sheet = sheet::SpriteSheet::from_json_and_image(&json, image)?;
+    apply_chromakey(&mut sheet.image, &sheet.chromakey);
+    Ok(sheet)
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────

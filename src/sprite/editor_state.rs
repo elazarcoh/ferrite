@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use image::RgbaImage;
 use std::path::{Path, PathBuf};
 
-use crate::sprite::sheet::TagDirection;
+use crate::sprite::sheet::{ChromakeyConfig, TagDirection};
 
 // ─── Tag color palette ────────────────────────────────────────────────────────
 // Stored as 0x00BBGGRR (Win32 COLORREF format) for historical reasons.
@@ -44,6 +44,8 @@ pub struct SpriteEditorState {
     pub selected_tag: Option<usize>,
     /// smMappings: sm_name → (state_name → tag_name). Written back to JSON on save.
     pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    /// Chromakey configuration. Written back to JSON on save when enabled.
+    pub chromakey: ChromakeyConfig,
     /// User-editable name for this sprite; used as the file stem on save.
     pub sprite_name: String,
 }
@@ -67,6 +69,7 @@ impl SpriteEditorState {
             tags: Vec::new(),
             selected_tag: None,
             sm_mappings: std::collections::HashMap::new(),
+            chromakey: ChromakeyConfig::default(),
             sprite_name,
         }
     }
@@ -181,6 +184,9 @@ impl SpriteEditorState {
         let mut meta = serde_json::json!({"frameTags": frame_tags});
         if !sm_mappings_json.is_null() {
             meta["smMappings"] = sm_mappings_json;
+        }
+        if self.chromakey.enabled {
+            meta["chromakey"] = serde_json::to_value(&self.chromakey).unwrap_or_default();
         }
 
         serde_json::json!({

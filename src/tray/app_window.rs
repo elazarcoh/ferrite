@@ -334,6 +334,7 @@ fn load_editor_state_from_sheet(path: &str) -> anyhow::Result<crate::sprite::edi
     state.cols = cols;
     state.tags = tags;
     state.sm_mappings = sheet.sm_mappings;
+    state.chromakey = sheet.chromakey.clone();
     Ok(state)
 }
 
