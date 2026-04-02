@@ -65,7 +65,7 @@ impl Default for ChromakeyConfig {
 
 /// Zero the alpha of every pixel whose Euclidean RGB distance from `cfg.color`
 /// is <= cfg.tolerance. No-op when cfg.enabled is false.
-pub fn apply_chromakey(image: &mut image::RgbaImage, cfg: &ChromakeyConfig) {
+pub fn apply_chromakey(image: &mut RgbaImage, cfg: &ChromakeyConfig) {
     if !cfg.enabled { return; }
     let [kr, kg, kb] = cfg.color.map(|c| c as i32);
     let t_sq = cfg.tolerance as i32 * cfg.tolerance as i32;
@@ -397,6 +397,24 @@ mod tests {
         img.put_pixel(0, 0, image::Rgba([5, 250, 5, 255]));
         apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
         assert_eq!(img.get_pixel(0, 0).0[3], 0, "near-key pixel within tolerance must be transparent");
+    }
+
+    #[test]
+    fn chromakey_tolerance_boundary_included() {
+        // dist² from [0,255,0]: 10²+0+0 = 100 == 10²  → must be keyed
+        let mut img = image::RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba([10, 255, 0, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "pixel at exact tolerance distance must be transparent");
+    }
+
+    #[test]
+    fn chromakey_tolerance_boundary_excluded() {
+        // dist² from [0,255,0]: 11²+0+0 = 121 > 10² → must NOT be keyed
+        let mut img = image::RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba([11, 255, 0, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 255, "pixel just outside tolerance must remain opaque");
     }
 
     #[test]
