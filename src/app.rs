@@ -432,8 +432,38 @@ impl App {
                     p.runner.release(velocity);
                 }
             }
-            AppEvent::SMImported { .. } | AppEvent::SMChanged { .. } => {
-                // TODO(Plan-2): handle SM import and per-pet SM switching
+            AppEvent::SMImported { name } => {
+                log::info!("SM imported: {}", name);
+                self.notify_sm_collection_changed();
+            }
+            AppEvent::SMChanged { pet_id, sm_name } => {
+                // Reload gallery to get the named SM
+                let config_dir = config::config_path()
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                let mut applied = false;
+                if let Some(pet) = self.pets.get_mut(&pet_id) {
+                    if let Some(sm) = gallery.get(&sm_name) {
+                        pet.runner.replace_sm(sm);
+                        pet.cfg.state_machine = sm_name.clone();
+                        log::info!("SMChanged: applied '{}' to pet '{}'", sm_name, pet_id);
+                        applied = true;
+                    } else {
+                        log::warn!("SMChanged: SM '{}' not found in gallery", sm_name);
+                    }
+                } else {
+                    log::warn!("SMChanged: pet '{}' not found", pet_id);
+                }
+                if applied {
+                    let current_cfg = crate::config::schema::Config {
+                        pets: self.pets.values().map(|p| p.cfg.clone()).collect(),
+                    };
+                    if let Err(e) = config::save(&config::config_path(), &current_cfg) {
+                        log::warn!("Failed to persist config after SMChanged: {}", e);
+                    }
+                }
             }
             AppEvent::TrayImportBundle => {
                 let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
@@ -446,14 +476,46 @@ impl App {
                 self.pending_bundle_pick = Some(rx_pick);
             }
             AppEvent::BundleImported { sprite_id, sm_name } => {
-                log::info!("Bundle imported: sprite={}, sm={:?}", sprite_id, sm_name);
-                // TODO(Plan-3): update config dialog to show new sprite/SM
+                if let Some(sm_name) = sm_name {
+                    // Reload gallery to pick up newly saved SM
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    // Auto-assign to the first pet whose sheet_path contains sprite_id
+                    if let Some(pet) = self.pets.values_mut()
+                        .find(|p| p.cfg.sheet_path.contains(&sprite_id))
+                        && let Some(sm) = gallery.get(&sm_name)
+                    {
+                        pet.runner.replace_sm(sm);
+                        pet.cfg.state_machine = sm_name.clone();
+                        log::info!("Bundle import: auto-assigned SM '{}' to pet '{}'", sm_name, pet.cfg.id);
+                    }
+                    // Persist updated config
+                    let current_cfg = crate::config::schema::Config {
+                        pets: self.pets.values().map(|p| p.cfg.clone()).collect(),
+                    };
+                    if let Err(e) = config::save(&config::config_path(), &current_cfg) {
+                        log::warn!("Failed to persist config after bundle import: {}", e);
+                    }
+                }
+                // Notify open windows to refresh SM lists
+                self.notify_sm_collection_changed();
             }
             AppEvent::SMCollectionChanged => {
-                // TODO(Plan-3): refresh SM lists in open UI windows
+                self.notify_sm_collection_changed();
             }
         }
         Ok(())
+    }
+
+    fn notify_sm_collection_changed(&mut self) {
+        log::debug!("SM collection changed — notifying UI");
+        if self.app_window_lifecycle.open
+            && let Ok(mut s) = self.app_window.try_lock() {
+                s.sm_gallery_dirty = true;
+            }
     }
 
     fn apply_config(&mut self, new_cfg: crate::config::schema::Config) -> Result<()> {
@@ -461,6 +523,29 @@ impl App {
             new_cfg.pets.iter().map(|p| p.id.clone()).collect();
         self.pets.retain(|id, _| new_ids.contains(id));
         for pet_cfg in new_cfg.pets {
+            // Fast path: only SM changed → hot-swap, no window rebuild
+            if let Some(pet) = self.pets.get_mut(&pet_cfg.id) {
+                let old_cfg = &pet.cfg;
+                // f32 equality is safe here: both values come from TOML-deserialized config,
+                // never from arithmetic — we are detecting whether the user changed the field.
+                if old_cfg.sheet_path == pet_cfg.sheet_path
+                    && old_cfg.scale == pet_cfg.scale
+                    && old_cfg.walk_speed == pet_cfg.walk_speed
+                    && old_cfg.state_machine != pet_cfg.state_machine
+                {
+                    let config_dir = config::config_path()
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+                    let new_sm = resolve_sm(&pet_cfg.state_machine, &gallery);
+                    pet.runner.replace_sm(new_sm);
+                    pet.cfg = pet_cfg.clone();
+                    log::info!("hot-swapped SM for pet '{}' → '{}'", pet_cfg.id, pet_cfg.state_machine);
+                    continue; // skip full rebuild
+                }
+            }
+
             let needs_rebuild = self.pets.get(&pet_cfg.id)
                 .map(|inst| inst.cfg != pet_cfg)
                 .unwrap_or(true);
@@ -631,6 +716,23 @@ impl eframe::App for App {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+fn resolve_sm(
+    name: &str,
+    gallery: &crate::sprite::sm_gallery::SmGallery,
+) -> std::sync::Arc<crate::sprite::sm_compiler::CompiledSM> {
+    if name == "embedded://default" || name.is_empty() {
+        crate::sprite::sm_runner::load_default_sm()
+    } else {
+        match gallery.get(name) {
+            Some(sm) => sm,
+            None => {
+                log::warn!("SM '{}' not found in gallery, falling back to default", name);
+                crate::sprite::sm_runner::load_default_sm()
+            }
+        }
+    }
+}
+
 fn sanitize_id(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
@@ -671,4 +773,52 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
         .context("decode PNG")?
         .into_rgba8();
     sheet::SpriteSheet::from_json_and_image(&json, image)
+}
+
+// ─── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    /// `resolve_sm` with an unknown name falls back to the embedded default SM.
+    #[test]
+    fn resolve_sm_unknown_name_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        // Ask for a name that doesn't exist in the empty gallery.
+        let sm = resolve_sm("nonexistent-sm", &gallery);
+
+        // The embedded default SM is named "Default Pet" (from assets/default.petstate).
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(
+            sm.name, default_sm.name,
+            "resolve_sm should fall back to default SM for unknown names; got '{}'",
+            sm.name
+        );
+    }
+
+    /// `resolve_sm` with the sentinel "embedded://default" also returns the default SM.
+    #[test]
+    fn resolve_sm_embedded_sentinel_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        let sm = resolve_sm("embedded://default", &gallery);
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(sm.name, default_sm.name);
+    }
+
+    /// `resolve_sm` with an empty string also returns the default SM.
+    #[test]
+    fn resolve_sm_empty_string_returns_default() {
+        let dir = tempdir().unwrap();
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(dir.path());
+
+        let sm = resolve_sm("", &gallery);
+        let default_sm = crate::sprite::sm_runner::load_default_sm();
+        assert_eq!(sm.name, default_sm.name);
+    }
 }
