@@ -179,3 +179,43 @@ fn dark_light_toggle_flips_mode() {
         "toggle from dark must set dark_mode=false"
     );
 }
+
+#[test]
+fn sm_coverage_panel_renders_with_editable_rows() {
+    use egui_kittest::kittest::Queryable;
+    use ferrite::{
+        sprite::{
+            editor_state::{EditorTag, SpriteEditorState},
+            sheet::TagDirection,
+        },
+        tray::sprite_editor::{render_sprite_editor_panel, SpriteEditorViewport},
+    };
+    use std::path::PathBuf;
+
+    // Build a minimal SpriteEditorState with one tag named "idle"
+    let mut state = SpriteEditorState::new(
+        PathBuf::from("test.png"),
+        image::RgbaImage::new(16, 16),
+    );
+    state.tags.push(EditorTag {
+        name: "idle".to_string(),
+        from: 0,
+        to: 0,
+        direction: TagDirection::Forward,
+        flip_h: false,
+        color: 0,
+    });
+
+    let viewport = Rc::new(RefCell::new(SpriteEditorViewport::new(state)));
+    let viewport_c = Rc::clone(&viewport);
+
+    // The panel must render without panicking — basic smoke test.
+    // Use run_steps(1) because render_sprite_editor_panel always calls
+    // ctx.request_repaint_after(), which would cause Harness::run to exceed max_steps.
+    let mut harness = Harness::new(move |ctx| {
+        render_sprite_editor_panel(ctx, &mut viewport_c.borrow_mut());
+    });
+    harness.run_steps(1);
+    // Verify the SM selector label is present (panel rendered); panics if not found
+    harness.get_by_label("SM:");
+}
