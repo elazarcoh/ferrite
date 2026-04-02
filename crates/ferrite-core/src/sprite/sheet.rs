@@ -45,12 +45,46 @@ pub struct FrameTag {
     pub flip_h: bool,
 }
 
+/// Chromakey configuration: remove pixels of a specific background color.
+/// Stored in JSON `meta.chromakey`. Derives serde so parse_chromakey uses from_value.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChromakeyConfig {
+    pub enabled: bool,
+    /// Key color as [r, g, b] in 0–255.
+    pub color: [u8; 3],
+    /// Euclidean tolerance (0–255). Pixels within this distance are keyed.
+    /// 0 = exact match.
+    pub tolerance: u8,
+}
+
+impl Default for ChromakeyConfig {
+    fn default() -> Self {
+        Self { enabled: false, color: [0, 255, 0], tolerance: 0 }
+    }
+}
+
+/// Zero the alpha of every pixel whose Euclidean RGB distance from `cfg.color`
+/// is <= cfg.tolerance. No-op when cfg.enabled is false.
+pub fn apply_chromakey(image: &mut image::RgbaImage, cfg: &ChromakeyConfig) {
+    if !cfg.enabled { return; }
+    let [kr, kg, kb] = cfg.color.map(|c| c as i32);
+    let t_sq = cfg.tolerance as i32 * cfg.tolerance as i32;
+    for px in image.pixels_mut() {
+        let [r, g, b, _] = px.0;
+        let d = (r as i32 - kr).pow(2) + (g as i32 - kg).pow(2) + (b as i32 - kb).pow(2);
+        if d <= t_sq {
+            px.0[3] = 0;
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SpriteSheet {
     pub image: RgbaImage,
     pub frames: Vec<Frame>,
     pub tags: Vec<FrameTag>,
     pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub chromakey: ChromakeyConfig,
 }
 
 // ─── Aseprite JSON serde helpers ─────────────────────────────────────────────
@@ -90,8 +124,9 @@ impl SpriteSheet {
         let frames = parse_frames(&root).context("parse frames")?;
         let tags = parse_tags(&root).context("parse tags")?;
         let sm_mappings = parse_sm_mappings(&root);
+        let chromakey = parse_chromakey(&root);
 
-        Ok(SpriteSheet { image, frames, tags, sm_mappings })
+        Ok(SpriteSheet { image, frames, tags, sm_mappings, chromakey })
     }
 
     /// Parse only frame/tag metadata; image is a 1×1 dummy.
@@ -197,6 +232,12 @@ fn parse_sm_mappings(root: &Value) -> std::collections::HashMap<String, std::col
     result
 }
 
+fn parse_chromakey(root: &Value) -> ChromakeyConfig {
+    root.pointer("/meta/chromakey")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
 fn ase_to_frame(f: AseFrame) -> Frame {
     Frame { x: f.frame.x, y: f.frame.y, w: f.frame.w, h: f.frame.h, duration_ms: f.duration }
 }
@@ -252,6 +293,7 @@ mod tests {
                 flip_h: false,
             }).collect(),
             sm_mappings: HashMap::new(),
+            chromakey: ChromakeyConfig::default(),
         }
     }
 
@@ -328,6 +370,49 @@ mod tests {
         assert_eq!(sheet.frames[1].duration_ms, 150);
         let tag = sheet.tag("run").unwrap();
         assert_eq!(tag.direction, TagDirection::PingPong);
+    }
+
+    #[test]
+    fn chromakey_exact_match_zeroes_alpha() {
+        let mut img = image::RgbaImage::new(2, 1);
+        img.put_pixel(0, 0, image::Rgba([0, 255, 0, 255]));  // key color
+        img.put_pixel(1, 0, image::Rgba([255, 0, 0, 255]));  // non-key
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 0 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "key pixel must be transparent");
+        assert_eq!(img.get_pixel(1, 0).0[3], 255, "non-key pixel must be opaque");
+    }
+
+    #[test]
+    fn chromakey_disabled_is_noop() {
+        let mut img = image::RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba([0, 255, 0, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: false, color: [0, 255, 0], tolerance: 0 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 255, "disabled chromakey must not change alpha");
+    }
+
+    #[test]
+    fn chromakey_tolerance_fuzzy_match() {
+        let mut img = image::RgbaImage::new(1, 1);
+        // dist² from [0,255,0]: (5-0)²+(250-255)²+(5-0)² = 25+25+25 = 75 <= 10²=100
+        img.put_pixel(0, 0, image::Rgba([5, 250, 5, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "near-key pixel within tolerance must be transparent");
+    }
+
+    #[test]
+    fn chromakey_json_round_trip() {
+        let json = r#"{"frames":[{"frame":{"x":0,"y":0,"w":1,"h":1},"duration":100}],"meta":{"frameTags":[],"chromakey":{"enabled":true,"color":[0,255,0],"tolerance":5}}}"#;
+        let sheet = SpriteSheet::from_json_and_image(json.as_bytes(), image::RgbaImage::new(1, 1)).unwrap();
+        assert!(sheet.chromakey.enabled);
+        assert_eq!(sheet.chromakey.color, [0, 255, 0]);
+        assert_eq!(sheet.chromakey.tolerance, 5);
+    }
+
+    #[test]
+    fn chromakey_missing_in_json_gives_default() {
+        let json = r#"{"frames":[],"meta":{"frameTags":[]}}"#;
+        let sheet = SpriteSheet::from_json_and_image(json.as_bytes(), image::RgbaImage::new(1, 1)).unwrap();
+        assert!(!sheet.chromakey.enabled);
     }
 
 }

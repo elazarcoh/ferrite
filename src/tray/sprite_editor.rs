@@ -104,6 +104,7 @@ impl SpriteEditorViewport {
             frames,
             tags,
             sm_mappings: std::collections::HashMap::new(),
+            chromakey: ferrite_core::sprite::sheet::ChromakeyConfig::default(),
         });
     }
 
