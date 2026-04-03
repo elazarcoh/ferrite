@@ -15,6 +15,12 @@ pub struct ConditionVars {
     pub screen_h: f32,
     pub hour: u32,
     pub focused_app: String,
+    // Multi-pet vars — populated by App::update() each frame
+    pub pet_count: u32,
+    pub other_pet_dist: f32,
+    // Surface vars — populated by PetInstance::tick() each frame
+    pub surface_w: f32,
+    pub surface_label: String,  // "taskbar", "window", or "" (virtual ground)
     // Collision vars — populated only during on_collide(); "" / 0.0 otherwise
     pub collide_type: String,
     pub collide_vx: f32,
@@ -57,6 +63,10 @@ pub enum Var {
     ScreenH,
     Hour,
     FocusedApp,
+    PetCount,
+    OtherPetDist,
+    SurfaceW,
+    SurfaceLabel,
     NearEdge {
         axis: Option<Axis>,
         threshold_px: f32,
@@ -313,7 +323,8 @@ fn tokenize(src: &str) -> Result<Vec<Token>, String> {
                 "false" => tokens.push(Token::Bool(false)),
                 "cursor_dist" | "state_time" | "on_surface" | "pet_x" | "pet_y" | "screen_w"
                 | "screen_h" | "hour" | "abs" | "min" | "max"
-                | "collide_type" | "collide_vx" | "collide_vy" | "collide_v" => {
+                | "collide_type" | "collide_vx" | "collide_vy" | "collide_v"
+                | "pet_count" | "other_pet_dist" | "surface_w" | "surface_label" => {
                     tokens.push(Token::Ident(name))
                 }
                 _ => return Err(format!("unknown identifier: {}", name)),
@@ -478,6 +489,10 @@ impl Parser {
                     "screen_h" => Var::ScreenH,
                     "hour" => Var::Hour,
                     "input.focused_app" => Var::FocusedApp,
+                    "pet_count"      => Var::PetCount,
+                    "other_pet_dist" => Var::OtherPetDist,
+                    "surface_w"      => Var::SurfaceW,
+                    "surface_label"  => Var::SurfaceLabel,
                     "collide_type" => Var::CollideType,
                     "collide_vx" => Var::CollideVx,
                     "collide_vy" => Var::CollideVy,
@@ -542,6 +557,10 @@ fn eval_value(expr: &Expr, vars: &ConditionVars) -> Result<Value, String> {
             Var::ScreenH => Ok(Value::Number(vars.screen_h)),
             Var::Hour => Ok(Value::Number(vars.hour as f32)),
             Var::FocusedApp => Ok(Value::Str(vars.focused_app.clone())),
+            Var::PetCount      => Ok(Value::Number(vars.pet_count as f32)),
+            Var::OtherPetDist  => Ok(Value::Number(vars.other_pet_dist)),
+            Var::SurfaceW      => Ok(Value::Number(vars.surface_w)),
+            Var::SurfaceLabel  => Ok(Value::Str(vars.surface_label.clone())),
             Var::CollideType => Ok(Value::Str(vars.collide_type.clone())),
             Var::CollideVx => Ok(Value::Number(vars.collide_vx)),
             Var::CollideVy => Ok(Value::Number(vars.collide_vy)),
@@ -768,6 +787,62 @@ mod tests {
         v.focused_app = "code.exe".to_string();
         assert!(eval(&expr, &v).unwrap());
         v.focused_app = "other.exe".to_string();
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn parse_pet_count_variable() {
+        assert!(parse("pet_count > 1").is_ok());
+    }
+
+    #[test]
+    fn parse_other_pet_dist_variable() {
+        assert!(parse("other_pet_dist < 200").is_ok());
+    }
+
+    #[test]
+    fn parse_surface_vars() {
+        assert!(parse("surface_w > 100").is_ok());
+        assert!(parse(r#"surface_label == "taskbar""#).is_ok());
+    }
+
+    #[test]
+    fn eval_pet_count_threshold() {
+        let expr = parse("pet_count > 1").unwrap();
+        let mut v = ConditionVars::default();
+        v.pet_count = 2;
+        assert!(eval(&expr, &v).unwrap());
+        v.pet_count = 1;
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_other_pet_dist_threshold() {
+        let expr = parse("other_pet_dist < 100").unwrap();
+        let mut v = ConditionVars::default();
+        v.other_pet_dist = 50.0;
+        assert!(eval(&expr, &v).unwrap());
+        v.other_pet_dist = 200.0;
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_surface_label_string_match() {
+        let expr = parse(r#"surface_label == "taskbar""#).unwrap();
+        let mut v = ConditionVars::default();
+        v.surface_label = "taskbar".to_string();
+        assert!(eval(&expr, &v).unwrap());
+        v.surface_label = "window".to_string();
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_surface_w_threshold() {
+        let expr = parse("surface_w > 50").unwrap();
+        let mut v = ConditionVars::default();
+        v.surface_w = 100.0;
+        assert!(eval(&expr, &v).unwrap());
+        v.surface_w = 20.0;
         assert!(!eval(&expr, &v).unwrap());
     }
 }
