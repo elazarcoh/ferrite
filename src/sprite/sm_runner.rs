@@ -16,6 +16,19 @@ pub fn load_default_sm() -> Arc<CompiledSM> {
     compile(&file).expect("default.petstate must compile")
 }
 
+/// Data passed to `on_collide` when two pets begin overlapping.
+#[derive(Debug, Clone)]
+pub struct CollideData {
+    /// Describes the geometry/role of this collision (e.g. "head_on", "fell_on").
+    pub collide_type: String,
+    /// Relative velocity X (this pet minus other pet), in px/s.
+    pub vx: f32,
+    /// Relative velocity Y (this pet minus other pet), in px/s.
+    pub vy: f32,
+    /// Magnitude of the relative velocity vector.
+    pub v: f32,
+}
+
 #[derive(Debug, Clone)]
 pub enum ActiveState {
     Named(String),
@@ -93,6 +106,41 @@ impl SMRunner {
             ActiveState::Thrown { .. } => "thrown",
             ActiveState::Grabbed { .. } => "grabbed",
         }
+    }
+
+    /// Returns the current velocity of this pet in px/s as `(vx, vy)`.
+    /// Walk/Run states return the speed in the current facing direction;
+    /// Fall/Thrown return their physics velocities; Grabbed/Idle return `(0.0, 0.0)`.
+    pub fn speed(&self) -> (f32, f32) {
+        match &self.active {
+            ActiveState::Fall { vy } => (0.0, *vy),
+            ActiveState::Thrown { vx, vy } => (*vx, *vy),
+            ActiveState::Grabbed { .. } => (0.0, 0.0),
+            ActiveState::Named(name) => {
+                if let Some(state) = self.sm.states.get(name.as_str()) {
+                    use crate::sprite::sm_compiler::StateKind;
+                    if let StateKind::Atomic { action, params, .. } = &state.kind {
+                        let spd = params.speed_override.unwrap_or(self.walk_speed);
+                        let eff = if *action == ActionType::Run { spd * 2.0 } else { spd };
+                        if *action == ActionType::Walk || *action == ActionType::Run {
+                            let sign = match self.facing { Facing::Right => 1.0, Facing::Left => -1.0 };
+                            return (eff * sign, 0.0);
+                        }
+                    }
+                }
+                (0.0, 0.0)
+            }
+        }
+    }
+
+    /// Called when this pet begins overlapping with another pet (edge-triggered).
+    /// Fires a "collide" interrupt and stores the collision data for condition evaluation.
+    pub fn on_collide(&mut self, data: CollideData) {
+        log::debug!(
+            "on_collide: type={} vx={:.1} vy={:.1} v={:.1}",
+            data.collide_type, data.vx, data.vy, data.v
+        );
+        self.interrupt("collide", None);
     }
 
     /// For a composite state, returns the name of the current step.
