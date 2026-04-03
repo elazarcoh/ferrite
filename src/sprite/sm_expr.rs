@@ -791,6 +791,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_collide_type_variable() {
+        assert!(parse(r#"collide_type == "head_on""#).is_ok());
+    }
+
+    #[test]
+    fn parse_collide_v_variable() {
+        assert!(parse("collide_v > 80").is_ok());
+    }
+
+    #[test]
+    fn parse_collide_vx_vy_variables() {
+        assert!(parse("collide_vx > 0 and collide_vy < 0").is_ok());
+    }
+
+    #[test]
+    fn eval_collide_type_matches() {
+        let expr = parse(r#"collide_type == "head_on""#).unwrap();
+        let mut v = ConditionVars::default();
+        v.collide_type = "head_on".to_string();
+        assert!(eval(&expr, &v).unwrap());
+        v.collide_type = String::new();
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_collide_v_threshold() {
+        let expr = parse("collide_v > 50").unwrap();
+        let mut v = ConditionVars::default();
+        v.collide_v = 80.0;
+        assert!(eval(&expr, &v).unwrap());
+        v.collide_v = 30.0;
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
     fn parse_pet_count_variable() {
         assert!(parse("pet_count > 1").is_ok());
     }
