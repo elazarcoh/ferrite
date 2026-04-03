@@ -45,12 +45,89 @@ pub struct FrameTag {
     pub flip_h: bool,
 }
 
+/// Chromakey configuration: remove pixels of a specific background color.
+/// Stored in JSON `meta.chromakey`. Derives serde so parse_chromakey uses from_value.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChromakeyConfig {
+    pub enabled: bool,
+    /// Key color as [r, g, b] in 0–255.
+    pub color: [u8; 3],
+    /// Euclidean tolerance (0–255). Pixels within this distance are keyed.
+    /// 0 = exact match.
+    pub tolerance: u8,
+}
+
+impl Default for ChromakeyConfig {
+    fn default() -> Self {
+        Self { enabled: false, color: [0, 255, 0], tolerance: 0 }
+    }
+}
+
+/// Per-frame transparency-aware tight bounding box.
+/// `dx`/`dy` are offsets from the frame's top-left corner in source pixels.
+/// `w == 0 && h == 0` means fully transparent — non-collidable.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TightBbox {
+    pub dx: u32,
+    pub dy: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// Zero the alpha of every pixel whose Euclidean RGB distance from `cfg.color`
+/// is <= cfg.tolerance. No-op when cfg.enabled is false.
+pub fn apply_chromakey(image: &mut RgbaImage, cfg: &ChromakeyConfig) {
+    if !cfg.enabled { return; }
+    let [kr, kg, kb] = cfg.color.map(|c| c as i32);
+    let t_sq = cfg.tolerance as i32 * cfg.tolerance as i32;
+    for px in image.pixels_mut() {
+        let [r, g, b, _] = px.0;
+        let d = (r as i32 - kr).pow(2) + (g as i32 - kg).pow(2) + (b as i32 - kb).pow(2);
+        if d <= t_sq {
+            px.0[3] = 0;
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SpriteSheet {
     pub image: RgbaImage,
     pub frames: Vec<Frame>,
     pub tags: Vec<FrameTag>,
     pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub chromakey: ChromakeyConfig,
+    pub tight_bboxes: Vec<TightBbox>,
+}
+
+// ─── TightBbox helper ────────────────────────────────────────────────────────
+
+fn compute_tight_bbox(image: &RgbaImage, frame: &Frame) -> TightBbox {
+    let (fx, fy, fw, fh) = (frame.x, frame.y, frame.w, frame.h);
+    let (img_w, img_h) = (image.width(), image.height());
+    let mut min_x = fw;
+    let mut min_y = fh;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+    let mut found = false;
+
+    for dy in 0..fh {
+        for dx in 0..fw {
+            let px = fx + dx;
+            let py = fy + dy;
+            if px >= img_w || py >= img_h { continue; }
+            if image.get_pixel(px, py)[3] > 0 {
+                min_x = min_x.min(dx);
+                min_y = min_y.min(dy);
+                max_x = max_x.max(dx + 1);
+                max_y = max_y.max(dy + 1);
+                found = true;
+            }
+        }
+    }
+    if !found {
+        return TightBbox::default();
+    }
+    TightBbox { dx: min_x, dy: min_y, w: max_x - min_x, h: max_y - min_y }
 }
 
 // ─── Aseprite JSON serde helpers ─────────────────────────────────────────────
@@ -90,8 +167,12 @@ impl SpriteSheet {
         let frames = parse_frames(&root).context("parse frames")?;
         let tags = parse_tags(&root).context("parse tags")?;
         let sm_mappings = parse_sm_mappings(&root);
+        let chromakey = parse_chromakey(&root);
+        let tight_bboxes: Vec<TightBbox> = frames.iter()
+            .map(|f| compute_tight_bbox(&image, f))
+            .collect();
 
-        Ok(SpriteSheet { image, frames, tags, sm_mappings })
+        Ok(SpriteSheet { image, frames, tags, sm_mappings, chromakey, tight_bboxes })
     }
 
     /// Parse only frame/tag metadata; image is a 1×1 dummy.
@@ -103,6 +184,20 @@ impl SpriteSheet {
     /// Find a tag by name (case-sensitive).
     pub fn tag(&self, name: &str) -> Option<&FrameTag> {
         self.tags.iter().find(|t| t.name == name)
+    }
+
+    /// Returns `(dx_px, dy_px, w_px, h_px)` — the tight bbox offset and size
+    /// in world pixels (after scale), accounting for horizontal flip.
+    /// Returns `(0, 0, 0, 0)` for fully-transparent frames (non-collidable).
+    pub fn tight_bbox(&self, frame_idx: usize, scale: u32, flip_h: bool) -> (i32, i32, u32, u32) {
+        let tb = self.tight_bboxes.get(frame_idx).copied().unwrap_or_default();
+        let frame_w = self.frames.get(frame_idx).map(|f| f.w).unwrap_or(0);
+        let dx = if flip_h {
+            frame_w.saturating_sub(tb.dx + tb.w)
+        } else {
+            tb.dx
+        };
+        ((dx * scale) as i32, (tb.dy * scale) as i32, tb.w * scale, tb.h * scale)
     }
 
     /// Resolve SM state name to a sprite tag name.
@@ -197,6 +292,12 @@ fn parse_sm_mappings(root: &Value) -> std::collections::HashMap<String, std::col
     result
 }
 
+fn parse_chromakey(root: &Value) -> ChromakeyConfig {
+    root.pointer("/meta/chromakey")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
 fn ase_to_frame(f: AseFrame) -> Frame {
     Frame { x: f.frame.x, y: f.frame.y, w: f.frame.w, h: f.frame.h, duration_ms: f.duration }
 }
@@ -252,6 +353,8 @@ mod tests {
                 flip_h: false,
             }).collect(),
             sm_mappings: HashMap::new(),
+            chromakey: ChromakeyConfig::default(),
+            tight_bboxes: vec![],
         }
     }
 
@@ -328,6 +431,121 @@ mod tests {
         assert_eq!(sheet.frames[1].duration_ms, 150);
         let tag = sheet.tag("run").unwrap();
         assert_eq!(tag.direction, TagDirection::PingPong);
+    }
+
+    #[test]
+    fn chromakey_exact_match_zeroes_alpha() {
+        let mut img = image::RgbaImage::new(2, 1);
+        img.put_pixel(0, 0, image::Rgba([0, 255, 0, 255]));  // key color
+        img.put_pixel(1, 0, image::Rgba([255, 0, 0, 255]));  // non-key
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 0 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "key pixel must be transparent");
+        assert_eq!(img.get_pixel(1, 0).0[3], 255, "non-key pixel must be opaque");
+    }
+
+    #[test]
+    fn chromakey_disabled_is_noop() {
+        let mut img = image::RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba([0, 255, 0, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: false, color: [0, 255, 0], tolerance: 0 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 255, "disabled chromakey must not change alpha");
+    }
+
+    #[test]
+    fn chromakey_tolerance_fuzzy_match() {
+        let mut img = image::RgbaImage::new(1, 1);
+        // dist² from [0,255,0]: (5-0)²+(250-255)²+(5-0)² = 25+25+25 = 75 <= 10²=100
+        img.put_pixel(0, 0, image::Rgba([5, 250, 5, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "near-key pixel within tolerance must be transparent");
+    }
+
+    #[test]
+    fn chromakey_tolerance_boundary_included() {
+        // dist² from [0,255,0]: 10²+0+0 = 100 == 10²  → must be keyed
+        let mut img = image::RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba([10, 255, 0, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 0, "pixel at exact tolerance distance must be transparent");
+    }
+
+    #[test]
+    fn chromakey_tolerance_boundary_excluded() {
+        // dist² from [0,255,0]: 11²+0+0 = 121 > 10² → must NOT be keyed
+        let mut img = image::RgbaImage::new(1, 1);
+        img.put_pixel(0, 0, image::Rgba([11, 255, 0, 255]));
+        apply_chromakey(&mut img, &ChromakeyConfig { enabled: true, color: [0, 255, 0], tolerance: 10 });
+        assert_eq!(img.get_pixel(0, 0).0[3], 255, "pixel just outside tolerance must remain opaque");
+    }
+
+    #[test]
+    fn chromakey_json_round_trip() {
+        let json = r#"{"frames":[{"frame":{"x":0,"y":0,"w":1,"h":1},"duration":100}],"meta":{"frameTags":[],"chromakey":{"enabled":true,"color":[0,255,0],"tolerance":5}}}"#;
+        let sheet = SpriteSheet::from_json_and_image(json.as_bytes(), image::RgbaImage::new(1, 1)).unwrap();
+        assert!(sheet.chromakey.enabled);
+        assert_eq!(sheet.chromakey.color, [0, 255, 0]);
+        assert_eq!(sheet.chromakey.tolerance, 5);
+    }
+
+    #[test]
+    fn chromakey_missing_in_json_gives_default() {
+        let json = r#"{"frames":[],"meta":{"frameTags":[]}}"#;
+        let sheet = SpriteSheet::from_json_and_image(json.as_bytes(), image::RgbaImage::new(1, 1)).unwrap();
+        assert!(!sheet.chromakey.enabled);
+    }
+
+    #[test]
+    fn tight_bbox_fully_opaque_frame() {
+        let mut img = RgbaImage::new(4, 4);
+        for y in 0..2u32 { for x in 0..2u32 { img.put_pixel(x, y, image::Rgba([255,0,0,255])); } }
+        let sheet = SpriteSheet::from_json_and_image(
+            r#"{"frames":[{"frame":{"x":0,"y":0,"w":2,"h":2},"duration":100}],"meta":{"frameTags":[]}}"#.as_bytes(),
+            img,
+        ).unwrap();
+        assert_eq!(sheet.tight_bboxes.len(), 1);
+        let tb = &sheet.tight_bboxes[0];
+        assert_eq!(tb.dx, 0); assert_eq!(tb.dy, 0);
+        assert_eq!(tb.w, 2);  assert_eq!(tb.h, 2);
+    }
+
+    #[test]
+    fn tight_bbox_transparent_border() {
+        let mut img = RgbaImage::new(4, 4);
+        for y in 1..3u32 { for x in 1..3u32 { img.put_pixel(x, y, image::Rgba([255,0,0,255])); } }
+        let sheet = SpriteSheet::from_json_and_image(
+            r#"{"frames":[{"frame":{"x":0,"y":0,"w":4,"h":4},"duration":100}],"meta":{"frameTags":[]}}"#.as_bytes(),
+            img,
+        ).unwrap();
+        let tb = &sheet.tight_bboxes[0];
+        assert_eq!(tb.dx, 1); assert_eq!(tb.dy, 1);
+        assert_eq!(tb.w, 2);  assert_eq!(tb.h, 2);
+    }
+
+    #[test]
+    fn tight_bbox_all_transparent_gives_zero_size() {
+        let img = RgbaImage::new(4, 4);
+        let sheet = SpriteSheet::from_json_and_image(
+            r#"{"frames":[{"frame":{"x":0,"y":0,"w":4,"h":4},"duration":100}],"meta":{"frameTags":[]}}"#.as_bytes(),
+            img,
+        ).unwrap();
+        let tb = &sheet.tight_bboxes[0];
+        assert_eq!(tb.w, 0); assert_eq!(tb.h, 0);
+    }
+
+    #[test]
+    fn tight_bbox_flip_h_mirrors_x_offset() {
+        let mut img = RgbaImage::new(4, 4);
+        for y in 0..4u32 { img.put_pixel(0, y, image::Rgba([255,0,0,255])); }
+        let sheet = SpriteSheet::from_json_and_image(
+            r#"{"frames":[{"frame":{"x":0,"y":0,"w":4,"h":4},"duration":100}],"meta":{"frameTags":[]}}"#.as_bytes(),
+            img,
+        ).unwrap();
+        let (dx_no_flip, _, w, _) = sheet.tight_bbox(0, 1, false);
+        assert_eq!(dx_no_flip, 0);
+        assert_eq!(w, 1);
+        let (dx_flipped, _, w2, _) = sheet.tight_bbox(0, 1, true);
+        assert_eq!(dx_flipped, 3);
+        assert_eq!(w2, 1);
     }
 
 }

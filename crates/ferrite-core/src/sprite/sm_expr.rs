@@ -15,6 +15,11 @@ pub struct ConditionVars {
     pub screen_h: f32,
     pub hour: u32,
     pub focused_app: String,
+    // Collision vars — populated only during on_collide(); "" / 0.0 otherwise
+    pub collide_type: String,
+    pub collide_vx: f32,
+    pub collide_vy: f32,
+    pub collide_v: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +57,10 @@ pub enum Var {
     ScreenH,
     Hour,
     FocusedApp,
+    CollideType,
+    CollideVx,
+    CollideVy,
+    CollideV,
     NearEdge {
         axis: Option<Axis>,
         threshold_px: f32,
@@ -303,7 +312,8 @@ fn tokenize(src: &str) -> Result<Vec<Token>, String> {
                 "true" => tokens.push(Token::Bool(true)),
                 "false" => tokens.push(Token::Bool(false)),
                 "cursor_dist" | "state_time" | "on_surface" | "pet_x" | "pet_y" | "screen_w"
-                | "screen_h" | "hour" | "abs" | "min" | "max" => {
+                | "screen_h" | "hour" | "abs" | "min" | "max"
+                | "collide_type" | "collide_vx" | "collide_vy" | "collide_v" => {
                     tokens.push(Token::Ident(name))
                 }
                 _ => return Err(format!("unknown identifier: {}", name)),
@@ -468,6 +478,10 @@ impl Parser {
                     "screen_h" => Var::ScreenH,
                     "hour" => Var::Hour,
                     "input.focused_app" => Var::FocusedApp,
+                    "collide_type" => Var::CollideType,
+                    "collide_vx" => Var::CollideVx,
+                    "collide_vy" => Var::CollideVy,
+                    "collide_v" => Var::CollideV,
                     _ => return Err(format!("unknown variable: {}", name)),
                 };
                 Ok(Expr::Var(var))
@@ -528,6 +542,10 @@ fn eval_value(expr: &Expr, vars: &ConditionVars) -> Result<Value, String> {
             Var::ScreenH => Ok(Value::Number(vars.screen_h)),
             Var::Hour => Ok(Value::Number(vars.hour as f32)),
             Var::FocusedApp => Ok(Value::Str(vars.focused_app.clone())),
+            Var::CollideType => Ok(Value::Str(vars.collide_type.clone())),
+            Var::CollideVx => Ok(Value::Number(vars.collide_vx)),
+            Var::CollideVy => Ok(Value::Number(vars.collide_vy)),
+            Var::CollideV => Ok(Value::Number(vars.collide_v)),
             Var::NearEdge { axis, threshold_px } => {
                 let t = *threshold_px;
                 let result = match axis {
@@ -750,6 +768,41 @@ mod tests {
         v.focused_app = "code.exe".to_string();
         assert!(eval(&expr, &v).unwrap());
         v.focused_app = "other.exe".to_string();
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn parse_collide_type_variable() {
+        assert!(parse(r#"collide_type == "head_on""#).is_ok());
+    }
+
+    #[test]
+    fn parse_collide_v_variable() {
+        assert!(parse("collide_v > 80").is_ok());
+    }
+
+    #[test]
+    fn parse_collide_vx_vy_variables() {
+        assert!(parse("collide_vx > 0 and collide_vy < 0").is_ok());
+    }
+
+    #[test]
+    fn eval_collide_type_matches() {
+        let expr = parse(r#"collide_type == "head_on""#).unwrap();
+        let mut v = ConditionVars::default();
+        v.collide_type = "head_on".to_string();
+        assert!(eval(&expr, &v).unwrap());
+        v.collide_type = String::new();
+        assert!(!eval(&expr, &v).unwrap());
+    }
+
+    #[test]
+    fn eval_collide_v_threshold() {
+        let expr = parse("collide_v > 50").unwrap();
+        let mut v = ConditionVars::default();
+        v.collide_v = 80.0;
+        assert!(eval(&expr, &v).unwrap());
+        v.collide_v = 30.0;
         assert!(!eval(&expr, &v).unwrap());
     }
 }

@@ -35,3 +35,25 @@ The mapping is stored in the spritesheet JSON (`meta.smMappings`) alongside your
 animation data, so it travels with the file.
 
 For a list of the default recognised tag names, see `assets/README.md`.
+
+## Chromakey (Background Removal)
+
+Some sprite tools export with a solid background color (e.g. green screen) instead
+of transparency. Ferrite can remove it automatically at load time.
+
+### How to set it up
+
+1. Open the Sprite Editor (system tray → **Open** → **Sprites** tab → select a sprite)
+2. In the left panel, find the **Chromakey** section
+3. Check **Enable**
+4. Click **Pick**, then click on a background pixel in the spritesheet grid
+5. Adjust **Tolerance** if edges look rough (higher = removes more near-matching pixels; 0 = exact match only)
+6. Click **Save**
+
+The animation preview updates immediately to show the result with the background removed.
+
+### Notes
+
+- The spritesheet PNG is not modified — the removal is applied at render time
+- The setting is stored in `meta.chromakey` in the JSON file alongside the PNG
+- To disable, uncheck Enable and Save

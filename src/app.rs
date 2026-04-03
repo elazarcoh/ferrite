@@ -4,7 +4,7 @@ use crate::{
     event::AppEvent,
     sprite::{
         animation::AnimationState,
-        sheet::{self, SpriteSheet},
+        sheet::{self, apply_chromakey, SpriteSheet},
         sm_runner::SMRunner,
     },
     tray::{
@@ -231,6 +231,8 @@ pub struct App {
     dark_mode: bool,
     /// Pending bundle file-picker result (Some while dialog is open).
     pending_bundle_pick: Option<crossbeam_channel::Receiver<Option<std::path::PathBuf>>>,
+    /// Canonical (id_min, id_max) pairs that were overlapping last frame.
+    overlapping: std::collections::HashSet<(String, String)>,
 }
 
 impl App {
@@ -273,6 +275,7 @@ impl App {
             surface_cache: crate::window::surfaces::SurfaceCache::default(),
             dark_mode: true,
             pending_bundle_pick: None,
+            overlapping: std::collections::HashSet::new(),
         })
     }
 
@@ -560,6 +563,80 @@ impl App {
     }
 }
 
+// ── Collision helpers ─────────────────────────────────────────────────────────
+
+struct PetBox {
+    id: String,
+    left: i32,
+    right: i32,
+    top: i32,
+    bottom: i32,
+    center_y: i32,
+    vx: f32,
+    vy: f32,
+}
+
+fn collect_boxes(pets: &std::collections::HashMap<String, PetInstance>) -> Vec<PetBox> {
+    let mut boxes: Vec<PetBox> = pets.iter().map(|(id, pet)| {
+        let frame_idx = pet.anim.absolute_frame(&pet.sheet);
+        let flip = pet.compute_flip();
+        let scale = pet.cfg.scale.round() as u32;
+        let (dx, dy, w, h) = pet.sheet.tight_bbox(frame_idx, scale, flip);
+        let left = pet.x + dx;
+        let top = pet.y + dy;
+        let (vx, vy) = pet.runner.speed();
+        PetBox {
+            id: id.clone(),
+            left,
+            right: left + w as i32,
+            top,
+            bottom: top + h as i32,
+            center_y: top + h as i32 / 2,
+            vx,
+            vy,
+        }
+    }).collect();
+    boxes.sort_by_key(|b| b.left);
+    boxes
+}
+
+fn canonical_key(a: &str, b: &str) -> (String, String) {
+    if a <= b { (a.to_string(), b.to_string()) } else { (b.to_string(), a.to_string()) }
+}
+
+fn classify_collision(a: &PetBox, b: &PetBox) -> (String, String) {
+    let rel_vx = a.vx - b.vx;
+    let rel_vy = a.vy - b.vy;
+
+    if rel_vx.abs() >= rel_vy.abs() {
+        let a_cx = (a.left + a.right) / 2;
+        let b_cx = (b.left + b.right) / 2;
+        let approaching = (a_cx < b_cx && a.vx > b.vx) || (a_cx > b_cx && a.vx < b.vx);
+        let t = if approaching { "head_on" } else { "same_dir" };
+        (t.to_string(), t.to_string())
+    } else {
+        let a_above = a.center_y < b.center_y;
+        let a_moving_down = a.vy > b.vy;
+        match (a_above, a_moving_down) {
+            (true, true)   => ("fell_on".to_string(),        "landed_on".to_string()),
+            (true, false)  => ("landed_on".to_string(),      "fell_on".to_string()),
+            (false, true)  => ("hit_from_below".to_string(), "hit_into_above".to_string()),
+            (false, false) => ("hit_into_above".to_string(), "hit_from_below".to_string()),
+        }
+    }
+}
+
+fn make_collide_data(
+    my_box: &PetBox,
+    other_box: &PetBox,
+    collide_type: String,
+) -> crate::sprite::sm_runner::CollideData {
+    let vx = my_box.vx - other_box.vx;
+    let vy = my_box.vy - other_box.vy;
+    let v = (vx * vx + vy * vy).sqrt();
+    crate::sprite::sm_runner::CollideData { collide_type, vx, vy, v }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.should_quit {
@@ -602,6 +679,42 @@ impl eframe::App for App {
             if let Err(e) = pet.tick(delta_ms, &mut self.surface_cache) {
                 log::warn!("pet tick error: {e}");
             }
+        }
+
+        // ── Collision detection ──────────────────────────────────────────────────
+        if self.pets.len() >= 2 {
+            let boxes = collect_boxes(&self.pets);
+            let mut new_overlapping = std::collections::HashSet::new();
+
+            for i in 0..boxes.len() {
+                for j in (i + 1)..boxes.len() {
+                    let a = &boxes[i];
+                    let b = &boxes[j];
+                    if b.left >= a.right { break; }
+                    if a.bottom <= b.top || b.bottom <= a.top { continue; }
+                    if a.left == a.right || b.left == b.right { continue; }
+                    new_overlapping.insert(canonical_key(&a.id, &b.id));
+                }
+            }
+
+            for (id_min, id_max) in &new_overlapping {
+                if self.overlapping.contains(&(id_min.clone(), id_max.clone())) {
+                    continue;
+                }
+                let box_a = match boxes.iter().find(|b| &b.id == id_min) { Some(b) => b, None => continue };
+                let box_b = match boxes.iter().find(|b| &b.id == id_max) { Some(b) => b, None => continue };
+                let (type_a, type_b) = classify_collision(box_a, box_b);
+                let data_a = make_collide_data(box_a, box_b, type_a);
+                let data_b = make_collide_data(box_b, box_a, type_b);
+                if let Some(pet) = self.pets.get_mut(id_min) {
+                    pet.runner.on_collide(data_a);
+                }
+                if let Some(pet) = self.pets.get_mut(id_max) {
+                    pet.runner.on_collide(data_b);
+                }
+            }
+
+            self.overlapping = new_overlapping;
         }
 
         // Show unified app window if open.
@@ -762,7 +875,9 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
     if let Some(stem) = path.strip_prefix("embedded://") {
         let (json, png) = assets::embedded_sheet(stem)
             .with_context(|| format!("embedded sheet '{stem}' not found"))?;
-        return sheet::load_embedded(&json, &png);
+        let mut sheet = sheet::load_embedded(&json, &png)?;
+        apply_chromakey(&mut sheet.image, &sheet.chromakey);
+        return Ok(sheet);
     }
     let json = std::fs::read(path).with_context(|| format!("read {path}"))?;
     let json_path = std::path::Path::new(path);
@@ -772,7 +887,9 @@ fn load_sheet(path: &str) -> Result<SpriteSheet> {
     let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
         .context("decode PNG")?
         .into_rgba8();
-    sheet::SpriteSheet::from_json_and_image(&json, image)
+    let mut sheet = sheet::SpriteSheet::from_json_and_image(&json, image)?;
+    apply_chromakey(&mut sheet.image, &sheet.chromakey);
+    Ok(sheet)
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────

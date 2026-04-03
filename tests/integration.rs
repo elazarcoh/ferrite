@@ -53,3 +53,7 @@ mod float_scale {
 mod sm_switching {
     include!("integration/test_sm_switching.rs");
 }
+
+mod collision {
+    include!("integration/test_collision.rs");
+}

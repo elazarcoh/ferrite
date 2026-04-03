@@ -26,6 +26,15 @@ Frame tags must include at minimum an `idle` tag. Supported tag names:
 
 Tag directions: `forward`, `reverse`, `pingpong`, `pingpong_reverse`
 
+## Chromakey (Background Removal)
+
+Remove a solid background color without editing the PNG. Open the sprite in the
+Sprite Editor, enable Chromakey in the left panel, click **Pick** to sample a
+background pixel, then adjust Tolerance for anti-aliased edges. Click **Save**.
+
+The setting is stored in `meta.chromakey` in the JSON file and has no effect on
+the PNG itself.
+
 ## Community Spritesheets
 
 Free pixel-art pet sprites compatible with Aseprite:

@@ -23,12 +23,15 @@ pub struct SpriteEditorViewport {
     show_export_bundle_dialog: bool,    // whether to show the SM picker modal
     selected_sm_name: Option<String>,   // SM selected in the coverage panel combobox
     sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    chromakey: crate::sprite::sheet::ChromakeyConfig,
+    picking_chromakey_color: bool,
 }
 
 impl SpriteEditorViewport {
     pub fn new(state: SpriteEditorState) -> Self {
         let tag = state.tags.first().map(|t| t.name.clone()).unwrap_or_default();
         let sm_mappings = state.sm_mappings.clone();
+        let chromakey = state.chromakey.clone();
         Self {
             state,
             texture: None,
@@ -46,6 +49,8 @@ impl SpriteEditorViewport {
             show_export_bundle_dialog: false,
             selected_sm_name: None,
             sm_mappings,
+            chromakey,
+            picking_chromakey_color: false,
         }
     }
 
@@ -99,11 +104,15 @@ impl SpriteEditorViewport {
             direction: t.direction.clone(),
             flip_h: t.flip_h,
         }).collect();
+        let mut keyed = self.state.image.clone();
+        crate::sprite::sheet::apply_chromakey(&mut keyed, &self.chromakey);
         self.preview_sheet = Some(SpriteSheet {
-            image: self.state.image.clone(),
+            image: keyed,
             frames,
             tags,
             sm_mappings: std::collections::HashMap::new(),
+            chromakey: self.chromakey.clone(),
+            tight_bboxes: vec![],
         });
     }
 
@@ -169,6 +178,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                     if save_resp.clicked() {
                         // Sync sm_mappings from viewport into editor state before saving
                         s.state.sm_mappings = s.sm_mappings.clone();
+                        s.state.chromakey = s.chromakey.clone();
                         // Always save into the app sprites directory so that new sprites
                         // are registered and don't try to overwrite the source PNG.
                         let sprites_dir = crate::window::sprite_gallery::SpriteGallery::appdata_sprites_dir();
@@ -251,6 +261,54 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                 });
                 let total = s.total_frames();
                 ui.label(format!("{} frames", total));
+
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Chromakey").strong());
+                    crate::tray::ui_theme::help_icon(
+                        ui,
+                        "Remove a background color by making matching pixels transparent. \
+                         Enable, pick a key color, and adjust tolerance for anti-aliased edges.",
+                    );
+                });
+
+                let mut ck_changed = false;
+                let mut enabled = s.chromakey.enabled;
+                if ui.checkbox(&mut enabled, "Enable").changed() {
+                    s.chromakey.enabled = enabled;
+                    ck_changed = true;
+                }
+
+                if s.chromakey.enabled {
+                    ui.horizontal(|ui| {
+                        ui.label("Key color:");
+                        let mut rgb = s.chromakey.color.map(|c| c as f32 / 255.0);
+                        if egui::color_picker::color_edit_button_rgb(ui, &mut rgb).changed() {
+                            s.chromakey.color = rgb.map(|c| (c * 255.0).round() as u8);
+                            ck_changed = true;
+                        }
+                        if ui.button("Pick").on_hover_text(
+                            "Click then click a pixel on the spritesheet to sample its color"
+                        ).clicked() {
+                            s.picking_chromakey_color = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Tolerance:");
+                        let mut tol = s.chromakey.tolerance as u32;
+                        if ui.add(egui::Slider::new(&mut tol, 0_u32..=64_u32)).changed() {
+                            s.chromakey.tolerance = tol as u8;
+                            ck_changed = true;
+                        }
+                    });
+                    ui.label(egui::RichText::new("0 = exact match").weak().small());
+                }
+
+                if ck_changed {
+                    s.dirty = true;
+                    s.preview_sheet = None;
+                }
 
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -802,6 +860,28 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                         egui::StrokeKind::Outside,
                                     );
                                 }
+                            }
+
+                            // Eyedropper: pick chromakey color from spritesheet
+                            if s.picking_chromakey_color {
+                                if resp.hovered() {
+                                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Crosshair);
+                                }
+                                if let Some(pos) = resp.interact_pointer_pos()
+                                    && resp.clicked() {
+                                        let img_w = s.state.image.width() as f32;
+                                        let img_h = s.state.image.height() as f32;
+                                        let px_x = ((pos.x - image_rect.left()) / image_rect.width() * img_w)
+                                            .floor().clamp(0.0, img_w - 1.0) as u32;
+                                        let px_y = ((pos.y - image_rect.top()) / image_rect.height() * img_h)
+                                            .floor().clamp(0.0, img_h - 1.0) as u32;
+                                        let px = s.state.image.get_pixel(px_x, px_y);
+                                        s.chromakey.color = [px.0[0], px.0[1], px.0[2]];
+                                        s.chromakey.enabled = true;
+                                        s.picking_chromakey_color = false;
+                                        s.dirty = true;
+                                        s.preview_sheet = None;
+                                    }
                             }
 
                             // Drag → set tag range
