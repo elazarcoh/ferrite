@@ -23,7 +23,8 @@ use std::{
     time::Duration,
 };
 use windows_sys::Win32::{
-    Foundation::RECT,
+    Foundation::{POINT, RECT, SYSTEMTIME},
+    System::SystemInformation::GetLocalTime,
     UI::WindowsAndMessaging::*,
 };
 
@@ -44,6 +45,8 @@ pub struct PetInstance {
     /// Flip state from the last rendered frame. Re-render when this changes so
     /// direction changes take effect immediately, independent of frame timing.
     last_flip: bool,
+    /// Surface metadata from the last call to `find_floor_info`.
+    last_surface_hit: crate::window::surfaces::SurfaceHit,
 }
 
 impl PetInstance {
@@ -77,7 +80,22 @@ impl PetInstance {
 
         let anim = AnimationState::new("fall".to_string());
 
-        let mut inst = PetInstance { x: cfg.x, y: spawn_y, cfg, sheet, window, anim, runner, elevated_ms: 0, last_flip: false };
+        let mut inst = PetInstance {
+            x: cfg.x,
+            y: spawn_y,
+            cfg,
+            sheet,
+            window,
+            anim,
+            runner,
+            elevated_ms: 0,
+            last_flip: false,
+            last_surface_hit: crate::window::surfaces::SurfaceHit {
+                floor_y: 0,
+                surface_w: 0.0,
+                surface_label: String::new(),
+            },
+        };
 
         inst.render_current_frame()?;
 
@@ -103,9 +121,11 @@ impl PetInstance {
 
         // Compute the nearest walkable surface below the pet before the AI tick
         // (used by Fall/Thrown physics for landing termination).
-        let floor_y = crate::window::surfaces::find_floor(
+        let hit = crate::window::surfaces::find_floor_info(
             self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
         );
+        let floor_y = hit.floor_y;
+        self.last_surface_hit = hit;
 
         let tag = self.runner.tick(
             delta_ms,
@@ -674,10 +694,73 @@ impl eframe::App for App {
         let delta_ms = now.duration_since(self.last_tick_ms).as_millis().min(200) as u32;
         self.last_tick_ms = now;
 
+        // Compute shared per-frame environment variables.
+        let mut cursor_pt = POINT { x: 0, y: 0 };
+        unsafe { GetCursorPos(&mut cursor_pt); }
+
+        let hour = {
+            let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+            unsafe { GetLocalTime(&mut st); }
+            st.wHour as u32
+        };
+
+        let focused_app = {
+            let hwnd = unsafe { GetForegroundWindow() };
+            if hwnd.is_null() {
+                String::new()
+            } else {
+                let mut buf = [0u16; 256];
+                let len = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+                if len <= 0 { String::new() } else { String::from_utf16_lossy(&buf[..len as usize]) }
+            }
+        };
+
+        let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f32;
+        let pet_count = self.pets.len() as u32;
+
         // Tick all pets.
         for pet in self.pets.values_mut() {
             if let Err(e) = pet.tick(delta_ms, &mut self.surface_cache) {
                 log::warn!("pet tick error: {e}");
+            }
+        }
+
+        // Update environment vars on each pet's SM runner.
+        {
+            let centers: Vec<(String, i32, i32)> = self.pets.iter()
+                .map(|(id, p)| (id.clone(), p.x + p.window.width as i32 / 2, p.y + p.window.height as i32 / 2))
+                .collect();
+
+            for (id, pet) in &mut self.pets {
+                let cx = pet.x + pet.window.width as i32 / 2;
+                let cy = pet.y + pet.window.height as i32 / 2;
+
+                let cursor_dist = {
+                    let dx = cursor_pt.x - cx;
+                    let dy = cursor_pt.y - cy;
+                    ((dx * dx + dy * dy) as f32).sqrt()
+                };
+
+                let other_pet_dist = centers.iter()
+                    .filter(|(oid, _, _)| oid != id)
+                    .map(|(_, ox, oy)| {
+                        let dx = ox - cx;
+                        let dy = oy - cy;
+                        ((dx * dx + dy * dy) as f32).sqrt()
+                    })
+                    .fold(f32::INFINITY, f32::min);
+                let other_pet_dist = if other_pet_dist.is_infinite() { f32::MAX } else { other_pet_dist };
+
+                pet.runner.update_env_vars(
+                    cursor_dist,
+                    hour,
+                    focused_app.clone(),
+                    screen_h,
+                    pet_count,
+                    other_pet_dist,
+                    pet.last_surface_hit.surface_w,
+                    pet.last_surface_hit.surface_label.clone(),
+                );
             }
         }
 
