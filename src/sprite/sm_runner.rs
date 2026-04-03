@@ -140,7 +140,15 @@ impl SMRunner {
             "on_collide: type={} vx={:.1} vy={:.1} v={:.1}",
             data.collide_type, data.vx, data.vy, data.v
         );
+        self.last_vars.collide_type = data.collide_type.clone();
+        self.last_vars.collide_vx = data.vx;
+        self.last_vars.collide_vy = data.vy;
+        self.last_vars.collide_v = data.v;
         self.interrupt("collide", None);
+        self.last_vars.collide_type = String::new();
+        self.last_vars.collide_vx = 0.0;
+        self.last_vars.collide_vy = 0.0;
+        self.last_vars.collide_v = 0.0;
     }
 
     /// For a composite state, returns the name of the current step.
@@ -170,43 +178,57 @@ impl SMRunner {
         &self.transition_log
     }
 
-    /// Handle a named interrupt event (e.g. "grabbed", "petted").
+    /// Handle a named interrupt event (e.g. "grabbed", "petted", "collide").
+    /// Checks global interrupts first, then per-state interrupts for the current named state.
     pub fn interrupt(&mut self, event: &str, cursor_offset: Option<(i32, i32)>) {
-        // Check global interrupts first
-        if let Some(interrupt) = self.sm.global_interrupts.iter()
-            .find(|i| i.event == event)
-            .cloned()
-        {
-            use crate::sprite::sm_compiler::InterruptEffect;
-            match interrupt.def {
-                InterruptEffect::Ignore => return,
-                InterruptEffect::Goto { target, condition } => {
-                    let ok = if let Some(cond) = &condition {
-                        crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
-                    } else {
-                        true
-                    };
-                    if ok {
-                        if event == "grabbed" {
-                            let offset = cursor_offset.unwrap_or((0, 0));
-                            self.grab(offset);
-                            return;
-                        }
-                        // set_previous_from_current records the composite name (not the step)
-                        self.set_previous_from_current();
-                        let from = self.current_state_name().to_string();
-                        self.enter_state(&target.clone());
-                        self.log_transition(&from, &target, "interrupt");
-                    }
-                }
-            }
+        // 1. Global interrupts
+        if let Some(intr) = self.sm.global_interrupts.iter().find(|i| i.event == event).cloned() {
+            self.apply_interrupt_effect(intr.def, event, cursor_offset);
             return;
         }
-
-        // Fallback for grabbed
+        // 2. Per-state interrupts (current Named state only)
+        if let ActiveState::Named(state_name) = self.active.clone() {
+            if let Some(state) = self.sm.states.get(&state_name).cloned() {
+                if let Some(intr) = state.per_state_interrupts.iter().find(|i| i.event == event).cloned() {
+                    self.apply_interrupt_effect(intr.def, event, cursor_offset);
+                    return;
+                }
+            }
+        }
+        // 3. Fallback for grabbed with no matching interrupt defined
         if event == "grabbed" {
             let offset = cursor_offset.unwrap_or((0, 0));
             self.grab(offset);
+        }
+    }
+
+    fn apply_interrupt_effect(
+        &mut self,
+        effect: crate::sprite::sm_compiler::InterruptEffect,
+        event: &str,
+        cursor_offset: Option<(i32, i32)>,
+    ) {
+        use crate::sprite::sm_compiler::InterruptEffect;
+        match effect {
+            InterruptEffect::Ignore => {}
+            InterruptEffect::Goto { target, condition } => {
+                let ok = if let Some(cond) = &condition {
+                    crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
+                } else {
+                    true
+                };
+                if ok {
+                    if event == "grabbed" {
+                        let offset = cursor_offset.unwrap_or((0, 0));
+                        self.grab(offset);
+                        return;
+                    }
+                    self.set_previous_from_current();
+                    let from = self.current_state_name().to_string();
+                    self.enter_state(&target.clone());
+                    self.log_transition(&from, &target, "interrupt");
+                }
+            }
         }
     }
 
