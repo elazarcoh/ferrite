@@ -63,6 +63,17 @@ impl Default for ChromakeyConfig {
     }
 }
 
+/// Per-frame transparency-aware tight bounding box.
+/// `dx`/`dy` are offsets from the frame's top-left corner in source pixels.
+/// `w == 0 && h == 0` means fully transparent — non-collidable.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TightBbox {
+    pub dx: u32,
+    pub dy: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
 /// Zero the alpha of every pixel whose Euclidean RGB distance from `cfg.color`
 /// is <= cfg.tolerance. No-op when cfg.enabled is false.
 pub fn apply_chromakey(image: &mut image::RgbaImage, cfg: &ChromakeyConfig) {
@@ -85,6 +96,38 @@ pub struct SpriteSheet {
     pub tags: Vec<FrameTag>,
     pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     pub chromakey: ChromakeyConfig,
+    pub tight_bboxes: Vec<TightBbox>,
+}
+
+// ─── TightBbox helper ────────────────────────────────────────────────────────
+
+fn compute_tight_bbox(image: &RgbaImage, frame: &Frame) -> TightBbox {
+    let (fx, fy, fw, fh) = (frame.x, frame.y, frame.w, frame.h);
+    let (img_w, img_h) = (image.width(), image.height());
+    let mut min_x = fw;
+    let mut min_y = fh;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+    let mut found = false;
+
+    for dy in 0..fh {
+        for dx in 0..fw {
+            let px = fx + dx;
+            let py = fy + dy;
+            if px >= img_w || py >= img_h { continue; }
+            if image.get_pixel(px, py)[3] > 0 {
+                min_x = min_x.min(dx);
+                min_y = min_y.min(dy);
+                max_x = max_x.max(dx + 1);
+                max_y = max_y.max(dy + 1);
+                found = true;
+            }
+        }
+    }
+    if !found {
+        return TightBbox::default();
+    }
+    TightBbox { dx: min_x, dy: min_y, w: max_x - min_x, h: max_y - min_y }
 }
 
 // ─── Aseprite JSON serde helpers ─────────────────────────────────────────────
@@ -125,13 +168,30 @@ impl SpriteSheet {
         let tags = parse_tags(&root).context("parse tags")?;
         let sm_mappings = parse_sm_mappings(&root);
         let chromakey = parse_chromakey(&root);
+        let tight_bboxes: Vec<TightBbox> = frames.iter()
+            .map(|f| compute_tight_bbox(&image, f))
+            .collect();
 
-        Ok(SpriteSheet { image, frames, tags, sm_mappings, chromakey })
+        Ok(SpriteSheet { image, frames, tags, sm_mappings, chromakey, tight_bboxes })
     }
 
     /// Find a tag by name (case-sensitive).
     pub fn tag(&self, name: &str) -> Option<&FrameTag> {
         self.tags.iter().find(|t| t.name == name)
+    }
+
+    /// Returns `(dx_px, dy_px, w_px, h_px)` — the tight bbox offset and size
+    /// in world pixels (after scale), accounting for horizontal flip.
+    /// Returns `(0, 0, 0, 0)` for fully-transparent frames (non-collidable).
+    pub fn tight_bbox(&self, frame_idx: usize, scale: u32, flip_h: bool) -> (i32, i32, u32, u32) {
+        let tb = self.tight_bboxes.get(frame_idx).copied().unwrap_or_default();
+        let frame_w = self.frames.get(frame_idx).map(|f| f.w).unwrap_or(0);
+        let dx = if flip_h {
+            frame_w.saturating_sub(tb.dx + tb.w)
+        } else {
+            tb.dx
+        };
+        ((dx * scale) as i32, (tb.dy * scale) as i32, tb.w * scale, tb.h * scale)
     }
 
     /// Resolve SM state name to a sprite tag name.
@@ -288,6 +348,7 @@ mod tests {
             }).collect(),
             sm_mappings: HashMap::new(),
             chromakey: ChromakeyConfig::default(),
+            tight_bboxes: vec![],
         }
     }
 

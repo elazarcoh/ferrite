@@ -700,7 +700,7 @@ mod tests {
             FrameTag { name: "grabbed".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
             FrameTag { name: "petted".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
         ];
-        SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new(), chromakey: crate::sprite::sheet::ChromakeyConfig::default() }
+        SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new(), chromakey: crate::sprite::sheet::ChromakeyConfig::default(), tight_bboxes: vec![] }
     }
 
     #[test]
