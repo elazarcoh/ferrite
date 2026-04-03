@@ -34,6 +34,20 @@ pub struct TransitionLogEntry {
     pub reason: String,
 }
 
+/// Payload for the "collide" interrupt event.
+#[derive(Debug, Clone)]
+pub struct CollideData {
+    /// One of: "head_on", "same_dir", "fell_on", "landed_on",
+    ///         "hit_into_above", "hit_from_below"
+    pub collide_type: String,
+    /// Relative horizontal velocity (my vx − other vx).
+    pub vx: f32,
+    /// Relative vertical velocity (my vy − other vy).
+    pub vy: f32,
+    /// Magnitude: sqrt(vx²+vy²).
+    pub v: f32,
+}
+
 pub struct SMRunner {
     pub sm: Arc<CompiledSM>,
     pub active: ActiveState,
@@ -122,28 +136,69 @@ impl SMRunner {
         &self.transition_log
     }
 
-    /// Handle a named interrupt event (e.g. "grabbed", "petted").
+    /// Returns `(vx, vy)` of the current physics state.
+    /// Returns `(0.0, 0.0)` for Named and Grabbed states.
+    pub fn speed(&self) -> (f32, f32) {
+        match &self.active {
+            ActiveState::Fall { vy } => (0.0, *vy),
+            ActiveState::Thrown { vx, vy } => (*vx, *vy),
+            _ => (0.0, 0.0),
+        }
+    }
+
+    /// Fire the "collide" interrupt with the given collision data.
+    /// Temporarily populates `last_vars` with collision fields for condition evaluation,
+    /// then clears them after the interrupt is processed.
+    pub fn on_collide(&mut self, data: CollideData) {
+        self.last_vars.collide_type = data.collide_type.clone();
+        self.last_vars.collide_vx = data.vx;
+        self.last_vars.collide_vy = data.vy;
+        self.last_vars.collide_v = data.v;
+        self.interrupt("collide", None);
+        self.last_vars.collide_type = String::new();
+        self.last_vars.collide_vx = 0.0;
+        self.last_vars.collide_vy = 0.0;
+        self.last_vars.collide_v = 0.0;
+    }
+
+    /// Handle a named interrupt event (e.g. "grabbed", "petted", "collide").
+    /// Checks global interrupts first, then per-state interrupts for the current named state.
     pub fn interrupt(&mut self, event: &str, cursor_offset: Option<(i32, i32)>) {
-        // Check global interrupts first
-        if let Some(interrupt) = self.sm.global_interrupts.iter()
-            .find(|i| i.event == event)
-            .cloned()
-        {
-            use crate::sprite::sm_compiler::InterruptEffect;
-            match interrupt.def {
-                InterruptEffect::Ignore => return,
-                InterruptEffect::Goto { target, condition } => {
-                    let ok = if let Some(cond) = &condition {
-                        crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false)
+        // 1. Global interrupts
+        if let Some(intr) = self.sm.global_interrupts.iter().find(|i| i.event == event).cloned() {
+            self.apply_interrupt_effect(intr.def, event, cursor_offset);
+            return;
+        }
+        // 2. Per-state interrupts (current Named state only)
+        if let ActiveState::Named(state_name) = self.active.clone()
+            && let Some(state) = self.sm.states.get(&state_name).cloned()
+            && let Some(intr) = state.per_state_interrupts.iter().find(|i| i.event == event).cloned() {
+                self.apply_interrupt_effect(intr.def, event, cursor_offset);
+                return;
+            }
+        // 3. Fallback for grabbed with no matching interrupt defined
+        if event == "grabbed" {
+            self.grab(cursor_offset.unwrap_or((0, 0)));
+        }
+    }
+
+    fn apply_interrupt_effect(
+        &mut self,
+        effect: crate::sprite::sm_compiler::InterruptEffect,
+        event: &str,
+        cursor_offset: Option<(i32, i32)>,
+    ) {
+        use crate::sprite::sm_compiler::InterruptEffect;
+        match effect {
+            InterruptEffect::Ignore => {}
+            InterruptEffect::Goto { target, condition } => {
+                let ok = condition.as_ref()
+                    .map(|cond| crate::sprite::sm_expr::eval(cond, &self.last_vars).unwrap_or(false))
+                    .unwrap_or(true);
+                if ok {
+                    if event == "grabbed" {
+                        self.grab(cursor_offset.unwrap_or((0, 0)));
                     } else {
-                        true
-                    };
-                    if ok {
-                        if event == "grabbed" {
-                            let offset = cursor_offset.unwrap_or((0, 0));
-                            self.grab(offset);
-                            return;
-                        }
                         // set_previous_from_current records the composite name (not the step)
                         self.set_previous_from_current();
                         let from = self.current_state_name().to_string();
@@ -152,13 +207,6 @@ impl SMRunner {
                     }
                 }
             }
-            return;
-        }
-
-        // Fallback for grabbed
-        if event == "grabbed" {
-            let offset = cursor_offset.unwrap_or((0, 0));
-            self.grab(offset);
         }
     }
 
@@ -969,5 +1017,107 @@ transitions = []
                 "facing changed unexpectedly during a single walk episode"
             );
         }
+    }
+
+    // Helper SM with per-state collide interrupt
+    fn make_collide_sm() -> Arc<crate::sprite::sm_compiler::CompiledSM> {
+        let toml = r#"
+[meta]
+name = "test"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+required = true
+action = "idle"
+
+[states.idle.interrupts.collide]
+goto = "react"
+
+[states.react]
+action = "sit"
+duration = "500ms"
+transitions = [{ goto = "idle" }]
+"#;
+        let file: SmFile = toml::from_str(toml).unwrap();
+        compile(&file).unwrap()
+    }
+
+    #[test]
+    fn per_state_interrupt_fires_on_matching_event() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"));
+        r.interrupt("collide", None);
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "react"),
+            "expected react, got {:?}", r.active);
+    }
+
+    #[test]
+    fn per_state_interrupt_ignored_on_unknown_event() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        r.interrupt("unknown_event", None);
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"));
+    }
+
+    #[test]
+    fn on_collide_sets_vars_and_transitions() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        r.on_collide(CollideData {
+            collide_type: "head_on".to_string(),
+            vx: 50.0, vy: 0.0, v: 50.0,
+        });
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "react"));
+    }
+
+    #[test]
+    fn on_collide_clears_vars_after_interrupt() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        r.on_collide(CollideData {
+            collide_type: "head_on".to_string(),
+            vx: 50.0, vy: 0.0, v: 50.0,
+        });
+        assert_eq!(r.last_condition_vars().collide_type, "");
+        assert_eq!(r.last_condition_vars().collide_v, 0.0);
+    }
+
+    #[test]
+    fn on_collide_with_condition_only_fires_when_met() {
+        let toml = r#"
+[meta]
+name = "test"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+required = true
+action = "idle"
+
+[states.idle.interrupts.collide]
+goto = "react"
+condition = "collide_v > 100"
+
+[states.react]
+action = "sit"
+"#;
+        let file: SmFile = toml::from_str(toml).unwrap();
+        let sm = compile(&file).unwrap();
+        let mut r = SMRunner::new(sm, 80.0);
+        r.on_collide(CollideData { collide_type: "head_on".to_string(), vx: 0.0, vy: 0.0, v: 50.0 });
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"));
+        r.on_collide(CollideData { collide_type: "head_on".to_string(), vx: 0.0, vy: 0.0, v: 150.0 });
+        assert!(matches!(&r.active, ActiveState::Named(n) if n == "react"));
+    }
+
+    #[test]
+    fn speed_returns_velocity_from_active_state() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        r.active = ActiveState::Thrown { vx: 100.0, vy: -50.0 };
+        assert_eq!(r.speed(), (100.0, -50.0));
+        r.active = ActiveState::Fall { vy: 200.0 };
+        assert_eq!(r.speed(), (0.0, 200.0));
+        r.active = ActiveState::Named("idle".to_string());
+        assert_eq!(r.speed(), (0.0, 0.0));
     }
 }
