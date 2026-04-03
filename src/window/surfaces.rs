@@ -9,6 +9,14 @@ use windows_sys::Win32::{
     },
 };
 
+/// Result of `find_floor_info` — floor y-coordinate plus surface metadata.
+/// `surface_w == 0.0` and `surface_label == ""` when pet rests on the virtual screen ground.
+pub struct SurfaceHit {
+    pub floor_y: i32,
+    pub surface_w: f32,
+    pub surface_label: String,
+}
+
 /// One entry in the surface cache. Stores the raw rect of a qualifying window
 /// plus the HWND so the occlusion check can be performed at fill time.
 /// `hwnd` is not public — it's an implementation detail of the fill pass.
@@ -81,13 +89,22 @@ unsafe extern "system" fn fill_cb(hwnd: HWND, lparam: LPARAM) -> i32 { unsafe {
     1
 }}
 
+fn is_taskbar(hwnd: HWND) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW;
+    let mut buf = [0u16; 64];
+    let len = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+    let class = String::from_utf16_lossy(&buf[..len as usize]);
+    class == "Shell_TrayWnd"
+}
+
 /// Returns the y-coordinate the pet top should be at when it lands on the
-/// nearest surface below it. Falls back to the virtual screen ground.
+/// nearest surface below it, along with surface metadata.
+/// Falls back to the virtual screen ground (`surface_w: 0.0, surface_label: ""`).
 ///
 /// `cache` is filled via `EnumWindows` on the first call (or after TTL expiry)
 /// including full occlusion checks. Cache hits re-apply per-call overlap and
 /// min_surface filters only; occlusion is skipped (acceptable 250 ms TTL trade-off).
-pub fn find_floor(
+pub fn find_floor_info(
     pet_x: i32,
     pet_y: i32,
     pet_w: i32,
@@ -95,7 +112,7 @@ pub fn find_floor(
     screen_w: i32,
     screen_h: i32,
     cache: &mut SurfaceCache,
-) -> i32 {
+) -> SurfaceHit {
     // Refresh cache if expired.
     if cache.is_expired() {
         let mut fill = FillState { screen_w, entries: Vec::new() };
@@ -112,6 +129,7 @@ pub fn find_floor(
     let min_surface = pet_bottom.max(pet_h);
     let virtual_ground_top = screen_h - 4;
     let mut best = virtual_ground_top;
+    let mut best_rect: Option<&SurfaceRect> = None;
 
     for rect in &cache.entries {
         // Re-apply per-call horizontal overlap filter.
@@ -120,9 +138,38 @@ pub fn find_floor(
         if rect.top < min_surface || rect.top >= best { continue; }
         // Occlusion already verified at fill time — skip WindowFromPoint here.
         best = rect.top;
+        best_rect = Some(rect);
     }
 
-    best - pet_h
+    let floor_y = best - pet_h;
+    match best_rect {
+        Some(rect) => {
+            let label = if is_taskbar(rect.hwnd) { "taskbar" } else { "window" };
+            SurfaceHit {
+                floor_y,
+                surface_w: (rect.right - rect.left) as f32,
+                surface_label: label.to_string(),
+            }
+        }
+        None => SurfaceHit { floor_y, surface_w: 0.0, surface_label: String::new() },
+    }
+}
+
+/// Returns the y-coordinate the pet top should be at when it lands on the
+/// nearest surface below it. Falls back to the virtual screen ground.
+///
+/// This is a thin wrapper around [`find_floor_info`] for callers that do not
+/// need surface metadata.
+pub fn find_floor(
+    pet_x: i32,
+    pet_y: i32,
+    pet_w: i32,
+    pet_h: i32,
+    screen_w: i32,
+    screen_h: i32,
+    cache: &mut SurfaceCache,
+) -> i32 {
+    find_floor_info(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, cache).floor_y
 }
 
 #[cfg(test)]
