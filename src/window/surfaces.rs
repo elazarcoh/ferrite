@@ -18,16 +18,14 @@ pub struct SurfaceHit {
 }
 
 /// One entry in the surface cache. Stores the raw rect of a qualifying window
-/// plus the HWND so the occlusion check can be performed at fill time.
-/// `hwnd` is not public — it's an implementation detail of the fill pass.
+/// plus a classification label computed at fill time.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct SurfaceRect {
     pub left: i32,
     pub right: i32,
     pub top: i32,
     pub bottom: i32,
-    hwnd: HWND,
+    label: &'static str, // "taskbar" or "window"
 }
 
 /// 250 ms TTL cache for walkable surface rects.
@@ -39,7 +37,7 @@ pub struct SurfaceRect {
 /// always triggers a fresh `EnumWindows`.
 pub struct SurfaceCache {
     entries: Vec<SurfaceRect>,
-    pub expires_at: Instant,
+    expires_at: Instant,
 }
 
 impl Default for SurfaceCache {
@@ -79,20 +77,24 @@ unsafe extern "system" fn fill_cb(hwnd: HWND, lparam: LPARAM) -> i32 { unsafe {
         || IsChild(hwnd, top_at_pt) != 0
         || wndproc::is_pet_hwnd(top_at_pt);
     if !visible { return 1; }
+    let label = if is_taskbar_hwnd(hwnd) { "taskbar" } else { "window" };
     s.entries.push(SurfaceRect {
         left: rc.left,
         right: rc.right,
         top: rc.top,
         bottom: rc.bottom,
-        hwnd,
+        label,
     });
     1
 }}
 
-fn is_taskbar(hwnd: HWND) -> bool {
+fn is_taskbar_hwnd(hwnd: HWND) -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClassNameW;
     let mut buf = [0u16; 64];
     let len = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+    if len <= 0 {
+        return false;
+    }
     let class = String::from_utf16_lossy(&buf[..len as usize]);
     class == "Shell_TrayWnd"
 }
@@ -143,14 +145,11 @@ pub fn find_floor_info(
 
     let floor_y = best - pet_h;
     match best_rect {
-        Some(rect) => {
-            let label = if is_taskbar(rect.hwnd) { "taskbar" } else { "window" };
-            SurfaceHit {
-                floor_y,
-                surface_w: (rect.right - rect.left) as f32,
-                surface_label: label.to_string(),
-            }
-        }
+        Some(rect) => SurfaceHit {
+            floor_y,
+            surface_w: (rect.right - rect.left) as f32,
+            surface_label: rect.label.to_string(),
+        },
         None => SurfaceHit { floor_y, surface_w: 0.0, surface_label: String::new() },
     }
 }
