@@ -173,6 +173,30 @@ impl SMRunner {
         &self.last_vars
     }
 
+    /// Update externally-computed condition variables.
+    /// Called from App::update() each frame after the tick loop.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_env_vars(
+        &mut self,
+        cursor_dist: f32,
+        hour: u32,
+        focused_app: String,
+        screen_h: f32,
+        pet_count: u32,
+        other_pet_dist: f32,
+        surface_w: f32,
+        surface_label: String,
+    ) {
+        self.last_vars.cursor_dist = cursor_dist;
+        self.last_vars.hour = hour;
+        self.last_vars.focused_app = focused_app;
+        self.last_vars.screen_h = screen_h;
+        self.last_vars.pet_count = pet_count;
+        self.last_vars.other_pet_dist = other_pet_dist;
+        self.last_vars.surface_w = surface_w;
+        self.last_vars.surface_label = surface_label;
+    }
+
     /// Returns the last up-to-10 transition log entries (oldest first).
     pub fn transition_log(&self) -> &[TransitionLogEntry] {
         &self.transition_log
@@ -319,8 +343,18 @@ impl SMRunner {
 
         // 3. Accumulate time
         self.state_time_ms = self.state_time_ms.saturating_add(delta_ms);
+        self.last_vars.state_time_ms = self.state_time_ms;
+        self.last_vars.pet_x = *x as f32;
+        self.last_vars.pet_y = *y as f32;
+        self.last_vars.screen_w = screen_w as f32;
+        self.last_vars.pet_w = pet_w as f32;
+        self.last_vars.pet_h = pet_h as f32;
 
         // 4. Execute action physics
+        let (vx, vy) = self.speed();
+        self.last_vars.pet_vx = vx;
+        self.last_vars.pet_vy = vy;
+        self.last_vars.pet_v = (vx * vx + vy * vy).sqrt();
         self.execute_action(dt, x, y, screen_w, pet_w, pet_h, floor_y);
 
         // 5. Evaluate transitions (unless step_mode without advance)
@@ -856,6 +890,30 @@ transitions = [{ goto = "idle" }]
         assert_eq!(r.previous_named.as_deref(), Some("idle"));
     }
 
+    fn make_collide_sm() -> Arc<crate::sprite::sm_compiler::CompiledSM> {
+        let toml = r#"
+[meta]
+name = "test"
+version = "1.0"
+engine_min_version = "1.0"
+default_fallback = "idle"
+
+[states.idle]
+required = true
+action = "idle"
+
+[states.idle.interrupts.collide]
+goto = "react"
+
+[states.react]
+action = "sit"
+duration = "500ms"
+transitions = [{ goto = "idle" }]
+"#;
+        let file: SmFile = toml::from_str(toml).unwrap();
+        compile(&file).unwrap()
+    }
+
     #[test]
     fn walk_facing_does_not_change_during_single_episode() {
         // Build a minimal SM that transitions directly from idle to walk.
@@ -932,5 +990,60 @@ transitions = []
                 "facing changed unexpectedly during a single walk episode"
             );
         }
+    }
+
+    #[test]
+    fn tick_populates_pet_position_and_dimensions() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        let sheet = mock_sheet();
+        let mut x = 100i32;
+        let mut y = 200i32;
+        r.tick(16, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        let v = r.last_condition_vars();
+        assert_eq!(v.pet_x, 100.0);
+        assert_eq!(v.pet_y, 200.0);
+        assert_eq!(v.screen_w, 1920.0);
+        assert_eq!(v.pet_w, 64.0);
+        assert_eq!(v.pet_h, 64.0);
+    }
+
+    #[test]
+    fn tick_populates_state_time_ms() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        let sheet = mock_sheet();
+        let mut x = 0i32; let mut y = 0i32;
+        r.tick(100, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        r.tick(150, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        // state_time_ms should be 250 (100 + 150)
+        assert_eq!(r.last_condition_vars().state_time_ms, 250);
+    }
+
+    #[test]
+    fn tick_populates_velocity_from_thrown_state() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        r.active = ActiveState::Thrown { vx: 120.0, vy: -80.0 };
+        let sheet = mock_sheet();
+        let mut x = 0i32; let mut y = 0i32;
+        r.tick(16, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        let v = r.last_condition_vars();
+        assert_eq!(v.pet_vx, 120.0);
+        assert_eq!(v.pet_vy, -80.0);
+        let expected_v = (120.0f32 * 120.0 + 80.0f32 * 80.0).sqrt();
+        assert!((v.pet_v - expected_v).abs() < 0.1);
+    }
+
+    #[test]
+    fn update_env_vars_sets_all_fields() {
+        let mut r = SMRunner::new(make_collide_sm(), 80.0);
+        r.update_env_vars(42.5, 14, "MyEditor".to_string(), 1080.0, 3, 250.0, 1920.0, "taskbar".to_string());
+        let v = r.last_condition_vars();
+        assert_eq!(v.cursor_dist, 42.5);
+        assert_eq!(v.hour, 14);
+        assert_eq!(v.focused_app, "MyEditor");
+        assert_eq!(v.screen_h, 1080.0);
+        assert_eq!(v.pet_count, 3);
+        assert_eq!(v.other_pet_dist, 250.0);
+        assert_eq!(v.surface_w, 1920.0);
+        assert_eq!(v.surface_label, "taskbar");
     }
 }
