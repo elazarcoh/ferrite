@@ -25,6 +25,7 @@ fn mock_sheet() -> SpriteSheet {
         tags,
         sm_mappings: std::collections::HashMap::new(),
         chromakey: ferrite_core::sprite::sheet::ChromakeyConfig::default(),
+        baseline_offset: 0,
         tight_bboxes: vec![],
     }
 }

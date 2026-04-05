@@ -18,7 +18,7 @@ fn mock_sheet() -> SpriteSheet {
         FrameTag { name: "petted".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
         FrameTag { name: "fall".to_string(), from: 0, to: 0, direction: TagDirection::Forward, flip_h: false },
     ];
-    SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new(), chromakey: ferrite_core::sprite::sheet::ChromakeyConfig::default(), tight_bboxes: vec![] }
+    SpriteSheet { image, frames, tags, sm_mappings: std::collections::HashMap::new(), chromakey: ferrite_core::sprite::sheet::ChromakeyConfig::default(), tight_bboxes: vec![], baseline_offset: 0 }
 }
 
 // Mirrors make_minimal_sm() in sm_runner.rs — kept here because that helper

@@ -34,6 +34,7 @@ fn opaque_sheet() -> SpriteSheet {
         sm_mappings: std::collections::HashMap::new(),
         chromakey: ferrite_core::sprite::sheet::ChromakeyConfig::default(),
         tight_bboxes: vec![],
+        baseline_offset: 0,
     }
 }
 
