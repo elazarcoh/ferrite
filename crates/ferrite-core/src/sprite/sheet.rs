@@ -97,6 +97,7 @@ pub struct SpriteSheet {
     pub sm_mappings: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     pub chromakey: ChromakeyConfig,
     pub tight_bboxes: Vec<TightBbox>,
+    pub baseline_offset: u32,
 }
 
 // ─── TightBbox helper ────────────────────────────────────────────────────────
@@ -168,11 +169,12 @@ impl SpriteSheet {
         let tags = parse_tags(&root).context("parse tags")?;
         let sm_mappings = parse_sm_mappings(&root);
         let chromakey = parse_chromakey(&root);
+        let baseline_offset = parse_baseline_offset(&root);
         let tight_bboxes: Vec<TightBbox> = frames.iter()
             .map(|f| compute_tight_bbox(&image, f))
             .collect();
 
-        Ok(SpriteSheet { image, frames, tags, sm_mappings, chromakey, tight_bboxes })
+        Ok(SpriteSheet { image, frames, tags, sm_mappings, chromakey, tight_bboxes, baseline_offset })
     }
 
     /// Parse only frame/tag metadata; image is a 1×1 dummy.
@@ -298,6 +300,12 @@ fn parse_chromakey(root: &Value) -> ChromakeyConfig {
         .unwrap_or_default()
 }
 
+fn parse_baseline_offset(root: &Value) -> u32 {
+    root.pointer("/meta/baseline_offset")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32
+}
+
 fn ase_to_frame(f: AseFrame) -> Frame {
     Frame { x: f.frame.x, y: f.frame.y, w: f.frame.w, h: f.frame.h, duration_ms: f.duration }
 }
@@ -355,6 +363,7 @@ mod tests {
             sm_mappings: HashMap::new(),
             chromakey: ChromakeyConfig::default(),
             tight_bboxes: vec![],
+            baseline_offset: 0,
         }
     }
 
@@ -546,6 +555,20 @@ mod tests {
         let (dx_flipped, _, w2, _) = sheet.tight_bbox(0, 1, true);
         assert_eq!(dx_flipped, 3);
         assert_eq!(w2, 1);
+    }
+
+    #[test]
+    fn baseline_offset_parsed_from_json() {
+        let json = r#"{"frames":[{"frame":{"x":0,"y":0,"w":32,"h":32},"duration":100}],"meta":{"frameTags":[],"baseline_offset":12}}"#;
+        let sheet = SpriteSheet::from_json_and_image(json.as_bytes(), image::RgbaImage::new(1, 1)).unwrap();
+        assert_eq!(sheet.baseline_offset, 12);
+    }
+
+    #[test]
+    fn baseline_offset_missing_defaults_zero() {
+        let json = r#"{"frames":[],"meta":{"frameTags":[]}}"#;
+        let sheet = SpriteSheet::from_json_and_image(json.as_bytes(), image::RgbaImage::new(1, 1)).unwrap();
+        assert_eq!(sheet.baseline_offset, 0);
     }
 
 }

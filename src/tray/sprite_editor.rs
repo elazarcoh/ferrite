@@ -113,6 +113,7 @@ impl SpriteEditorViewport {
             sm_mappings: std::collections::HashMap::new(),
             chromakey: self.chromakey.clone(),
             tight_bboxes: vec![],
+            baseline_offset: 0,
         });
     }
 
