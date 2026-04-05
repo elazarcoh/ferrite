@@ -4,7 +4,7 @@
     "test:e2e": "node scripts/test.js"
   },
   "dependencies": {
-    "tailwindcss": "^3.4.19"
+    "@tailwindcss/cli": "^4.2.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.50"
