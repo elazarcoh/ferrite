@@ -48,6 +48,9 @@ pub struct SpriteEditorState {
     pub chromakey: ChromakeyConfig,
     /// User-editable name for this sprite; used as the file stem on save.
     pub sprite_name: String,
+    /// Pixels from the bottom of a frame to the actual walking floor.
+    /// 0 = bottom edge of the sprite grid is the floor (default, backwards compatible).
+    pub baseline_offset: u32,
 }
 
 // ─── impl SpriteEditorState ───────────────────────────────────────────────────
@@ -71,6 +74,7 @@ impl SpriteEditorState {
             sm_mappings: std::collections::HashMap::new(),
             chromakey: ChromakeyConfig::default(),
             sprite_name,
+            baseline_offset: 0,
         }
     }
 
@@ -189,6 +193,9 @@ impl SpriteEditorState {
             meta["chromakey"] = serde_json::to_value(&self.chromakey)
                 .unwrap_or_else(|e| unreachable!("ChromakeyConfig serialize failed: {e}"));
         }
+        if self.baseline_offset > 0 {
+            meta["baseline_offset"] = self.baseline_offset.into();
+        }
 
         serde_json::json!({
             "frames": frames,
@@ -215,6 +222,40 @@ fn direction_to_str(d: &TagDirection) -> &'static str {
         TagDirection::Reverse         => "reverse",
         TagDirection::PingPong        => "pingpong",
         TagDirection::PingPongReverse => "pingpong_reverse",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::RgbaImage;
+
+    #[test]
+    fn baseline_offset_round_trips_in_json() {
+        let mut state = SpriteEditorState::new(
+            std::path::PathBuf::from("test.png"),
+            RgbaImage::new(32, 32),
+        );
+        state.rows = 1;
+        state.cols = 1;
+        state.baseline_offset = 8;
+        let json = state.to_json();
+        let parsed: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        assert_eq!(parsed["meta"]["baseline_offset"], 8);
+    }
+
+    #[test]
+    fn baseline_offset_zero_not_written_to_json() {
+        let mut state = SpriteEditorState::new(
+            std::path::PathBuf::from("test.png"),
+            RgbaImage::new(32, 32),
+        );
+        state.rows = 1;
+        state.cols = 1;
+        // default is 0 — should not appear in JSON (or be 0)
+        let json = state.to_json();
+        let parsed: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        assert!(parsed["meta"].get("baseline_offset").is_none() || parsed["meta"]["baseline_offset"] == 0);
     }
 }
 
