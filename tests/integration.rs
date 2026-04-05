@@ -57,3 +57,7 @@ mod sm_switching {
 mod collision {
     include!("integration/test_collision.rs");
 }
+
+mod sm_vars {
+    include!("integration/test_sm_vars.rs");
+}
