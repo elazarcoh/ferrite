@@ -55,6 +55,9 @@ jobs:
         working-directory: crates/ferrite-web
         run: dx build --release --platform web
 
+      - name: Copy static assets to dist
+        run: cp -r crates/ferrite-web/public/. target/dx/ferrite-web/release/web/public/
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: target/dx/ferrite-web/release/web/public
