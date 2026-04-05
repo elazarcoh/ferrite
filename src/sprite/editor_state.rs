@@ -252,10 +252,10 @@ mod tests {
         );
         state.rows = 1;
         state.cols = 1;
-        // default is 0 — should not appear in JSON (or be 0)
+        // default is 0 — must not appear in JSON at all
         let json = state.to_json();
         let parsed: serde_json::Value = serde_json::from_slice(&json).unwrap();
-        assert!(parsed["meta"].get("baseline_offset").is_none() || parsed["meta"]["baseline_offset"] == 0);
+        assert!(parsed["meta"].get("baseline_offset").is_none());
     }
 }
 
