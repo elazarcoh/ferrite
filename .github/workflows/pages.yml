@@ -37,6 +37,10 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install Node dependencies
+        working-directory: crates/ferrite-web
+        run: npm ci
+
       - name: Build Tailwind CSS
         working-directory: crates/ferrite-web
         run: npx tailwindcss -i input.css -o public/assets/tailwind.css --minify
