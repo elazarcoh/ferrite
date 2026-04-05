@@ -387,6 +387,23 @@ fn parse_action_type(s: &str) -> ActionType {
     }
 }
 
+fn parse_distance_px(s: &str) -> Option<(f32, f32)> {
+    let s = s.trim();
+    // "100px-500px" → (100.0, 500.0)
+    if let Some(rest) = s.strip_suffix("px") {
+        if let Some(idx) = rest.rfind('-') {
+            let a_str = rest[..idx].trim_end_matches("px").trim();
+            let b_str = rest[idx+1..].trim();
+            let min = a_str.parse::<f32>().ok()?;
+            let max = b_str.parse::<f32>().ok()?;
+            return Some((min, max));
+        }
+        let v = rest.trim().parse::<f32>().ok()?;
+        return Some((v, v));
+    }
+    None
+}
+
 fn compile_params(state_def: &crate::sprite::sm_format::SmStateDef) -> ActionParams {
     let dir = state_def.dir.as_deref().map(|d| match d {
         "left"   => Direction::Left,
@@ -397,11 +414,17 @@ fn compile_params(state_def: &crate::sprite::sm_format::SmStateDef) -> ActionPar
     // Parse duration string like "500ms", "3s", "2.5s" → ms
     let duration_ms = state_def.duration.as_deref().and_then(parse_duration_str);
 
+    let (distance_min_px, distance_max_px) = state_def.distance
+        .as_deref()
+        .and_then(parse_distance_px)
+        .map(|(a, b)| (Some(a), Some(b)))
+        .unwrap_or((None, None));
+
     ActionParams {
         dir,
         speed_override: state_def.speed,
-        distance_min_px: None, // TODO: parse distance field if needed
-        distance_max_px: None,
+        distance_min_px,
+        distance_max_px,
         gravity_scale: state_def.gravity_scale.unwrap_or(1.0),
         duration_ms,
     }
@@ -467,6 +490,22 @@ fn compile_interrupts(interrupts: &HashMap<String, crate::sprite::sm_format::SmI
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_distance_px_fixed() {
+        assert_eq!(parse_distance_px("250px"), Some((250.0, 250.0)));
+    }
+
+    #[test]
+    fn parse_distance_px_range() {
+        assert_eq!(parse_distance_px("100px-500px"), Some((100.0, 500.0)));
+    }
+
+    #[test]
+    fn parse_distance_px_invalid() {
+        assert_eq!(parse_distance_px(""), None);
+        assert_eq!(parse_distance_px("100"), None);
+    }
 
     fn minimal_valid() -> &'static str {
         r#"
