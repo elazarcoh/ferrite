@@ -54,6 +54,7 @@ pub fn new_app_window_state(
         pending_sprite_delete: None,
         sm,
         sm_gallery_dirty: false,
+        simulation_override: false,
     }))
 }
 

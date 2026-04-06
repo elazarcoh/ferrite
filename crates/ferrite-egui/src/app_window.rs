@@ -25,6 +25,10 @@ pub struct AppWindowState {
 
     // ── Dirty flags ──
     pub sm_gallery_dirty: bool,
+
+    /// When `true`, `render_full_window` skips rendering the Simulation tab body so the
+    /// caller can render it separately (e.g. `WebApp`).
+    pub simulation_override: bool,
 }
 
 pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
@@ -61,9 +65,12 @@ pub fn render_full_window(ctx: &egui::Context, s: &mut AppWindowState) {
         AppTab::Sprites => render_sprites_tab(ctx, s),
         AppTab::Sm => crate::sm_editor::render_sm_panel(ctx, &mut s.sm),
         AppTab::Simulation => {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.label("Simulation not available in this context.");
-            });
+            if !s.simulation_override {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.label("Simulation not available in this context.");
+                });
+            }
+            // If simulation_override=true, caller renders simulation after this call
         }
     }
 }
