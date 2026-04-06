@@ -1,5 +1,5 @@
 [workspace]
-members  = [".", "crates/ferrite-core", "crates/ferrite-egui", "crates/ferrite-web"]
+members  = [".", "crates/ferrite-core", "crates/ferrite-egui", "crates/ferrite-web", "crates/ferrite-webapp"]
 resolver = "2"
 
 [workspace.dependencies]
