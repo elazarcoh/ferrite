@@ -1,5 +1,6 @@
 //! Desktop re-export + DesktopSheetLoader (wraps App::load_sheet_for_config).
 
+#[allow(unused_imports)]
 pub use ferrite_egui::config_panel::{
     render_config_panel, ConfigPanelState, OpenEditorRequest,
 };

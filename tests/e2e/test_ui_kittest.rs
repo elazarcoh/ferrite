@@ -7,11 +7,10 @@ use ferrite::{
     config::schema::{Config, PetConfig},
     event::AppEvent,
     tray::{
-        app_window::{AppTab, AppWindowState, render_app_tab_bar},
+        app_window::{new_app_window_state, AppTab, AppWindowState, render_app_tab_bar},
         config_window::{render_config_panel, ConfigWindowState},
         sm_editor::{render_sm_panel, SmEditorViewport},
     },
-    window::sprite_gallery::SpriteGallery,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -30,8 +29,7 @@ fn make_sm_state() -> SmEditorViewport {
 fn make_app_window_state() -> AppWindowState {
     let (tx, _rx) = crossbeam_channel::unbounded::<AppEvent>();
     let config = Config { pets: vec![PetConfig::default()] };
-    let gallery = SpriteGallery::load();
-    let arc = AppWindowState::new(config, tx, true, PathBuf::from("."), gallery);
+    let arc = new_app_window_state(config, tx, true, PathBuf::from("."));
     std::sync::Arc::try_unwrap(arc)
         .unwrap_or_else(|_| panic!("Arc has multiple owners"))
         .into_inner()
