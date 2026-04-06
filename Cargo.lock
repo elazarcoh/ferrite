@@ -2390,6 +2390,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "toml 1.0.6+spec-1.1.0",
  "wasm-bindgen",
  "wasm-bindgen-futures",
