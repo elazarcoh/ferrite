@@ -15,5 +15,5 @@ rfd               = "0.17"
 crossbeam-channel = "0.5"
 zip               = { workspace = true }
 
-[dev-dependencies]
-egui_kittest = "0.33"
+# dev-dependencies: egui_kittest omitted — egui-winit 0.33.3 has a compile error
+# (missing accesskit_update field). Panel tests covered by Playwright E2E instead.
