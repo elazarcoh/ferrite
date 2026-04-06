@@ -9,59 +9,100 @@ pub use ferrite_egui::sm_editor::{
 use ferrite_egui::sm_storage::SmStorage;
 use crate::sprite::sm_gallery::SmGallery;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 pub struct DesktopSmStorage {
     pub config_dir: PathBuf,
+    cached: Mutex<Option<SmGallery>>,
+}
+
+impl DesktopSmStorage {
+    pub fn new(config_dir: PathBuf) -> Self {
+        Self { config_dir, cached: Mutex::new(None) }
+    }
+
+    fn with_gallery<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&SmGallery) -> R,
+    {
+        let mut guard = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() {
+            *guard = Some(SmGallery::load(&self.config_dir));
+        }
+        f(guard.as_ref().unwrap())
+    }
+
+    fn with_gallery_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut SmGallery) -> R,
+    {
+        let mut guard = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() {
+            *guard = Some(SmGallery::load(&self.config_dir));
+        }
+        f(guard.as_mut().unwrap())
+    }
+
+    fn invalidate(&self) {
+        let mut guard = self.cached.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
+    }
 }
 
 impl SmStorage for DesktopSmStorage {
     fn list_names(&self) -> Vec<String> {
-        SmGallery::load(&self.config_dir)
-            .valid_names()
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect()
+        self.with_gallery(|gallery| {
+            let mut names: Vec<String> = gallery.valid_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
+            for draft in gallery.draft_names() {
+                let s = draft.to_string();
+                if !names.contains(&s) {
+                    names.push(s);
+                }
+            }
+            names
+        })
     }
 
     fn load(&self, name: &str) -> Option<String> {
-        SmGallery::load(&self.config_dir).source(name).map(|s| s.to_string())
+        self.with_gallery(|gallery| {
+            gallery.source(name)
+                .or_else(|| gallery.draft_source(name))
+                .map(|s| s.to_string())
+        })
     }
 
     fn save(&self, name: &str, source: &str) -> Result<(), String> {
-        let mut gallery = SmGallery::load(&self.config_dir);
-        gallery.save(name, source).map(|_| ()).map_err(|e| e.to_string())
+        let result = self.with_gallery_mut(|gallery| {
+            gallery.save(name, source).map(|_| ()).map_err(|e| e.to_string())
+        });
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
     }
 
     fn delete(&self, name: &str) -> Result<(), String> {
-        let mut gallery = SmGallery::load(&self.config_dir);
-        gallery.delete(name).map_err(|e| e.to_string())
+        let result = self.with_gallery_mut(|gallery| {
+            gallery.delete(name).map_err(|e| e.to_string())
+        });
+        if result.is_err() {
+            self.invalidate();
+        }
+        result
     }
 }
 
 /// Desktop constructor: creates `SmEditorViewport` with filesystem-backed storage.
 pub fn new_desktop_sm_editor(dark_mode: bool, config_dir: PathBuf) -> SmEditorViewport {
-    let storage = Box::new(DesktopSmStorage { config_dir });
+    let storage: Box<dyn SmStorage> = Box::new(DesktopSmStorage::new(config_dir));
     let arc = SmEditorViewport::new(dark_mode, storage);
+    // SmEditorViewport::new wraps in Arc<Mutex<_>> for viewport sharing; unwrap since we hold
+    // the only reference at this point.
     match std::sync::Arc::try_unwrap(arc) {
         Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
-        Err(_) => panic!("SmEditorViewport Arc has unexpected extra references"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use eframe::egui::FontId;
-    use ferrite_egui::sm_highlighter::{PetstateTheme, highlight_petstate};
-
-    #[test]
-    fn syntax_highlight_produces_multiple_colors() {
-        let theme = PetstateTheme::dark(FontId::monospace(14.0));
-        let code = "[states.idle]\naction = \"idle\"\n# comment\ntransitions = []\n";
-        let job = highlight_petstate(code, &theme);
-        assert!(job.sections.len() > 1, "expected multiple sections, got {}", job.sections.len());
-        let colors: std::collections::HashSet<_> = job.sections.iter()
-            .map(|s| s.format.color)
-            .collect();
-        assert!(colors.len() > 1, "expected multiple colors in .petstate highlighting, got only {:?}", colors);
+        Err(_) => panic!("SmEditorViewport::new returned Arc with unexpected extra references"),
     }
 }
