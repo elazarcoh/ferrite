@@ -87,15 +87,22 @@ SmFile (TOML) → sm_compiler → CompiledSM → SMRunner.tick() → drives Anim
 **Webapp (browser DevTools):**
 
 ```bash
-# Dev server (requires trunk + wasm32 target + clang)
+# Dev server — Linux/Mac (trunk works fine)
 rustup target add wasm32-unknown-unknown
 cargo install trunk
 cd crates/ferrite-webapp && trunk serve   # → http://localhost:8080
 
-# Production build
-cd crates/ferrite-webapp && trunk build --release   # outputs dist/
+# Dev build — Windows fallback (trunk 0.17.3 has an artifact-discovery bug on Windows)
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version $(grep -A1 'name = "wasm-bindgen"' Cargo.lock | grep version | cut -d'"' -f2)
+cd crates/ferrite-webapp && bash build.sh          # dev build → dist/
+python -m http.server 8080 --directory dist        # serve locally
 
-# Playwright E2E tests (after trunk build)
+# Production build
+cd crates/ferrite-webapp && trunk build --release  # Linux/Mac
+cd crates/ferrite-webapp && bash build.sh release  # Windows fallback → dist/
+
+# Playwright E2E tests (requires a pre-built dist/)
 cd tests/webapp && npm ci && npx playwright install chromium
 npx playwright test
 ```
