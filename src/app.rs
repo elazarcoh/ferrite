@@ -108,6 +108,7 @@ impl PetInstance {
         let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
         let pet_w = self.window.width as i32;
         let pet_h = self.window.height as i32;
+        let baseline_offset_px = (self.sheet.baseline_offset as f32 * self.cfg.scale).round() as i32;
 
         // Sync position from Win32 to pick up wndproc drag moves.
         unsafe {
@@ -122,7 +123,7 @@ impl PetInstance {
         // Compute the nearest walkable surface below the pet before the AI tick
         // (used by Fall/Thrown physics for landing termination).
         let hit = crate::window::surfaces::find_floor_info(
-            self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
+            self.x, self.y, pet_w, pet_h, screen_w, screen_h, baseline_offset_px, cache,
         );
         let floor_y = hit.floor_y;
         self.last_surface_hit = hit;
@@ -149,7 +150,7 @@ impl PetInstance {
         );
         if !being_dragged && !is_airborne {
             let new_floor = crate::window::surfaces::find_floor(
-                self.x, self.y, pet_w, pet_h, screen_w, screen_h, cache,
+                self.x, self.y, pet_w, pet_h, screen_w, screen_h, baseline_offset_px, cache,
             );
             // If the floor dropped more than one pet height, the pet walked
             // off a window edge — start falling.
@@ -164,7 +165,7 @@ impl PetInstance {
         // Elevated-surface drop: if the pet has been sitting on a raised window
         // for too long, make it fall off (eSheep-style edge drop).
         const ELEVATED_DROP_MS: u32 = 20_000; // 20 s before dropping
-        let virtual_ground = screen_h - 4 - pet_h;
+        let virtual_ground = screen_h - 4 - pet_h + baseline_offset_px;
         if is_airborne || self.y >= virtual_ground - 4 {
             // On ground or in the air — reset timer.
             self.elevated_ms = 0;

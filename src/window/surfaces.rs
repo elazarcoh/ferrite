@@ -106,6 +106,7 @@ fn is_taskbar_hwnd(hwnd: HWND) -> bool {
 /// `cache` is filled via `EnumWindows` on the first call (or after TTL expiry)
 /// including full occlusion checks. Cache hits re-apply per-call overlap and
 /// min_surface filters only; occlusion is skipped (acceptable 250 ms TTL trade-off).
+#[allow(clippy::too_many_arguments)]
 pub fn find_floor_info(
     pet_x: i32,
     pet_y: i32,
@@ -113,6 +114,7 @@ pub fn find_floor_info(
     pet_h: i32,
     screen_w: i32,
     screen_h: i32,
+    baseline_offset: i32,
     cache: &mut SurfaceCache,
 ) -> SurfaceHit {
     // Refresh cache if expired.
@@ -143,7 +145,7 @@ pub fn find_floor_info(
         best_rect = Some(rect);
     }
 
-    let floor_y = best - pet_h;
+    let floor_y = best - pet_h + baseline_offset;
     match best_rect {
         Some(rect) => SurfaceHit {
             floor_y,
@@ -159,6 +161,7 @@ pub fn find_floor_info(
 ///
 /// This is a thin wrapper around [`find_floor_info`] for callers that do not
 /// need surface metadata.
+#[allow(clippy::too_many_arguments)]
 pub fn find_floor(
     pet_x: i32,
     pet_y: i32,
@@ -166,14 +169,34 @@ pub fn find_floor(
     pet_h: i32,
     screen_w: i32,
     screen_h: i32,
+    baseline_offset: i32,
     cache: &mut SurfaceCache,
 ) -> i32 {
-    find_floor_info(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, cache).floor_y
+    find_floor_info(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, baseline_offset, cache).floor_y
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn baseline_offset_zero_matches_old_formula() {
+        // floor_y with offset=0 must equal best - pet_h
+        let best = 500i32;
+        let pet_h = 64i32;
+        let offset = 0i32;
+        assert_eq!(best - pet_h + offset, 436);
+    }
+
+    #[test]
+    fn baseline_offset_raises_pet_to_floor() {
+        // With offset=16, the window y shifts up by 16 so the character's
+        // visual bottom (pet_h - 16 from top) aligns with the surface.
+        let best = 500i32;
+        let pet_h = 64i32;
+        let offset = 16i32;
+        assert_eq!(best - pet_h + offset, 452);
+    }
 
     #[test]
     fn surface_cache_default_is_expired() {
@@ -187,7 +210,7 @@ mod tests {
         let screen_w = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0) }; // SM_CXSCREEN
         let screen_h = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1) }; // SM_CYSCREEN
         // Pet at top of screen, 32x32
-        let floor = find_floor(0, 0, 32, 32, screen_w, screen_h, &mut cache);
+        let floor = find_floor(0, 0, 32, 32, screen_w, screen_h, 0, &mut cache);
         // Floor must be above the screen bottom and >= 0
         assert!(floor >= 0, "floor y must be non-negative, got {floor}");
         assert!(floor < screen_h, "floor y must be above screen bottom, got {floor}");
@@ -199,10 +222,10 @@ mod tests {
         let screen_w = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0) };
         let screen_h = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1) };
         // First call: cold (fills cache)
-        let floor1 = find_floor(100, 0, 32, 32, screen_w, screen_h, &mut cache);
+        let floor1 = find_floor(100, 0, 32, 32, screen_w, screen_h, 0, &mut cache);
         assert!(!cache.is_expired(), "cache must be warm after first call");
         // Second call: warm (must return same value as long as pet position unchanged)
-        let floor2 = find_floor(100, 0, 32, 32, screen_w, screen_h, &mut cache);
+        let floor2 = find_floor(100, 0, 32, 32, screen_w, screen_h, 0, &mut cache);
         assert_eq!(floor1, floor2, "warm cache must return same floor as cold call");
     }
 }
