@@ -39,6 +39,9 @@ pub struct AppWindowState {
     /// Set when the SM gallery has changed (e.g. after a bundle import).
     /// The config tab clears this each frame after re-loading the gallery.
     pub sm_gallery_dirty: bool,
+
+    // ── Platform paths ──
+    pub config_dir: PathBuf,
 }
 
 impl AppWindowState {
@@ -61,8 +64,22 @@ impl AppWindowState {
             pending_sprite_delete: None,
             sm,
             sm_gallery_dirty: false,
+            config_dir,
         }))
     }
+}
+
+/// Creates a `SpriteEditorViewport` wired for desktop: provides `sprites_dir` and SM storage.
+fn make_desktop_sprite_editor(
+    state: ferrite_core::sprite::editor_state::SpriteEditorState,
+    config_dir: &std::path::Path,
+) -> SpriteEditorViewport {
+    use crate::tray::sm_editor::DesktopSmStorage;
+    use ferrite_egui::sm_storage::SmStorage;
+    let mut ed = SpriteEditorViewport::new(state);
+    ed.sprites_dir = Some(crate::window::sprite_gallery::SpriteGallery::appdata_sprites_dir());
+    ed.sm_storage = Some(Box::new(DesktopSmStorage::new(config_dir.to_path_buf())) as Box<dyn SmStorage>);
+    ed
 }
 
 pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
@@ -180,7 +197,7 @@ pub fn open_app_window(
             match req {
                 crate::tray::config_window::OpenEditorRequest::Edit(sheet_path) => {
                     if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                        let mut ed = crate::tray::sprite_editor::SpriteEditorViewport::new(es);
+                        let mut ed = make_desktop_sprite_editor(es, &s.config_dir);
                         if sheet_path.starts_with("embedded://") {
                             ed.is_builtin = true;
                         }
@@ -189,7 +206,7 @@ pub fn open_app_window(
                 }
                 crate::tray::config_window::OpenEditorRequest::New(png_path) => {
                     if let Ok(es) = load_editor_state_from_png(&png_path) {
-                        s.sprite_editor = Some(crate::tray::sprite_editor::SpriteEditorViewport::new(es));
+                        s.sprite_editor = Some(make_desktop_sprite_editor(es, &s.config_dir));
                     }
                 }
             }
@@ -232,7 +249,7 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
     if let Some(png_path) = picked_png {
         match load_editor_state_from_png(&png_path) {
             Ok(es) => {
-                s.sprite_editor = Some(SpriteEditorViewport::new(es));
+                s.sprite_editor = Some(make_desktop_sprite_editor(es, &s.config_dir.clone()));
                 s.selected_sprite_key = Some(SpriteKey::Installed(png_path.with_extension("json")));
             }
             Err(e) => log::warn!("Failed to load PNG as sprite: {e}"),
@@ -258,7 +275,7 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                                 SpriteKey::Embedded(stem) => {
                                     let sheet_path = format!("embedded://{stem}");
                                     if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                                        let mut ed = SpriteEditorViewport::new(es);
+                                        let mut ed = make_desktop_sprite_editor(es, &s.config_dir.clone());
                                         ed.is_builtin = true;
                                         s.sprite_editor = Some(ed);
                                     }
@@ -266,7 +283,7 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                                 SpriteKey::Installed(path) => {
                                     let sheet_path = path.to_string_lossy().to_string();
                                     if let Ok(es) = load_editor_state_from_sheet(&sheet_path) {
-                                        s.sprite_editor = Some(SpriteEditorViewport::new(es));
+                                        s.sprite_editor = Some(make_desktop_sprite_editor(es, &s.config_dir.clone()));
                                     }
                                 }
                             }
