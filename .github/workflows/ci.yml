@@ -22,3 +22,49 @@ jobs:
         run: cargo clippy --package ferrite -- -D warnings -A dead-code
       - name: cargo clippy (ferrite-core)
         run: cargo clippy --package ferrite-core -- -D warnings -A dead-code
+
+  webapp-build:
+    name: Webapp Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-webapp
+      - name: Install trunk
+        run: cargo install trunk --locked
+      - name: Build ferrite-webapp
+        run: cd crates/ferrite-webapp && trunk build --release
+
+  playwright:
+    name: Playwright Tests
+    runs-on: ubuntu-latest
+    needs: webapp-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-playwright
+      - name: Install trunk
+        run: cargo install trunk --locked
+      - name: Build webapp
+        run: cd crates/ferrite-webapp && trunk build
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright
+        run: cd tests/webapp && npm ci && npx playwright install --with-deps chromium
+      - name: Run Playwright tests
+        run: cd tests/webapp && npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: tests/webapp/playwright-report/
