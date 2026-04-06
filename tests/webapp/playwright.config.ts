@@ -7,10 +7,10 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "trunk serve",
+    command: "npx serve -l 8080 ../../crates/ferrite-webapp/dist",
     url: "http://localhost:8080",
     reuseExistingServer: !process.env.CI,
-    cwd: "../../crates/ferrite-webapp",
+    cwd: "tests/webapp",
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
