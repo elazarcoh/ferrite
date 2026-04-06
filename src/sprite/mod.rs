@@ -6,6 +6,6 @@ pub use ferrite_core::sprite::sm_format;
 pub use ferrite_core::sprite::sm_runner;
 
 // Desktop-only:
-pub mod editor_state;
+pub use ferrite_core::sprite::editor_state;
 pub mod sm_gallery;
 pub mod sprite_gallery;
