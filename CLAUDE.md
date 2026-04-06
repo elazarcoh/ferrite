@@ -38,6 +38,17 @@ type(scope): description
 
 Ferrite is a Windows-native desktop pet simulator. Animated pets live on the desktop; users interact via system tray. Config is stored at `%LOCALAPPDATA%\ferrite\config.toml`.
 
+**Crate structure:**
+
+```
+crates/
+  ferrite-core/     pure portable logic (animation, SM, config schema, bundle ZIP)
+  ferrite-egui/     shared egui panels (no Win32 deps) — used by desktop + webapp
+  ferrite-webapp/   eframe-wasm browser app (trunk build, wasm32-unknown-unknown)
+  ferrite-web/      Dioxus public website (unchanged)
+src/                desktop: Win32 + eframe; thin wrappers over ferrite-egui panels
+```
+
 **Entry point flow:**
 1. `main.rs` → initializes logger, creates `App`
 2. `app.rs::App::new()` → loads config, spawns `PetInstance`s, starts file watcher
@@ -51,10 +62,12 @@ Ferrite is a Windows-native desktop pet simulator. Animated pets live on the des
 | `app.rs` | Runtime loop, `PetInstance` coordination, event dispatch |
 | `sprite/` | Spritesheet loading, `AnimationState` (frame timing), state machine compiler + runner (`SMRunner`), TOML DSL (`SmFile`), sprite/SM galleries |
 | `config/` | `PetConfig`/`Config` load/save, hot-reload via file watcher |
-| `tray/` | System tray menus, unified app window with Config/Sprites/SM tabs, sprite editor, SM editor |
+| `tray/` | System tray menus, thin wrappers delegating to `ferrite-egui` panels |
 | `window/` | HWND creation, per-pixel hit testing (transparent areas click-through), desktop surface detection, bitmap blending |
-| `bundle.rs` | `.petbundle` ZIP import/export |
 | `event.rs` | `AppEvent` channel between components |
+| `ferrite-core::bundle` | `.petbundle` ZIP import/export (shared with webapp) |
+| `ferrite-egui` | All egui panel logic: `app_window`, `config_panel`, `sprite_editor`, `sm_editor`, `sm_highlighter`, `ui_theme`; platform I/O via `SmStorage` / `SheetLoader` traits |
+| `ferrite-webapp` | Browser DevTools: `WebApp` (eframe), `WebSmStorage`, `SimulationPanel`, `FerriteBridge` (`window.__ferrite` JS API) |
 
 **Sprite/State machine pipeline:**
 ```
@@ -70,6 +83,29 @@ SmFile (TOML) → sm_compiler → CompiledSM → SMRunner.tick() → drives Anim
 **Windows API surface:** `windows-sys` for HWND management, alpha blending (`UpdateLayeredWindow`), per-pixel regions (`SetWindowRgn`), monitor/surface enumeration.
 
 **UI:** `egui`/`eframe` with WGPU renderer. The main window is hidden; all UI surfaces are egui windows or the system tray.
+
+**Webapp (browser DevTools):**
+
+```bash
+# Dev server (requires trunk + wasm32 target + clang)
+rustup target add wasm32-unknown-unknown
+cargo install trunk
+cd crates/ferrite-webapp && trunk serve   # → http://localhost:8080
+
+# Production build
+cd crates/ferrite-webapp && trunk build --release   # outputs dist/
+
+# Playwright E2E tests (after trunk build)
+cd tests/webapp && npm ci && npx playwright install chromium
+npx playwright test
+```
+
+The webapp exposes `window.__ferrite` in the browser console:
+```js
+window.__ferrite.get_state()         // → {pets: [...], dark_mode: true}
+window.__ferrite.get_pet_state("id") // → {id, x, y, sm_state, animation_tag}
+window.__ferrite.inject_event('{"type":"grab","pet_id":"esheep"}')
+```
 
 ## Testing
 
