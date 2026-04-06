@@ -331,7 +331,7 @@ impl App {
     fn import_bundle(&mut self, path: &std::path::Path) {
         match std::fs::read(path) {
             Ok(data) => {
-                match crate::bundle::import(&data) {
+                match ferrite_core::bundle::import(&data) {
                     Ok(contents) => {
                         // Get base dir (where config.toml is)
                         let base_dir = config::config_path()

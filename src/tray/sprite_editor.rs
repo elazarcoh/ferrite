@@ -75,7 +75,7 @@ impl SpriteEditorViewport {
             .save_file();
 
         if let Some(path) = path {
-            match crate::bundle::export(&bundle_name, None, &json_str, &png_bytes, sm_source, None) {
+            match ferrite_core::bundle::export(&bundle_name, None, &json_str, &png_bytes, sm_source, None) {
                 Ok(bytes) => {
                     if let Err(e) = std::fs::write(&path, bytes) {
                         log::error!("Failed to write bundle: {}", e);

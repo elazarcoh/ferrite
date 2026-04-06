@@ -313,7 +313,7 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
                     .add_filter("Pet Bundle", &["petbundle"])
                     .pick_file()
                 {
-                    match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| crate::bundle::import(&bytes)) {
+                    match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| ferrite_core::bundle::import(&bytes)) {
                         Ok(contents) => {
                             if let Some(sm_source) = contents.sm_source {
                                 vp.editor_text = sm_source;
