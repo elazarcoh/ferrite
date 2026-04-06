@@ -260,6 +260,25 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                         s.preview_sheet = None;
                     }
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Baseline:");
+                    crate::tray::ui_theme::help_icon(
+                        ui,
+                        "Pixels from the bottom of each frame to the walking floor. \
+                         0 = bottom edge is the floor.",
+                    );
+                    let frame_h = if s.state.rows > 0 {
+                        s.state.image.height() / s.state.rows
+                    } else {
+                        1
+                    };
+                    let max_offset = frame_h.saturating_sub(1) as usize;
+                    let mut offset = s.state.baseline_offset as usize;
+                    if ui.add(egui::DragValue::new(&mut offset).range(0_usize..=max_offset)).changed() {
+                        s.state.baseline_offset = offset as u32;
+                        s.dirty = true;
+                    }
+                });
                 let total = s.total_frames();
                 ui.label(format!("{} frames", total));
 
@@ -805,6 +824,24 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                                     [egui::pos2(image_rect.left(), y), egui::pos2(image_rect.right(), y)],
                                     egui::Stroke::new(1.0, grid_color),
                                 );
+                            }
+
+                            // Baseline line: one horizontal line per row, showing the walking floor.
+                            if s.state.baseline_offset > 0 {
+                                let frame_src_h = if s.state.rows > 0 {
+                                    s.state.image.height() / s.state.rows
+                                } else {
+                                    1
+                                };
+                                let baseline_frac = s.state.baseline_offset as f32 / frame_src_h as f32;
+                                let baseline_color = egui::Color32::from_rgba_premultiplied(255, 200, 0, 180); // amber
+                                for r in 0..rows {
+                                    let y = image_rect.top() + (r as f32 + 1.0 - baseline_frac) * cell_h;
+                                    painter.line_segment(
+                                        [egui::pos2(image_rect.left(), y), egui::pos2(image_rect.right(), y)],
+                                        egui::Stroke::new(1.5, baseline_color),
+                                    );
+                                }
                             }
 
                             // Per-cell overlays, labels, borders
