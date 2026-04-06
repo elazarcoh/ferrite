@@ -256,6 +256,8 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                     }
                     if resp.changed() || changed {
                         s.state.rows = rows as u32;
+                        let new_frame_h = s.state.image.height() / s.state.rows;
+                        s.state.baseline_offset = s.state.baseline_offset.min(new_frame_h.saturating_sub(1));
                         s.dirty = true;
                         s.preview_sheet = None;
                     }
