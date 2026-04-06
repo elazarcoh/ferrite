@@ -24,6 +24,7 @@ log          = { workspace = true }
 console_log  = "1"
 console_error_panic_hook = "0.1"
 serde        = { workspace = true }
+serde_json   = { workspace = true }
 anyhow       = { workspace = true }
 rfd          = "0.17"
 image        = { workspace = true }

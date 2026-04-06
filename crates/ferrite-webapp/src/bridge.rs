@@ -22,10 +22,17 @@ static APP_HANDLE: std::sync::OnceLock<Mutex<BridgeState>> = std::sync::OnceLock
 pub struct BridgeState {
     pub pets: Vec<PetStateSnapshot>,
     pub dark_mode: bool,
+    pub pending_events: Vec<String>,
+    pub pending_import: Option<ferrite_core::bundle::BundleContents>,
 }
 
 pub fn init_bridge_state() {
-    APP_HANDLE.get_or_init(|| Mutex::new(BridgeState { pets: Vec::new(), dark_mode: true }));
+    APP_HANDLE.get_or_init(|| Mutex::new(BridgeState {
+        pets: Vec::new(),
+        dark_mode: true,
+        pending_events: Vec::new(),
+        pending_import: None,
+    }));
 }
 
 pub fn update_bridge_state(pets: Vec<PetStateSnapshot>, dark_mode: bool) {
@@ -60,8 +67,33 @@ impl FerriteBridge {
 
     pub fn inject_event(&self, event_json: &str) {
         log::debug!("inject_event: {event_json}");
-        // Future: parse JSON and route to appropriate pet's SMRunner
+        if let Some(lock) = APP_HANDLE.get() {
+            if let Ok(mut state) = lock.lock() {
+                state.pending_events.push(event_json.to_string());
+            }
+        }
     }
+}
+
+pub fn drain_events() -> Vec<String> {
+    APP_HANDLE.get()
+        .and_then(|lock| lock.lock().ok())
+        .map(|mut s| std::mem::take(&mut s.pending_events))
+        .unwrap_or_default()
+}
+
+pub fn set_pending_import(contents: ferrite_core::bundle::BundleContents) {
+    if let Some(lock) = APP_HANDLE.get() {
+        if let Ok(mut s) = lock.lock() {
+            s.pending_import = Some(contents);
+        }
+    }
+}
+
+pub fn take_pending_import() -> Option<ferrite_core::bundle::BundleContents> {
+    APP_HANDLE.get()
+        .and_then(|lock| lock.lock().ok())
+        .and_then(|mut s| s.pending_import.take())
 }
 
 pub fn attach_to_window() {

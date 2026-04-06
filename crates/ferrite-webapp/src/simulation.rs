@@ -54,6 +54,7 @@ impl SimulationState {
     }
 
     pub fn tick(&mut self, delta_ms: u32) {
+        let pet_count = self.pets.len() as u32;
         for pet in &mut self.pets {
             // Estimate pet dimensions from the first frame
             let (pet_w, pet_h) = if let Some(frame) = pet.sheet.frames.first() {
@@ -64,6 +65,17 @@ impl SimulationState {
             } else {
                 (32, 32)
             };
+
+            pet.sm.update_env_vars(
+                f32::MAX, // cursor_dist: no cursor in headless web sim
+                0,        // hour
+                String::new(), // focused_app
+                SIM_FLOOR_Y as f32, // screen_h (use floor as proxy)
+                pet_count, // pet_count
+                f32::MAX, // other_pet_dist
+                SIM_SCREEN_W as f32, // surface_w (full sim width)
+                String::new(), // surface_label
+            );
 
             let tag = pet.sm.tick(
                 delta_ms,
@@ -80,6 +92,23 @@ impl SimulationState {
         }
     }
 
+    pub fn process_event(&mut self, event_json: &str) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(event_json) {
+            let event_type = val["type"].as_str().unwrap_or("");
+            let pet_id = val["pet_id"].as_str().unwrap_or("");
+            for pet in &mut self.pets {
+                if pet.id == pet_id {
+                    match event_type {
+                        "grab" => pet.sm.interrupt("grabbed", Some((0, 0))),
+                        "release" => pet.sm.release((0.0, 0.0)),
+                        _ => log::warn!("unknown event type: {event_type}"),
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn render(&self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::TopBottomPanel::top("sim_toolbar").show_inside(ui, |ui| {
@@ -87,8 +116,13 @@ impl SimulationState {
                     if ui.button("Import Bundle\u{2026}").clicked() {
                         wasm_bindgen_futures::spawn_local(async move {
                             if let Some(bytes) = crate::import_export::pick_and_read_bundle().await {
-                                log::info!("bundle imported: {} bytes", bytes.len());
-                                // Future: register with WebSheetLoader and update config
+                                match crate::import_export::import_bundle(&bytes) {
+                                    Ok(contents) => {
+                                        log::info!("imported bundle: {}", contents.bundle_name);
+                                        crate::bridge::set_pending_import(contents);
+                                    }
+                                    Err(e) => log::error!("import failed: {e}"),
+                                }
                             }
                         });
                     }

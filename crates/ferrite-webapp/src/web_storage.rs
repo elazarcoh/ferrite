@@ -47,6 +47,15 @@ impl WebSheetLoader {
     }
 }
 
+/// Newtype so we can implement the foreign `SheetLoader` trait for an `Arc<WebSheetLoader>`.
+pub struct SharedWebSheetLoader(pub Arc<WebSheetLoader>);
+
+impl SheetLoader for SharedWebSheetLoader {
+    fn load_sheet(&self, path: &str) -> anyhow::Result<SpriteSheet> {
+        self.0.load_sheet(path)
+    }
+}
+
 impl SheetLoader for WebSheetLoader {
     fn load_sheet(&self, path: &str) -> anyhow::Result<SpriteSheet> {
         if let Some(stem) = path.strip_prefix("embedded://") {
