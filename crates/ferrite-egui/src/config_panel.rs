@@ -116,16 +116,19 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigPanelState, sm_gal
                     }
             });
 
-            let pick_in_progress = s.pending_png_pick.is_some();
-            if ui.add_enabled(!pick_in_progress, egui::Button::new("New from PNG\u{2026}")).clicked() {
-                let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
-                std::thread::spawn(move || {
-                    let result = rfd::FileDialog::new()
-                        .add_filter("PNG", &["png"])
-                        .pick_file();
-                    tx_pick.send(result).ok();
-                });
-                s.pending_png_pick = Some(rx_pick);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let pick_in_progress = s.pending_png_pick.is_some();
+                if ui.add_enabled(!pick_in_progress, egui::Button::new("New from PNG\u{2026}")).clicked() {
+                    let (tx_pick, rx_pick) = crossbeam_channel::bounded(1);
+                    std::thread::spawn(move || {
+                        let result = rfd::FileDialog::new()
+                            .add_filter("PNG", &["png"])
+                            .pick_file();
+                        tx_pick.send(result).ok();
+                    });
+                    s.pending_png_pick = Some(rx_pick);
+                }
             }
         });
 

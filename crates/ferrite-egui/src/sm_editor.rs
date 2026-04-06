@@ -265,6 +265,7 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
                 vp.is_dirty = true;
                 vp.cached_compiled_sm = None;
             }
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("📂 Import .petstate").clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Pet State Machine", &["petstate"])
@@ -277,6 +278,7 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
                         vp.has_saved_once = false;
                         vp.cached_compiled_sm = None;
                     }
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("📦 Import .petbundle").clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("Pet Bundle", &["petbundle"])
