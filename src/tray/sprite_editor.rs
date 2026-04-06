@@ -279,6 +279,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                     if ui.add(egui::DragValue::new(&mut offset).range(0_usize..=max_offset)).changed() {
                         s.state.baseline_offset = offset as u32;
                         s.dirty = true;
+                        s.preview_sheet = None;
                     }
                 });
                 let total = s.total_frames();
