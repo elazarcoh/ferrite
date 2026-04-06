@@ -16,11 +16,11 @@ use ferrite::{
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn make_config_state() -> (ConfigWindowState, crossbeam_channel::Receiver<AppEvent>) {
-    let (tx, rx) = crossbeam_channel::unbounded::<AppEvent>();
+fn make_config_state() -> ConfigWindowState {
+    use ferrite::tray::config_window::{DesktopSheetLoader, gallery_entries_from_desktop};
     let config = Config { pets: vec![PetConfig::default()] };
-    let gallery = SpriteGallery::load();
-    (ConfigWindowState::new(config, tx, gallery), rx)
+    let gallery = gallery_entries_from_desktop();
+    ConfigWindowState::new(config, gallery, Box::new(DesktopSheetLoader))
 }
 
 fn make_sm_state() -> SmEditorViewport {
@@ -57,7 +57,7 @@ fn tab_click_switches_to_sprites() {
 #[test]
 fn add_pet_increases_count() {
     use egui_kittest::kittest::Queryable;
-    let (cs, _rx) = make_config_state();
+    let cs = make_config_state();
     let before = cs.config.pets.len();
     let state = Rc::new(RefCell::new(cs));
     let state_c = Rc::clone(&state);
@@ -73,14 +73,14 @@ fn add_pet_increases_count() {
 #[test]
 fn remove_pet_decreases_count() {
     use egui_kittest::kittest::Queryable;
-    let (tx, _rx) = crossbeam_channel::unbounded::<AppEvent>();
+    use ferrite::tray::config_window::{DesktopSheetLoader, gallery_entries_from_desktop};
     let config = Config {
         pets: vec![
             PetConfig { id: "a".into(), ..PetConfig::default() },
             PetConfig { id: "b".into(), ..PetConfig::default() },
         ],
     };
-    let mut cs = ConfigWindowState::new(config, tx, SpriteGallery::load());
+    let mut cs = ConfigWindowState::new(config, gallery_entries_from_desktop(), Box::new(DesktopSheetLoader));
     cs.selected_pet_idx = Some(0);
     let state = Rc::new(RefCell::new(cs));
     let state_c = Rc::clone(&state);

@@ -8,7 +8,7 @@ use crossbeam_channel::Sender;
 use crate::event::AppEvent;
 use crate::config::schema::Config;
 use crate::window::sprite_gallery::{SpriteGallery, SpriteKey};
-use crate::tray::config_window::{render_config_panel, ConfigWindowState};
+use crate::tray::config_window::{render_config_panel, ConfigWindowState, DesktopSheetLoader, gallery_entries_from_desktop};
 use crate::tray::sprite_editor::{render_sprite_editor_panel, SpriteEditorViewport};
 use crate::tray::sm_editor::{render_sm_panel, SmEditorViewport, new_desktop_sm_editor};
 
@@ -20,6 +20,9 @@ pub struct AppWindowState {
     pub should_close: bool,
     pub dark_mode: bool,
     pub dark_mode_out: Option<bool>,
+
+    // ── Event channel ──
+    pub tx: Sender<AppEvent>,
 
     // ── Config tab ──
     pub config_state: ConfigWindowState,
@@ -46,15 +49,15 @@ pub struct AppWindowState {
 
 impl AppWindowState {
     pub fn new(config: Config, tx: Sender<AppEvent>, dark_mode: bool, config_dir: PathBuf, gallery: SpriteGallery) -> Arc<Mutex<Self>> {
-        // Load a second gallery instance for the config tab (SpriteGallery doesn't impl Clone).
-        let config_gallery = SpriteGallery::load();
-        let config_state = ConfigWindowState::new(config, tx.clone(), config_gallery);
+        let config_gallery = gallery_entries_from_desktop();
+        let config_state = ConfigWindowState::new(config, config_gallery, Box::new(DesktopSheetLoader));
         let sm = new_desktop_sm_editor(dark_mode, config_dir.clone());
         Arc::new(Mutex::new(Self {
             selected_tab: AppTab::Config,
             should_close: false,
             dark_mode,
             dark_mode_out: None,
+            tx,
             config_state,
             sprite_gallery: gallery,
             selected_sprite_key: None,
@@ -235,7 +238,25 @@ pub fn open_app_window(
 }
 
 fn render_config_tab(ctx: &egui::Context, s: &mut AppWindowState) {
+    // Refresh SM names from disk before rendering.
+    {
+        let config_dir = crate::config::config_path()
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let gallery = crate::sprite::sm_gallery::SmGallery::load(&config_dir);
+        let mut sm_names = vec!["embedded://default".to_string()];
+        sm_names.extend(gallery.valid_names().into_iter().map(|n| n.to_string()));
+        s.config_state.sm_names = sm_names;
+    }
+
     render_config_panel(ctx, &mut s.config_state, &mut s.sm_gallery_dirty);
+
+    // Flush config_dirty → AppEvent::ConfigChanged
+    if s.config_state.config_dirty {
+        s.config_state.config_dirty = false;
+        s.tx.send(AppEvent::ConfigChanged(s.config_state.config.clone())).ok();
+    }
 }
 
 fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
