@@ -24,11 +24,7 @@ fn make_config_state() -> (ConfigWindowState, crossbeam_channel::Receiver<AppEve
 }
 
 fn make_sm_state() -> SmEditorViewport {
-    let arc = SmEditorViewport::new(true, PathBuf::from("."));
-    std::sync::Arc::try_unwrap(arc)
-        .unwrap_or_else(|_| panic!("Arc has multiple owners"))
-        .into_inner()
-        .unwrap()
+    ferrite::tray::sm_editor::new_desktop_sm_editor(true, std::env::temp_dir())
 }
 
 fn make_app_window_state() -> AppWindowState {
@@ -102,10 +98,6 @@ fn save_button_label_clean_when_not_dirty() {
     use egui_kittest::kittest::Queryable;
     let mut vp = make_sm_state();
     vp.is_dirty = false;
-    // Pre-populate cached_gallery from a temp dir so render_sm_panel doesn't hit "."
-    vp.cached_gallery = Some(ferrite::sprite::sm_gallery::SmGallery::load(
-        &std::env::temp_dir(),
-    ));
     let vp_rc = Rc::new(RefCell::new(vp));
     let vp_c = Rc::clone(&vp_rc);
     let mut harness = Harness::new(move |ctx| {
@@ -121,10 +113,6 @@ fn save_button_label_dirty_when_dirty() {
     use egui_kittest::kittest::Queryable;
     let mut vp = make_sm_state();
     vp.is_dirty = true;
-    // Pre-populate cached_gallery from a temp dir so render_sm_panel doesn't hit "."
-    vp.cached_gallery = Some(ferrite::sprite::sm_gallery::SmGallery::load(
-        &std::env::temp_dir(),
-    ));
     let vp_rc = Rc::new(RefCell::new(vp));
     let vp_c = Rc::clone(&vp_rc);
     let mut harness = Harness::new(move |ctx| {
@@ -137,11 +125,7 @@ fn save_button_label_dirty_when_dirty() {
 #[test]
 fn new_sm_button_loads_template() {
     use egui_kittest::kittest::Queryable;
-    let mut vp = make_sm_state();
-    // Pre-populate cached_gallery from a temp dir so render_sm_panel doesn't hit "."
-    vp.cached_gallery = Some(ferrite::sprite::sm_gallery::SmGallery::load(
-        &std::env::temp_dir(),
-    ));
+    let vp = make_sm_state();
     let vp_rc = Rc::new(RefCell::new(vp));
     let vp_c = Rc::clone(&vp_rc);
     let mut harness = Harness::new(move |ctx| {

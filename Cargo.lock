@@ -2343,6 +2343,7 @@ dependencies = [
  "egui_kittest",
  "env_logger",
  "ferrite-core",
+ "ferrite-egui",
  "image",
  "log",
  "muda",
@@ -2371,6 +2372,24 @@ dependencies = [
  "serde",
  "serde_json",
  "toml 1.0.6+spec-1.1.0",
+ "zip",
+]
+
+[[package]]
+name = "ferrite-egui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "eframe",
+ "egui",
+ "ferrite-core",
+ "image",
+ "log",
+ "rfd",
+ "serde",
+ "toml 1.0.6+spec-1.1.0",
+ "zip",
 ]
 
 [[package]]

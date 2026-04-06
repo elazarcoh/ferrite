@@ -10,7 +10,7 @@ use crate::config::schema::Config;
 use crate::window::sprite_gallery::{SpriteGallery, SpriteKey};
 use crate::tray::config_window::{render_config_panel, ConfigWindowState};
 use crate::tray::sprite_editor::{render_sprite_editor_panel, SpriteEditorViewport};
-use crate::tray::sm_editor::{render_sm_panel, SmEditorViewport};
+use crate::tray::sm_editor::{render_sm_panel, SmEditorViewport, new_desktop_sm_editor};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum AppTab { Config, Sprites, Sm }
@@ -46,11 +46,7 @@ impl AppWindowState {
         // Load a second gallery instance for the config tab (SpriteGallery doesn't impl Clone).
         let config_gallery = SpriteGallery::load();
         let config_state = ConfigWindowState::new(config, tx.clone(), config_gallery);
-        let sm_arc = SmEditorViewport::new(dark_mode, config_dir.clone());
-        let sm = match Arc::try_unwrap(sm_arc) {
-            Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
-            Err(_) => panic!("SmEditorViewport Arc has unexpected extra references"),
-        };
+        let sm = new_desktop_sm_editor(dark_mode, config_dir.clone());
         Arc::new(Mutex::new(Self {
             selected_tab: AppTab::Config,
             should_close: false,
