@@ -19,7 +19,9 @@ pub fn apply_theme(ctx: &egui::Context, dark: bool) {
     // Accent (indigo-500 selection highlight) — white text gives 5.5:1 contrast ratio
     let accent = Color32::from_rgb(99, 102, 241);
     vis.selection.bg_fill = accent;
-    vis.selection.stroke = Stroke::new(1.0, accent);
+    // stroke color = text color on selected items; must be WHITE (not accent) so
+    // selected tab labels, gallery entries, and list items are visible on indigo bg.
+    vis.selection.stroke = Stroke::new(1.0, Color32::WHITE);
 
     if dark {
         vis.window_fill = Color32::from_rgb(18, 18, 30);
