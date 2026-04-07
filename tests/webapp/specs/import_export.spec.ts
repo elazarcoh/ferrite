@@ -7,7 +7,7 @@ test("export bundle from sprites tab triggers download", async ({ page }) => {
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
-  await page.getByRole("tab", { name: /Sprites/i }).click();
+  await page.getByRole("button", { name: /Sprites/i }).click();
   await page.waitForTimeout(200);
 
   const downloadPromise = page.waitForEvent("download");

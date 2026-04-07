@@ -21,7 +21,7 @@ test("SM editor renders without errors", async ({ page }) => {
     if (msg.type() === "error") errors.push(msg.text());
   });
 
-  await page.getByRole("tab", { name: /State Machine/i }).click();
+  await page.getByRole("button", { name: /State Machine/i }).click();
   await page.waitForTimeout(200);
 
   expect(errors.filter(e => !e.includes("favicon"))).toHaveLength(0);
