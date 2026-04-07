@@ -10,7 +10,6 @@ export default defineConfig({
     command: "npx serve -l 8080 ../../crates/ferrite-webapp/dist",
     url: "http://localhost:8080",
     reuseExistingServer: !process.env.CI,
-    cwd: "tests/webapp",
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },
