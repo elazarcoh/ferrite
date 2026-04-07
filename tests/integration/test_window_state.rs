@@ -1,17 +1,14 @@
-// Tests that AppWindowState accepts a pre-loaded gallery and doesn't require
-// double-loading at open time.
-use ferrite::tray::app_window::AppWindowState;
+// Tests that AppWindowState can be constructed and has the expected initial state.
+use ferrite::tray::app_window::{AppWindowState, new_app_window_state};
 use ferrite::config::schema::Config;
-use ferrite::window::sprite_gallery::SpriteGallery;
 use crossbeam_channel::unbounded;
 use ferrite::event::AppEvent;
 
 fn make_state() -> std::sync::Arc<std::sync::Mutex<AppWindowState>> {
     let (tx, _rx) = unbounded::<AppEvent>();
     let config = Config::default();
-    let gallery = SpriteGallery::load();
     let config_dir = std::path::PathBuf::from(".");
-    AppWindowState::new(config, tx, true, config_dir, gallery)
+    new_app_window_state(config, tx, true, config_dir)
 }
 
 #[test]
@@ -48,5 +45,5 @@ fn app_window_state_accepts_gallery() {
     // Verify that the gallery is loaded and passed in (not empty for built-in assets)
     let state = make_state();
     let s = state.lock().unwrap();
-    assert!(!s.sprite_gallery.entries.is_empty(), "gallery should have at least the built-in esheep entry");
+    assert!(!s.gallery.is_empty(), "gallery should have at least the built-in esheep entry");
 }

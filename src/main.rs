@@ -4,7 +4,6 @@
 
 mod app;
 mod assets;
-mod bundle;
 mod config;
 mod event;
 mod sprite;

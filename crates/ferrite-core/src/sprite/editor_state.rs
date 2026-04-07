@@ -37,6 +37,8 @@ pub struct EditorTag {
 
 pub struct SpriteEditorState {
     pub png_path: PathBuf,
+    /// In-memory PNG bytes. When set (e.g. on wasm32), used instead of reading from `png_path`.
+    pub png_bytes: Option<Vec<u8>>,
     pub image: RgbaImage,
     pub rows: u32,
     pub cols: u32,
@@ -66,6 +68,7 @@ impl SpriteEditorState {
             .unwrap_or_else(|| "sprite".to_string());
         SpriteEditorState {
             png_path,
+            png_bytes: None,
             image,
             rows: 1,
             cols: 1,
@@ -75,6 +78,22 @@ impl SpriteEditorState {
             chromakey: ChromakeyConfig::default(),
             sprite_name,
             baseline_offset: 0,
+        }
+    }
+
+    /// Returns the PNG bytes: uses in-memory `png_bytes` if set (for wasm),
+    /// otherwise reads from `png_path` on the filesystem.
+    pub fn read_png_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        if let Some(ref b) = self.png_bytes {
+            return Ok(b.clone());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::fs::read(&self.png_path).map_err(|e| anyhow::anyhow!("read PNG: {e}"))
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            anyhow::bail!("png_bytes not set — required on wasm32")
         }
     }
 
@@ -258,4 +277,3 @@ mod tests {
         assert!(parsed["meta"].get("baseline_offset").is_none());
     }
 }
-

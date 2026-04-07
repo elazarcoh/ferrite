@@ -8,7 +8,7 @@ use crate::{
         sm_runner::SMRunner,
     },
     tray::{
-        app_window::{open_app_window, AppWindowState},
+        app_window::{new_app_window_state, open_app_window, AppWindowState},
         window_lifecycle::AppWindowLifecycle,
         SystemTray,
     },
@@ -276,12 +276,11 @@ impl App {
         let tray = SystemTray::new(tx.clone()).context("create tray")?;
         let watcher = spawn_watcher(cfg_path.clone(), tx.clone()).context("create watcher")?;
 
-        let gallery = crate::window::sprite_gallery::SpriteGallery::load();
         let config_dir = cfg_path
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let app_window = AppWindowState::new(cfg, tx.clone(), true, config_dir, gallery);
+        let app_window = new_app_window_state(cfg, tx.clone(), true, config_dir);
 
         Ok(App {
             tx,
@@ -331,7 +330,7 @@ impl App {
     fn import_bundle(&mut self, path: &std::path::Path) {
         match std::fs::read(path) {
             Ok(data) => {
-                match crate::bundle::import(&data) {
+                match ferrite_core::bundle::import(&data) {
                     Ok(contents) => {
                         // Get base dir (where config.toml is)
                         let base_dir = config::config_path()
@@ -865,6 +864,7 @@ impl eframe::App for App {
                 open_app_window(
                     ctx,
                     self.app_window.clone(),
+                    self.tx.clone(),
                     self.app_window_lifecycle.generation,
                     self.app_window_lifecycle.current_close_flag(),
                 );

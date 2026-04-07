@@ -11,3 +11,4 @@ toml       = { workspace = true }
 anyhow     = { workspace = true }
 log        = { workspace = true }
 once_cell  = { workspace = true }
+zip        = { workspace = true }

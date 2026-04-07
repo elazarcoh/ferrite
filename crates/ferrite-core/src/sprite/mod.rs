@@ -1,4 +1,5 @@
 pub mod animation;
+pub mod editor_state;
 pub mod sheet;
 pub mod sm_compiler;
 pub mod sm_expr;
