@@ -1,8 +1,16 @@
 import { test, expect } from "@playwright/test";
 
+async function waitForApp(page: any) {
+  await page.waitForFunction(
+    () => typeof (window as any).__ferrite !== "undefined",
+    { timeout: 15000 }
+  );
+  await page.waitForTimeout(500);
+}
+
 test("JS bridge returns initial app state", async ({ page }) => {
   await page.goto("/");
-  await page.waitForLoadState("networkidle");
+  await waitForApp(page);
 
   const state = await page.evaluate(
     () => (window as any).__ferrite.get_state()
@@ -14,7 +22,7 @@ test("JS bridge returns initial app state", async ({ page }) => {
 
 test("SM editor renders without errors", async ({ page }) => {
   await page.goto("/");
-  await page.waitForLoadState("networkidle");
+  await waitForApp(page);
 
   const errors: string[] = [];
   page.on("console", (msg) => {
