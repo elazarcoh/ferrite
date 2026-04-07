@@ -227,7 +227,8 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
     // ── Left browser panel ──────────────────────────────────────────────
     egui::SidePanel::left("sm_browser")
         .resizable(true)
-        .min_width(160.0)
+        .min_width(140.0)
+        .default_width(160.0)
         .show(ctx, |ui| {
             ui.heading("State Machines");
             ui.add_space(4.0);
@@ -309,7 +310,8 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
     // ── Right: state graph ──────────────────────────────────────────────
     egui::SidePanel::right("sm_graph")
         .resizable(true)
-        .min_width(240.0)
+        .min_width(160.0)
+        .default_width(220.0)
         .show(ctx, |ui| {
             ui.heading("State Graph");
             ui.add_space(4.0);

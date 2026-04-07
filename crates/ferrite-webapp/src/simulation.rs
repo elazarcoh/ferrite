@@ -39,10 +39,16 @@ impl SimulationState {
             let initial_tag = sm.current_state_name().to_string();
             let anim = AnimationState::new(initial_tag);
 
+            let init_h = if let Some(frame) = sheet.frames.first() {
+                (frame.h as f32 * pet_cfg.scale) as i32
+            } else {
+                32
+            };
+
             pets.push(PetSimState {
                 id: pet_cfg.id.clone(),
-                x: pet_cfg.x,
-                y: pet_cfg.y,
+                x: SIM_SCREEN_W / 4,        // start at 25% of sim width
+                y: SIM_FLOOR_Y - init_h,    // just above the floor
                 scale: pet_cfg.scale,
                 sheet,
                 sm,
@@ -138,15 +144,23 @@ impl SimulationState {
             });
 
             let panel_rect = ui.available_rect_before_wrap();
+            let panel_w = panel_rect.width();
+            let panel_h = panel_rect.height();
 
-            // Draw floor line
-            let floor_y = panel_rect.top() + SIM_FLOOR_Y as f32;
+            // Scale simulation coords to panel dimensions.
+            // Simulation space: SIM_SCREEN_W wide, floor at SIM_FLOOR_Y.
+            // Map SIM_FLOOR_Y to 85% of panel height so there's headroom above.
+            let x_scale = panel_w / SIM_SCREEN_W as f32;
+            let y_scale = (panel_h * 0.85) / SIM_FLOOR_Y as f32;
+
+            // Draw floor line at scaled position
+            let floor_y = panel_rect.top() + SIM_FLOOR_Y as f32 * y_scale;
             ui.painter().line_segment(
                 [
                     egui::pos2(panel_rect.left(), floor_y),
                     egui::pos2(panel_rect.right(), floor_y),
                 ],
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 100, 100)),
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 100, 130)),
             );
 
             // Draw each pet using the current animation frame as a texture
@@ -155,13 +169,13 @@ impl SimulationState {
                 let frame = pet.sheet.frames.get(abs_frame);
 
                 let (frame_w, frame_h) = if let Some(f) = frame {
-                    (f.w as f32 * pet.scale, f.h as f32 * pet.scale)
+                    (f.w as f32 * pet.scale * x_scale, f.h as f32 * pet.scale * y_scale)
                 } else {
-                    (32.0, 32.0)
+                    (32.0 * x_scale, 32.0 * y_scale)
                 };
 
-                let px = panel_rect.left() + pet.x as f32;
-                let py = panel_rect.top() + pet.y as f32;
+                let px = panel_rect.left() + pet.x as f32 * x_scale;
+                let py = panel_rect.top() + pet.y as f32 * y_scale;
                 let rect = egui::Rect::from_min_size(egui::pos2(px, py), egui::vec2(frame_w, frame_h));
 
                 if let Some(f) = frame {
