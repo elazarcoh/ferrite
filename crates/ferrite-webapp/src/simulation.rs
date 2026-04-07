@@ -119,6 +119,8 @@ impl SimulationState {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::TopBottomPanel::top("sim_toolbar").show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
+                    ui.label("Bundle:");
+                    ui.group(|ui| {
                     if ui.button("Import Bundle\u{2026}").clicked() {
                         wasm_bindgen_futures::spawn_local(async move {
                             if let Some(bytes) = crate::import_export::pick_and_read_bundle().await {
@@ -140,6 +142,7 @@ impl SimulationState {
                             None,
                         );
                     }
+                    }); // end group
                 });
             });
 

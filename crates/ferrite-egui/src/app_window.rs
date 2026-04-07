@@ -94,8 +94,9 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                     .collect();
                 for (key, display_name) in entries {
                     let selected = s.selected_sprite_key.as_deref() == Some(key.as_str());
-                    if ui.selectable_label(selected, &display_name).clicked() {
+                    if ui.selectable_label(selected, &display_name).clicked() && !selected {
                         s.selected_sprite_key = Some(key.clone());
+                        s.sprite_editor = None; // caller must recreate for the new key
                     }
                 }
             });

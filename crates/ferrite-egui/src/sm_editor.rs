@@ -233,6 +233,12 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
             ui.heading("State Machines");
             ui.add_space(4.0);
 
+            // Show unsaved SM at top of list when one is being edited
+            if vp.is_dirty && vp.selected_sm.is_none() {
+                ui.selectable_label(true, "*(unsaved)")
+                    .on_hover_text("Save to give this SM a name");
+            }
+
             // Valid SMs
             for (name, src) in &valid_entries {
                 let selected = vp.selected_sm.as_deref() == Some(name.as_str());
@@ -331,13 +337,21 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 // Lazily compile the selected SM for the graph view.
-                if vp.cached_compiled_sm.is_none()
-                    && let Some(name) = &vp.selected_sm
-                    && let Some(source) = vp.storage.load(name)
-                    && let Ok(file) = toml::from_str::<ferrite_core::sprite::sm_format::SmFile>(&source)
-                    && let Ok(sm) = ferrite_core::sprite::sm_compiler::compile(&file)
-                {
-                    vp.cached_compiled_sm = Some(sm);
+                // Falls back to editor_text for unsaved SMs (selected_sm = None).
+                if vp.cached_compiled_sm.is_none() {
+                    let source = if let Some(name) = &vp.selected_sm {
+                        vp.storage.load(name)
+                    } else if vp.is_dirty && !vp.editor_text.is_empty() {
+                        Some(vp.editor_text.clone())
+                    } else {
+                        None
+                    };
+                    if let Some(src) = source
+                        && let Ok(file) = toml::from_str::<ferrite_core::sprite::sm_format::SmFile>(&src)
+                        && let Ok(sm) = ferrite_core::sprite::sm_compiler::compile(&file)
+                    {
+                        vp.cached_compiled_sm = Some(sm);
+                    }
                 }
 
                 if let Some(sm) = vp.cached_compiled_sm.clone() {
@@ -498,6 +512,10 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
         let response = scroll_output.inner;
         if response.response.changed() {
             vp.is_dirty = true;
+            // Invalidate graph cache so unsaved SMs re-compile on each edit
+            if vp.selected_sm.is_none() {
+                vp.cached_compiled_sm = None;
+            }
         }
 
         // Ctrl+. — toggle line comment (TOML uses `#`)

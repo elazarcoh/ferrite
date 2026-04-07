@@ -266,11 +266,11 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigPanelState, sm_gal
                     ui.label("State Machine:");
                     crate::ui_theme::help_icon(ui, "Choose which state machine drives this pet's behaviour. 'embedded://default' is the built-in eSheep behaviour.");
                     egui::ComboBox::from_id_salt(("sm_selector", idx))
-                        .selected_text(&current)
+                        .selected_text(friendly_sm_name(&current))
                         .show_ui(ui, |ui| {
                             for name in &s.sm_names {
                                 let selected = current == *name;
-                                if ui.selectable_label(selected, name).clicked() {
+                                if ui.selectable_label(selected, friendly_sm_name(name)).clicked() {
                                     new_sm = name.clone();
                                 }
                             }
@@ -295,5 +295,14 @@ fn remove_selected(config: &mut Config, selected: &mut Option<usize>) {
         } else {
             Some(idx)
         };
+    }
+}
+
+/// Map raw SM paths to display names in the State Machine combobox.
+/// `embedded://default` → `"Default (built-in)"`, others returned as-is.
+fn friendly_sm_name(name: &str) -> &str {
+    match name {
+        "embedded://default" => "Default (built-in)",
+        other => other,
     }
 }
