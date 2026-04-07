@@ -232,25 +232,27 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigPanelState, sm_gal
             });
             crate::ui_theme::hint(ui, "How fast the pet walks across the screen (pixels/second).");
 
-            // X position
-            ui.horizontal(|ui| {
-                ui.label("X:");
-                let mut x = s.config.pets[idx].x;
-                if ui.add(egui::DragValue::new(&mut x)).changed() {
-                    s.config.pets[idx].x = x;
-                    s.config_dirty = true;
-                }
-            });
+            // X/Y position — desktop only (values are screen pixel coords, meaningless in browser)
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                ui.horizontal(|ui| {
+                    ui.label("X:");
+                    let mut x = s.config.pets[idx].x;
+                    if ui.add(egui::DragValue::new(&mut x)).changed() {
+                        s.config.pets[idx].x = x;
+                        s.config_dirty = true;
+                    }
+                });
 
-            // Y position
-            ui.horizontal(|ui| {
-                ui.label("Y:");
-                let mut y = s.config.pets[idx].y;
-                if ui.add(egui::DragValue::new(&mut y)).changed() {
-                    s.config.pets[idx].y = y;
-                    s.config_dirty = true;
-                }
-            });
+                ui.horizontal(|ui| {
+                    ui.label("Y:");
+                    let mut y = s.config.pets[idx].y;
+                    if ui.add(egui::DragValue::new(&mut y)).changed() {
+                        s.config.pets[idx].y = y;
+                        s.config_dirty = true;
+                    }
+                });
+            }
 
             ui.separator();
 

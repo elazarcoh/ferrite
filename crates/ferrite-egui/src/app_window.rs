@@ -33,20 +33,19 @@ pub struct AppWindowState {
 
 pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
     egui::TopBottomPanel::top("app_tab_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
             ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
             ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
             ui.selectable_value(&mut s.selected_tab, AppTab::Simulation, "▶ Simulation");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                #[cfg(not(target_arch = "wasm32"))]
-                if ui.button("✕").clicked() {
-                    s.should_close = true;
-                }
-                if crate::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
-                    s.dark_mode_out = Some(s.dark_mode);
-                }
-            });
+            // Theme toggle aligned to end of wrapped row
+            if crate::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
+                s.dark_mode_out = Some(s.dark_mode);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if ui.button("✕").clicked() {
+                s.should_close = true;
+            }
         });
     });
 }
