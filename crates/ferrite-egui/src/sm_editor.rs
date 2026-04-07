@@ -48,6 +48,8 @@ pub struct SmEditorViewport {
     pub dark_mode: bool,
     pub storage: Box<dyn crate::sm_storage::SmStorage>,
     pub save_errors: Vec<ferrite_core::sprite::sm_compiler::CompileError>,
+    /// Live parse/compile errors updated on each text edit (before save).
+    pub validation_errors: Vec<ferrite_core::sprite::sm_compiler::CompileError>,
     pub has_saved_once: bool,
     pub pending_delete: Option<String>,
     /// Cached compiled SM for the state graph view (derived from selected_sm source).
@@ -100,6 +102,7 @@ impl SmEditorViewport {
             dark_mode,
             storage,
             save_errors: Vec::new(),
+            validation_errors: Vec::new(),
             has_saved_once: false,
             pending_delete: None,
             cached_compiled_sm: None,
@@ -403,16 +406,22 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
     egui::TopBottomPanel::bottom("sm_errors")
         .min_height(24.0)
         .show(ctx, |ui| {
-            if !vp.has_saved_once {
-                ui.label("Ready.");
-            } else if vp.save_errors.is_empty() {
-                ui.colored_label(egui::Color32::DARK_GREEN, "✅ Saved.");
-            } else {
+            if !vp.save_errors.is_empty() {
                 egui::ScrollArea::vertical().max_height(80.0).show(ui, |ui| {
                     for e in &vp.save_errors {
                         ui.colored_label(egui::Color32::RED, e.to_string());
                     }
                 });
+            } else if vp.is_dirty && !vp.validation_errors.is_empty() {
+                egui::ScrollArea::vertical().max_height(80.0).show(ui, |ui| {
+                    for e in &vp.validation_errors {
+                        ui.colored_label(egui::Color32::YELLOW, format!("⚠ {e}"));
+                    }
+                });
+            } else if !vp.has_saved_once {
+                ui.label("Ready.");
+            } else {
+                ui.colored_label(egui::Color32::DARK_GREEN, "✅ Saved.");
             }
         });
 
@@ -515,6 +524,20 @@ pub fn render_sm_panel(ctx: &egui::Context, vp: &mut SmEditorViewport) {
             // Invalidate graph cache so unsaved SMs re-compile on each edit
             if vp.selected_sm.is_none() {
                 vp.cached_compiled_sm = None;
+            }
+            // Live parse feedback: update validation_errors on each edit
+            if vp.is_dirty && !vp.editor_text.is_empty() {
+                vp.validation_errors = match toml::from_str::<ferrite_core::sprite::sm_format::SmFile>(&vp.editor_text) {
+                    Err(e) => vec![ferrite_core::sprite::sm_compiler::CompileError::ConditionParseError(
+                        "(parse)".to_string(), e.to_string(),
+                    )],
+                    Ok(file) => match ferrite_core::sprite::sm_compiler::compile(&file) {
+                        Err(errs) => errs,
+                        Ok(_) => vec![],
+                    },
+                };
+            } else {
+                vp.validation_errors = vec![];
             }
         }
 
