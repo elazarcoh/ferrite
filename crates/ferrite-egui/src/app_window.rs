@@ -39,6 +39,7 @@ pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
             ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
             ui.selectable_value(&mut s.selected_tab, AppTab::Simulation, "▶ Simulation");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
                 if ui.button("✕").clicked() {
                     s.should_close = true;
                 }
