@@ -5,16 +5,20 @@ async function waitForApp(page: any) {
     () => typeof (window as any).__ferrite !== "undefined",
     { timeout: 15000 }
   );
-  await page.waitForTimeout(500);
 }
 
-test("simulation tab visual regression", async ({ page }) => {
+test("canvas is visible and rendering", async ({ page }) => {
   await page.goto("/");
   await waitForApp(page);
-
-  await page.getByRole("button", { name: /Simulation/i }).click();
   await page.waitForTimeout(300);
 
   const canvas = page.locator("canvas#the_canvas_id");
   await expect(canvas).toBeVisible();
+
+  // Verify eframe is actually rendering (canvas has non-zero dimensions)
+  const dims = await canvas.evaluate((el: HTMLCanvasElement) => ({
+    w: el.width, h: el.height,
+  }));
+  expect(dims.w).toBeGreaterThan(0);
+  expect(dims.h).toBeGreaterThan(0);
 });

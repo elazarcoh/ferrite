@@ -5,17 +5,19 @@ async function waitForApp(page: any) {
     () => typeof (window as any).__ferrite !== "undefined",
     { timeout: 15000 }
   );
-  await page.waitForTimeout(500);
 }
 
-test("app loads and shows tabs", async ({ page }) => {
+test("app loads and canvas renders", async ({ page }) => {
   await page.goto("/");
   await waitForApp(page);
 
-  await expect(page.getByRole("button", { name: /Config/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Sprites/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /State Machine/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Simulation/i })).toBeVisible();
+  // eframe renders to a canvas — verify it's present and has dimensions
+  const canvas = page.locator("canvas#the_canvas_id");
+  await expect(canvas).toBeVisible();
+  const width = await canvas.evaluate((el: HTMLCanvasElement) => el.width);
+  const height = await canvas.evaluate((el: HTMLCanvasElement) => el.height);
+  expect(width).toBeGreaterThan(0);
+  expect(height).toBeGreaterThan(0);
 });
 
 test("window.__ferrite is available", async ({ page }) => {

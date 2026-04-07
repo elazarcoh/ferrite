@@ -5,7 +5,6 @@ async function waitForApp(page: any) {
     () => typeof (window as any).__ferrite !== "undefined",
     { timeout: 15000 }
   );
-  await page.waitForTimeout(500);
 }
 
 test("JS bridge returns initial app state", async ({ page }) => {
@@ -20,17 +19,16 @@ test("JS bridge returns initial app state", async ({ page }) => {
   expect(Array.isArray(state.pets)).toBe(true);
 });
 
-test("SM editor renders without errors", async ({ page }) => {
-  await page.goto("/");
-  await waitForApp(page);
-
+test("app renders without console errors", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());
   });
+  page.on("pageerror", (err) => errors.push(err.message));
 
-  await page.getByRole("button", { name: /State Machine/i }).click();
-  await page.waitForTimeout(200);
+  await page.goto("/");
+  await waitForApp(page);
+  await page.waitForTimeout(500);
 
   expect(errors.filter(e => !e.includes("favicon"))).toHaveLength(0);
 });
