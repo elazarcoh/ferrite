@@ -69,17 +69,30 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigPanelState, sm_gal
             ui.heading("Pets");
             ui.separator();
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for i in 0..s.config.pets.len() {
-                    let label = s.config.pets[i].id.clone();
-                    if ui
-                        .selectable_value(&mut s.selected_pet_idx, Some(i), &label)
-                        .clicked()
-                    {
-                        // selection changed — sheet will reload below
+            // Reserve space for buttons so the ScrollArea never clips them.
+            // Compute approximate height needed for the action buttons below.
+            let button_area_h = {
+                let spacing = ui.spacing().item_spacing.y;
+                let btn_h = ui.spacing().interact_size.y;
+                // separator + Add Pet + Remove + Edit... (+ New from PNG on desktop)
+                let n_buttons: f32 = if cfg!(target_arch = "wasm32") { 3.0 } else { 4.0 };
+                btn_h * n_buttons + spacing * (n_buttons + 2.0) + 4.0 // +4 for separator
+            };
+            let scroll_h = (ui.available_height() - button_area_h).max(40.0);
+
+            egui::ScrollArea::vertical()
+                .max_height(scroll_h)
+                .show(ui, |ui| {
+                    for i in 0..s.config.pets.len() {
+                        let label = s.config.pets[i].id.clone();
+                        if ui
+                            .selectable_value(&mut s.selected_pet_idx, Some(i), &label)
+                            .clicked()
+                        {
+                            // selection changed — sheet will reload below
+                        }
                     }
-                }
-            });
+                });
 
             ui.separator();
 
@@ -95,12 +108,10 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigPanelState, sm_gal
 
             let has_selection = s.selected_pet_idx.is_some();
 
-            ui.add_enabled_ui(has_selection, |ui| {
-                if ui.button("Remove").clicked() {
-                    remove_selected(&mut s.config, &mut s.selected_pet_idx);
-                    s.config_dirty = true;
-                }
-            });
+            if ui.add_enabled(has_selection, egui::Button::new("Remove")).clicked() {
+                remove_selected(&mut s.config, &mut s.selected_pet_idx);
+                s.config_dirty = true;
+            }
 
             let has_sheet = has_selection
                 && s.selected_pet_idx
@@ -108,13 +119,11 @@ pub fn render_config_panel(ctx: &egui::Context, s: &mut ConfigPanelState, sm_gal
                     .map(|p| !p.sheet_path.is_empty())
                     .unwrap_or(false);
 
-            ui.add_enabled_ui(has_sheet, |ui| {
-                if ui.button("Edit\u{2026}").clicked()
-                    && let Some(idx) = s.selected_pet_idx {
-                        let path = s.config.pets[idx].sheet_path.clone();
-                        s.open_editor_request = Some(OpenEditorRequest::Edit(path));
-                    }
-            });
+            if ui.add_enabled(has_sheet, egui::Button::new("Edit\u{2026}")).clicked()
+                && let Some(idx) = s.selected_pet_idx {
+                    let path = s.config.pets[idx].sheet_path.clone();
+                    s.open_editor_request = Some(OpenEditorRequest::Edit(path));
+                }
 
             #[cfg(not(target_arch = "wasm32"))]
             {

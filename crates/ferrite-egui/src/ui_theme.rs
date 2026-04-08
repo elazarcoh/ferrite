@@ -88,10 +88,10 @@ pub fn hint(ui: &mut egui::Ui, text: &str) {
     ));
 }
 
-/// Render a ☀/☾ toggle button. Returns `true` if the user clicked it.
+/// Render a 🌙/🔆 toggle button. Returns `true` if the user clicked it.
 /// Also calls `apply_theme(ctx, *dark)` immediately on click.
 pub fn dark_light_toggle(ui: &mut egui::Ui, dark: &mut bool, ctx: &egui::Context) -> bool {
-    let icon = if *dark { "☀" } else { "☾" };
+    let icon = if *dark { "🌙" } else { "🔆" };
     if ui.button(icon).on_hover_text(if *dark { "Switch to light mode" } else { "Switch to dark mode" }).clicked() {
         *dark = !*dark;
         apply_theme(ctx, *dark);

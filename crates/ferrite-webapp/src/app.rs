@@ -80,6 +80,17 @@ impl eframe::App for WebApp {
             self.sheet_loader.register(path, contents.sprite_json.into_bytes(), contents.sprite_png);
         }
 
+        // Handle "Edit…" from Config tab → switch to Sprites tab and select the sheet
+        if let Some(req) = self.state.config_state.open_editor_request.take() {
+            use ferrite_egui::config_panel::OpenEditorRequest;
+            if let OpenEditorRequest::Edit(sheet_path) = req {
+                self.state.selected_tab = AppTab::Sprites;
+                self.state.selected_sprite_key = Some(sheet_path);
+                self.state.sprite_editor = None; // will be (re)created below
+            }
+            // OpenEditorRequest::New is cfg(not(wasm)) so can't appear here
+        }
+
         // Wire sprite editor: create when a sprite is selected but editor is not loaded yet
         if self.state.sprite_editor.is_none() {
             if let Some(key) = self.state.selected_sprite_key.clone() {

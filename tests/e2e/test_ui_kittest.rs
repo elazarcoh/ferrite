@@ -153,8 +153,8 @@ fn dark_light_toggle_flips_mode() {
         render_app_tab_bar(ctx, &mut state_c.borrow_mut());
     });
     harness.run();
-    // When dark_mode=true, the icon shown is "☀" (click to switch to light)
-    harness.get_by_label("☀").click();
+    // When dark_mode=true, the icon shown is "🌙" (click to switch to light)
+    harness.get_by_label("🌙").click();
     harness.run();
     assert!(
         !state.borrow().dark_mode,
