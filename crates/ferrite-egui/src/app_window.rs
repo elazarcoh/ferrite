@@ -37,6 +37,7 @@ pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
             ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
             ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
             ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
+            #[cfg(target_arch = "wasm32")]
             ui.selectable_value(&mut s.selected_tab, AppTab::Simulation, "▶ Simulation");
             // Theme toggle aligned to end of wrapped row
             if crate::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
@@ -65,12 +66,18 @@ pub fn render_full_window(ctx: &egui::Context, s: &mut AppWindowState) {
         AppTab::Sprites => render_sprites_tab(ctx, s),
         AppTab::Sm => crate::sm_editor::render_sm_panel(ctx, &mut s.sm),
         AppTab::Simulation => {
-            if !s.simulation_override {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.label("Simulation not available in this context.");
-                });
+            #[cfg(target_arch = "wasm32")]
+            {
+                if !s.simulation_override {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.label("Simulation not available in this context.");
+                    });
+                }
             }
-            // If simulation_override=true, caller renders simulation after this call
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                // Simulation tab not shown on desktop; this arm is unreachable
+            }
         }
     }
 }
