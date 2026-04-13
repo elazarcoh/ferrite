@@ -19,6 +19,9 @@ pub struct AppWindowState {
     pub pending_png_pick: Option<crossbeam_channel::Receiver<Option<std::path::PathBuf>>>,
     pub saved_json_path: Option<std::path::PathBuf>,
     pub pending_sprite_delete: Option<String>,
+    /// Set by the wasm gallery panel when the user clicks "Import PNG…".
+    /// Consumed by the platform layer (WebApp) to spawn a file picker.
+    pub wants_png_import: bool,
 
     // ── SM tab ──
     pub sm: crate::sm_editor::SmEditorViewport,
@@ -106,6 +109,13 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                     }
                 }
             });
+            #[cfg(target_arch = "wasm32")]
+            {
+                ui.separator();
+                if ui.button("Import PNG…").clicked() {
+                    s.wants_png_import = true;
+                }
+            }
         });
 
     // Central area: sprite editor panels or placeholder

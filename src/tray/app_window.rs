@@ -52,6 +52,7 @@ pub fn new_app_window_state(
         pending_png_pick: None,
         saved_json_path: None,
         pending_sprite_delete: None,
+        wants_png_import: false,
         sm,
         sm_gallery_dirty: false,
         simulation_override: false,
