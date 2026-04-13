@@ -19,6 +19,9 @@ pub struct AppWindowState {
     pub pending_png_pick: Option<crossbeam_channel::Receiver<Option<std::path::PathBuf>>>,
     pub saved_json_path: Option<std::path::PathBuf>,
     pub pending_sprite_delete: Option<String>,
+    /// Set by the wasm gallery panel when the user clicks "Import PNG…".
+    /// Consumed by the platform layer (WebApp) to spawn a file picker.
+    pub wants_png_import: bool,
 
     // ── SM tab ──
     pub sm: crate::sm_editor::SmEditorViewport,
@@ -37,6 +40,7 @@ pub fn render_app_tab_bar(ctx: &egui::Context, s: &mut AppWindowState) {
             ui.selectable_value(&mut s.selected_tab, AppTab::Config, "⚙ Config");
             ui.selectable_value(&mut s.selected_tab, AppTab::Sprites, "🖼 Sprites");
             ui.selectable_value(&mut s.selected_tab, AppTab::Sm, "🤖 State Machine");
+            #[cfg(target_arch = "wasm32")]
             ui.selectable_value(&mut s.selected_tab, AppTab::Simulation, "▶ Simulation");
             // Theme toggle aligned to end of wrapped row
             if crate::ui_theme::dark_light_toggle(ui, &mut s.dark_mode, ctx) {
@@ -65,12 +69,12 @@ pub fn render_full_window(ctx: &egui::Context, s: &mut AppWindowState) {
         AppTab::Sprites => render_sprites_tab(ctx, s),
         AppTab::Sm => crate::sm_editor::render_sm_panel(ctx, &mut s.sm),
         AppTab::Simulation => {
+            #[cfg(target_arch = "wasm32")]
             if !s.simulation_override {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.label("Simulation not available in this context.");
                 });
             }
-            // If simulation_override=true, caller renders simulation after this call
         }
     }
 }
@@ -99,6 +103,13 @@ fn render_sprites_tab(ctx: &egui::Context, s: &mut AppWindowState) {
                     }
                 }
             });
+            #[cfg(target_arch = "wasm32")]
+            {
+                ui.separator();
+                if ui.button("Import PNG…").clicked() {
+                    s.wants_png_import = true;
+                }
+            }
         });
 
     // Central area: sprite editor panels or placeholder

@@ -52,6 +52,7 @@ pub fn new_app_window_state(
         pending_png_pick: None,
         saved_json_path: None,
         pending_sprite_delete: None,
+        wants_png_import: false,
         sm,
         sm_gallery_dirty: false,
         simulation_override: false,
@@ -136,13 +137,6 @@ pub fn open_app_window(
             }
         }
 
-        // Sprite gallery: handle "Import PNG…" button by spawning file dialog
-        if s.selected_tab == AppTab::Sprites && s.pending_png_pick.is_none() {
-            // The gallery panel in ferrite-egui doesn't show an "Import PNG" button;
-            // desktop-only import is handled by a separate button added below when the sprites
-            // tab is active. For now the import is driven by pending_png_pick set elsewhere.
-        }
-
         // Sprite deletion confirmation modal
         if s.selected_tab == AppTab::Sprites {
             let mut confirmed = false;
@@ -178,6 +172,25 @@ pub fn open_app_window(
                 }
             }
             if cancelled { s.pending_sprite_delete = None; }
+        }
+
+        // Wire sprite editor: recreate when a gallery key is selected but no editor is loaded.
+        // render_sprites_tab clears sprite_editor on selection change; we rebuild it here.
+        if s.sprite_editor.is_none()
+            && let Some(ref key) = s.selected_sprite_key.clone()
+        {
+            let config_dir = crate::config::config_path()
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            match load_editor_state_from_sheet(key) {
+                Ok(es) => {
+                    let mut ed = make_desktop_sprite_editor(es, &config_dir);
+                    ed.is_builtin = key.starts_with("embedded://");
+                    s.sprite_editor = Some(ed);
+                }
+                Err(e) => log::warn!("Failed to load sprite editor for {key}: {e}"),
+            }
         }
 
         // Handle "Edit…" / "New from PNG…" requests from Config tab → switch to Sprites tab

@@ -10,6 +10,7 @@ pub struct WebApp {
     simulation: crate::simulation::SimulationState,
     sheet_loader: Arc<crate::web_storage::WebSheetLoader>,
     last_tick_ms: f64,
+    pending_png_bytes: Option<crossbeam_channel::Receiver<(String, Vec<u8>)>>,
 }
 
 impl WebApp {
@@ -42,12 +43,13 @@ impl WebApp {
             pending_png_pick: None,
             saved_json_path: None,
             pending_sprite_delete: None,
+            wants_png_import: false,
             sm,
             sm_gallery_dirty: false,
             simulation_override: true,
         };
         let simulation = crate::simulation::SimulationState::new(config);
-        Self { state, simulation, sheet_loader, last_tick_ms: 0.0 }
+        Self { state, simulation, sheet_loader, last_tick_ms: 0.0, pending_png_bytes: None }
     }
 }
 
@@ -78,6 +80,54 @@ impl eframe::App for WebApp {
         if let Some(contents) = crate::bridge::take_pending_import() {
             let path = format!("bundle://{}", contents.bundle_name);
             self.sheet_loader.register(path, contents.sprite_json.into_bytes(), contents.sprite_png);
+        }
+
+        // Consume wants_png_import: spawn async file picker (wasm only)
+        if self.state.wants_png_import && self.pending_png_bytes.is_none() {
+            self.state.wants_png_import = false;
+            let (tx, rx) = crossbeam_channel::bounded(1);
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Some(fh) = rfd::AsyncFileDialog::new()
+                    .add_filter("PNG", &["png"])
+                    .pick_file()
+                    .await
+                {
+                    let name = fh.file_name();
+                    let bytes = fh.read().await;
+                    tx.send((name, bytes)).ok();
+                }
+            });
+            self.pending_png_bytes = Some(rx);
+        }
+
+        // Poll PNG import result
+        if let Some(ref rx) = self.pending_png_bytes {
+            match rx.try_recv() {
+                Ok((filename, png_bytes)) => {
+                    self.pending_png_bytes = None;
+                    let key = format!("user://{filename}");
+                    match make_single_frame_json_stub(&png_bytes) {
+                        Ok(json_bytes) => {
+                            self.sheet_loader.register(key.clone(), json_bytes, png_bytes);
+                            // Avoid duplicate gallery entries for the same key
+                            if !self.state.gallery.iter().any(|e| e.key == key) {
+                                self.state.gallery.push(ferrite_egui::gallery::GalleryEntry {
+                                    key: key.clone(),
+                                    display_name: filename,
+                                });
+                            }
+                            self.state.selected_tab = AppTab::Sprites;
+                            self.state.selected_sprite_key = Some(key);
+                            self.state.sprite_editor = None; // auto-recreated next frame
+                        }
+                        Err(e) => log::warn!("Failed to generate stub JSON for imported PNG: {e}"),
+                    }
+                }
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    self.pending_png_bytes = None;
+                }
+                Err(crossbeam_channel::TryRecvError::Empty) => {}
+            }
         }
 
         // Handle "Edit…" from Config tab → switch to Sprites tab and select the sheet
@@ -120,6 +170,18 @@ impl eframe::App for WebApp {
 
         ctx.request_repaint_after(std::time::Duration::from_millis(16));
     }
+}
+
+/// Generate minimal single-frame Aseprite-compatible JSON from raw PNG bytes.
+/// The frame covers the entire image. Used when importing a bare PNG with no sheet metadata.
+fn make_single_frame_json_stub(png_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    use image::GenericImageView as _;
+    let img = image::load_from_memory_with_format(png_bytes, image::ImageFormat::Png)?;
+    let (w, h) = img.dimensions();
+    let json = format!(
+        r#"{{"frames":[{{"frame":{{"x":0,"y":0,"w":{w},"h":{h}}},"duration":100}}],"meta":{{"frameTags":[]}}}}"#
+    );
+    Ok(json.into_bytes())
 }
 
 fn sprite_editor_state_from_sheet(key: &str, sheet: SpriteSheet) -> SpriteEditorState {
