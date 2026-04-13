@@ -70,16 +70,10 @@ pub fn render_full_window(ctx: &egui::Context, s: &mut AppWindowState) {
         AppTab::Sm => crate::sm_editor::render_sm_panel(ctx, &mut s.sm),
         AppTab::Simulation => {
             #[cfg(target_arch = "wasm32")]
-            {
-                if !s.simulation_override {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.label("Simulation not available in this context.");
-                    });
-                }
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                // Simulation tab not shown on desktop; this arm is unreachable
+            if !s.simulation_override {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.label("Simulation not available in this context.");
+                });
             }
         }
     }

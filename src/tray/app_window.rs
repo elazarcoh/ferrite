@@ -137,13 +137,6 @@ pub fn open_app_window(
             }
         }
 
-        // Sprite gallery: handle "Import PNG…" button by spawning file dialog
-        if s.selected_tab == AppTab::Sprites && s.pending_png_pick.is_none() {
-            // The gallery panel in ferrite-egui doesn't show an "Import PNG" button;
-            // desktop-only import is handled by a separate button added below when the sprites
-            // tab is active. For now the import is driven by pending_png_pick set elsewhere.
-        }
-
         // Sprite deletion confirmation modal
         if s.selected_tab == AppTab::Sprites {
             let mut confirmed = false;
