@@ -243,7 +243,7 @@ impl SimulationState {
             x: pet.x as f32,
             y: pet.y as f32,
             sm_state: pet.sm.current_state_name().to_string(),
-            animation_tag: pet.anim.current_tag.clone(),
+            animation_tag: pet.anim.current_tag().to_owned(),
         }).collect()
     }
 }

@@ -8,7 +8,7 @@ pub enum PlayDirection {
 
 #[derive(Debug, Clone)]
 pub struct AnimationState {
-    pub current_tag: String,
+    current_tag: String,
     /// Frame index within the tag's range [0, tag.to - tag.from].
     pub frame_index: usize,
     pub elapsed_ms: u32,
@@ -23,6 +23,11 @@ impl AnimationState {
             elapsed_ms: 0,
             ping_pong_dir: PlayDirection::Forward,
         }
+    }
+
+    /// Returns the name of the currently-active animation tag.
+    pub fn current_tag(&self) -> &str {
+        &self.current_tag
     }
 
     /// Switch to a new tag and reset playback state.

@@ -729,7 +729,7 @@ pub fn render_sprite_editor_panel(ctx: &egui::Context, s: &mut SpriteEditorViewp
                 let abs = s.anim.absolute_frame(&sheet);
                 let frame = sheet.frames.get(abs).cloned();
                 // For the preview we always play forward, so treat flip_h as always-flip.
-                let flip_h = sheet.tag(&s.anim.current_tag).is_some_and(|t| t.flip_h);
+                let flip_h = sheet.tag(s.anim.current_tag()).is_some_and(|t| t.flip_h);
                 s.preview_sheet = Some(sheet);
                 frame.map(|f| (f, flip_h))
             } else {

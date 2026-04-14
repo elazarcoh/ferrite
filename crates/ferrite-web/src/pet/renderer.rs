@@ -53,7 +53,7 @@ pub fn tick_and_draw(
     let abs = s.anim.absolute_frame(&s.sheet);
     let Some(frame) = s.sheet.frames.get(abs) else { return };
 
-    let flip_h = s.sheet.tag(&s.anim.current_tag).map(|t| t.flip_h).unwrap_or(false);
+    let flip_h = s.sheet.tag(s.anim.current_tag()).map(|t| t.flip_h).unwrap_or(false);
     let should_flip = match s.runner.current_facing() {
         Facing::Left  => !flip_h,
         Facing::Right => flip_h,
