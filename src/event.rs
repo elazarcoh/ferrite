@@ -18,6 +18,11 @@ pub enum AppEvent {
     /// Pet was clicked (left click on opaque pixel).
     PetClicked { pet_id: String },
     /// User started dragging a pet.
+    ///
+    /// `cursor_x` / `cursor_y` are **screen-space** coordinates (pixels from
+    /// top-left of the primary monitor, as returned by `GetCursorPos`).
+    /// The pet-relative grab offset is computed in `App::handle_event` as
+    /// `(cursor_x - pet.x, cursor_y - pet.y)`.
     PetDragStart { pet_id: String, cursor_x: i32, cursor_y: i32 },
     /// User released the pet after dragging.
     PetDragEnd { pet_id: String, velocity: (f32, f32) },
