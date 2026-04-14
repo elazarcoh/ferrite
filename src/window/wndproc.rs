@@ -35,12 +35,10 @@ pub fn send_event(ev: AppEvent) {
 
 // ─── Per-HWND registry ───────────────────────────────────────────────────────
 
-struct HwndData {
-    pet_id: String,
-    /// Alpha-only buffer (one byte per pixel, row-major).
-    alpha_buf: Vec<u8>,
-    buf_width: u32,
-    // ── Drag state ────────────────────────────────────────────────────────────
+/// All mutable state that exists only while a drag gesture may be in progress.
+/// Reset to `DragState::default()` on `WM_LBUTTONDOWN`.
+#[derive(Default)]
+struct DragState {
     /// Left button is held down.
     mouse_down: bool,
     /// Screen position of the initial mousedown.
@@ -56,6 +54,14 @@ struct HwndData {
     vel_cur: Option<((i32, i32), Instant)>,
 }
 
+struct HwndData {
+    pet_id: String,
+    /// Alpha-only buffer (one byte per pixel, row-major).
+    alpha_buf: Vec<u8>,
+    buf_width: u32,
+    drag: DragState,
+}
+
 static HWND_REGISTRY: Lazy<Mutex<HashMap<isize, HwndData>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -68,13 +74,7 @@ pub fn register_hwnd(hwnd: HWND, pet_id: String) {
             pet_id,
             alpha_buf: Vec::new(),
             buf_width: 0,
-            mouse_down: false,
-            cursor_down_screen: (0, 0),
-            win_down_pos: (0, 0),
-            drag_active: false,
-            drag_start_sent: false,
-            vel_prev: None,
-            vel_cur: None,
+            drag: DragState::default(),
         },
     );
 }
@@ -100,7 +100,7 @@ pub fn unregister_hwnd(hwnd: HWND) {
 /// Used by app.rs to suppress the ground clamp before PetDragStart is processed.
 pub fn is_mouse_down(hwnd: HWND) -> bool {
     let reg = HWND_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-    reg.get(&(hwnd as isize)).map(|d| d.mouse_down).unwrap_or(false)
+    reg.get(&(hwnd as isize)).map(|d| d.drag.mouse_down).unwrap_or(false)
 }
 
 /// Returns true if `hwnd` is one of our own pet windows.
@@ -180,14 +180,13 @@ pub unsafe extern "system" fn wnd_proc(
             {
                 let mut reg = HWND_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(data) = reg.get_mut(&(hwnd as isize)) {
-                    data.mouse_down = true;
-                    data.cursor_down_screen = (cursor_screen.x, cursor_screen.y);
-                    data.win_down_pos = (rc.left, rc.top);
-                    data.drag_active = false;
-                    data.drag_start_sent = false;
-                    data.vel_prev = None;
-                    data.vel_cur =
-                        Some(((cursor_screen.x, cursor_screen.y), Instant::now()));
+                    data.drag = DragState {
+                        mouse_down: true,
+                        cursor_down_screen: (cursor_screen.x, cursor_screen.y),
+                        win_down_pos: (rc.left, rc.top),
+                        vel_cur: Some(((cursor_screen.x, cursor_screen.y), Instant::now())),
+                        ..DragState::default()
+                    };
                 }
             }
 
@@ -209,7 +208,7 @@ pub unsafe extern "system" fn wnd_proc(
             let drag_info = {
                 let reg = HWND_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
                 reg.get(&(hwnd as isize)).map(|d| {
-                    (d.mouse_down, d.cursor_down_screen, d.win_down_pos, d.drag_active, d.drag_start_sent, d.pet_id.clone())
+                    (d.drag.mouse_down, d.drag.cursor_down_screen, d.drag.win_down_pos, d.drag.drag_active, d.drag.drag_start_sent, d.pet_id.clone())
                 })
             };
 
@@ -239,9 +238,9 @@ pub unsafe extern "system" fn wnd_proc(
             {
                 let mut reg = HWND_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(data) = reg.get_mut(&(hwnd as isize)) {
-                    data.drag_active = true;
-                    data.vel_prev = data.vel_cur.take();
-                    data.vel_cur = Some(((cursor_screen.x, cursor_screen.y), now));
+                    data.drag.drag_active = true;
+                    data.drag.vel_prev = data.drag.vel_cur.take();
+                    data.drag.vel_cur = Some(((cursor_screen.x, cursor_screen.y), now));
                 }
             }
 
@@ -265,7 +264,7 @@ pub unsafe extern "system" fn wnd_proc(
                 {
                     let mut reg = HWND_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
                     if let Some(data) = reg.get_mut(&(hwnd as isize)) {
-                        data.drag_start_sent = true;
+                        data.drag.drag_start_sent = true;
                     }
                 }
                 send_event(AppEvent::PetDragStart {
@@ -285,20 +284,16 @@ pub unsafe extern "system" fn wnd_proc(
             let outcome = {
                 let mut reg = HWND_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
                 reg.get_mut(&(hwnd as isize)).map(|data| {
-                    let was_drag = data.drag_active;
+                    let was_drag = data.drag.drag_active;
                     let pet_id = data.pet_id.clone();
                     let velocity =
-                        if let (Some((p0, t0)), Some((p1, t1))) = (&data.vel_prev, &data.vel_cur) {
+                        if let (Some((p0, t0)), Some((p1, t1))) = (&data.drag.vel_prev, &data.drag.vel_cur) {
                             let dt = t1.duration_since(*t0).as_secs_f32().max(0.001);
                             ((p1.0 - p0.0) as f32 / dt, (p1.1 - p0.1) as f32 / dt)
                         } else {
                             (0.0, 0.0)
                         };
-                    data.mouse_down = false;
-                    data.drag_active = false;
-                    data.drag_start_sent = false;
-                    data.vel_prev = None;
-                    data.vel_cur = None;
+                    data.drag = DragState::default();
                     (was_drag, pet_id, velocity)
                 })
             };
