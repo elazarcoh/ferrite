@@ -1,6 +1,7 @@
 //! Surface detection: enumerate visible window top-edges as walking platforms.
 
 use crate::window::wndproc;
+use ferrite_core::geometry::PetGeom;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, POINT, RECT},
@@ -106,15 +107,10 @@ fn is_taskbar_hwnd(hwnd: HWND) -> bool {
 /// `cache` is filled via `EnumWindows` on the first call (or after TTL expiry)
 /// including full occlusion checks. Cache hits re-apply per-call overlap and
 /// min_surface filters only; occlusion is skipped (acceptable 250 ms TTL trade-off).
-#[allow(clippy::too_many_arguments)]
 pub fn find_floor_info(
-    pet_x: i32,
-    pet_y: i32,
-    pet_w: i32,
-    pet_h: i32,
+    geom: &PetGeom,
     screen_w: i32,
     screen_h: i32,
-    baseline_offset: i32,
     cache: &mut SurfaceCache,
 ) -> SurfaceHit {
     // Refresh cache if expired.
@@ -127,10 +123,9 @@ pub fn find_floor_info(
         cache.expires_at = Instant::now() + Duration::from_millis(250);
     }
 
-    let pet_left = pet_x;
-    let pet_right = pet_x + pet_w;
-    let pet_bottom = pet_y + pet_h;
-    let min_surface = pet_bottom.max(pet_h);
+    let pet_left = geom.x;
+    let pet_right = geom.x + geom.w;
+    let min_surface = geom.min_surface_threshold();
     let virtual_ground_top = screen_h - 4;
     let mut best = virtual_ground_top;
     let mut best_rect: Option<&SurfaceRect> = None;
@@ -145,7 +140,7 @@ pub fn find_floor_info(
         best_rect = Some(rect);
     }
 
-    let floor_y = best - pet_h + baseline_offset;
+    let floor_y = geom.floor_landing_y(best);
     match best_rect {
         Some(rect) => SurfaceHit {
             floor_y,
@@ -161,42 +156,19 @@ pub fn find_floor_info(
 ///
 /// This is a thin wrapper around [`find_floor_info`] for callers that do not
 /// need surface metadata.
-#[allow(clippy::too_many_arguments)]
 pub fn find_floor(
-    pet_x: i32,
-    pet_y: i32,
-    pet_w: i32,
-    pet_h: i32,
+    geom: &PetGeom,
     screen_w: i32,
     screen_h: i32,
-    baseline_offset: i32,
     cache: &mut SurfaceCache,
 ) -> i32 {
-    find_floor_info(pet_x, pet_y, pet_w, pet_h, screen_w, screen_h, baseline_offset, cache).floor_y
+    find_floor_info(geom, screen_w, screen_h, cache).floor_y
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn baseline_offset_zero_matches_old_formula() {
-        // floor_y with offset=0 must equal best - pet_h
-        let best = 500i32;
-        let pet_h = 64i32;
-        let offset = 0i32;
-        assert_eq!(best - pet_h + offset, 436);
-    }
-
-    #[test]
-    fn baseline_offset_raises_pet_to_floor() {
-        // With offset=16, the window y shifts up by 16 so the character's
-        // visual bottom (pet_h - 16 from top) aligns with the surface.
-        let best = 500i32;
-        let pet_h = 64i32;
-        let offset = 16i32;
-        assert_eq!(best - pet_h + offset, 452);
-    }
+    use ferrite_core::geometry::PetGeom;
 
     #[test]
     fn surface_cache_default_is_expired() {
@@ -205,13 +177,26 @@ mod tests {
     }
 
     #[test]
+    fn baseline_offset_does_not_filter_landing_surface() {
+        // Regression guard: a pet at its landing position must still detect
+        // the surface it just landed on.
+        let surface_top = 1040i32;
+        let template = PetGeom { x: 500, y: 0, w: 137, h: 137, baseline_offset: 29 };
+        let at_landing = PetGeom { y: template.floor_landing_y(surface_top), ..template };
+        assert!(
+            at_landing.min_surface_threshold() <= surface_top,
+            "surface_top ({surface_top}) must pass min_surface filter at landing (threshold={})",
+            at_landing.min_surface_threshold()
+        );
+    }
+
+    #[test]
     fn surface_cache_find_floor_returns_plausible_value() {
         let mut cache = SurfaceCache::default();
-        let screen_w = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0) }; // SM_CXSCREEN
-        let screen_h = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1) }; // SM_CYSCREEN
-        // Pet at top of screen, 32x32
-        let floor = find_floor(0, 0, 32, 32, screen_w, screen_h, 0, &mut cache);
-        // Floor must be above the screen bottom and >= 0
+        let screen_w = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0) };
+        let screen_h = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1) };
+        let geom = PetGeom { x: 0, y: 0, w: 32, h: 32, baseline_offset: 0 };
+        let floor = find_floor(&geom, screen_w, screen_h, &mut cache);
         assert!(floor >= 0, "floor y must be non-negative, got {floor}");
         assert!(floor < screen_h, "floor y must be above screen bottom, got {floor}");
     }
@@ -221,11 +206,10 @@ mod tests {
         let mut cache = SurfaceCache::default();
         let screen_w = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0) };
         let screen_h = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1) };
-        // First call: cold (fills cache)
-        let floor1 = find_floor(100, 0, 32, 32, screen_w, screen_h, 0, &mut cache);
+        let geom = PetGeom { x: 100, y: 0, w: 32, h: 32, baseline_offset: 0 };
+        let floor1 = find_floor(&geom, screen_w, screen_h, &mut cache);
         assert!(!cache.is_expired(), "cache must be warm after first call");
-        // Second call: warm (must return same value as long as pet position unchanged)
-        let floor2 = find_floor(100, 0, 32, 32, screen_w, screen_h, 0, &mut cache);
+        let floor2 = find_floor(&geom, screen_w, screen_h, &mut cache);
         assert_eq!(floor1, floor2, "warm cache must return same floor as cold call");
     }
 }
