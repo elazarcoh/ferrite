@@ -39,6 +39,12 @@ fn dist2d(ax: i32, ay: i32, bx: i32, by: i32) -> f32 {
     ((dx * dx + dy * dy) as f32).sqrt()
 }
 
+/// Apply a scale factor and round to the nearest integer.
+#[inline]
+fn scale_round(value: i32, scale: f32) -> i32 {
+    (value as f32 * scale).round() as i32
+}
+
 // ─── Per-pet runtime state ────────────────────────────────────────────────────
 
 /// Complete runtime state for one pet instance.
@@ -64,8 +70,8 @@ impl PetInstance {
     pub fn new(cfg: PetConfig, sheet: SpriteSheet) -> Result<Self> {
         let frame_w = sheet.frames.first().map(|f| f.w).unwrap_or(32);
         let frame_h = sheet.frames.first().map(|f| f.h).unwrap_or(32);
-        let dw = (frame_w as f32 * cfg.scale).round() as u32;
-        let dh = (frame_h as f32 * cfg.scale).round() as u32;
+        let dw = scale_round(frame_w as i32, cfg.scale) as u32;
+        let dh = scale_round(frame_h as i32, cfg.scale) as u32;
 
         // Spawn above the top of the screen so the pet falls into view.
         let spawn_y = -(dh as i32);
@@ -119,7 +125,7 @@ impl PetInstance {
         let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
         let pet_w = self.window.width as i32;
         let pet_h = self.window.height as i32;
-        let baseline_offset_px = (self.sheet.baseline_offset as f32 * self.cfg.scale).round() as i32;
+        let baseline_offset_px = scale_round(self.sheet.baseline_offset as i32, self.cfg.scale);
 
         // Sync position from Win32 to pick up wndproc drag moves.
         unsafe {
