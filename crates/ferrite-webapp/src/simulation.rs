@@ -75,6 +75,7 @@ impl SimulationState {
 
             pet.sm.update_env(EnvironmentSnapshot {
                 pet_count,
+                // sim floor is treated as one full-width surface; no virtual-ground distinction.
                 surface_w: SIM_SCREEN_W as f32,
                 // No cursor, no app focus, no time-of-day in headless sim.
                 ..EnvironmentSnapshot::default()

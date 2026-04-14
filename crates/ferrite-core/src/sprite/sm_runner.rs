@@ -176,7 +176,9 @@ impl SMRunner {
     }
 
     /// Apply a platform-sourced environment snapshot.
-    /// Called once per pet per frame, after `tick`.
+    /// Called once per pet per frame. The values take effect on the next
+    /// condition evaluation inside `tick`; calling order relative to `tick`
+    /// does not matter.
     pub fn update_env(&mut self, env: EnvironmentSnapshot) {
         self.last_vars.cursor_dist    = env.cursor_dist;
         self.last_vars.hour           = env.hour;
