@@ -31,6 +31,14 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::*,
 };
 
+/// Euclidean distance between two integer 2-D points.
+#[inline]
+fn dist2d(ax: i32, ay: i32, bx: i32, by: i32) -> f32 {
+    let dx = ax - bx;
+    let dy = ay - by;
+    ((dx * dx + dy * dy) as f32).sqrt()
+}
+
 // ─── Per-pet runtime state ────────────────────────────────────────────────────
 
 /// Complete runtime state for one pet instance.
@@ -688,19 +696,11 @@ impl eframe::App for App {
                 let cx = pet.x + pet.window.width as i32 / 2;
                 let cy = pet.y + pet.window.height as i32 / 2;
 
-                let cursor_dist = {
-                    let dx = cursor_pt.x - cx;
-                    let dy = cursor_pt.y - cy;
-                    ((dx * dx + dy * dy) as f32).sqrt()
-                };
+                let cursor_dist = dist2d(cursor_pt.x, cursor_pt.y, cx, cy);
 
                 let other_pet_dist = centers.iter()
                     .filter(|(oid, _, _)| oid != id)
-                    .map(|(_, ox, oy)| {
-                        let dx = ox - cx;
-                        let dy = oy - cy;
-                        ((dx * dx + dy * dy) as f32).sqrt()
-                    })
+                    .map(|(_, ox, oy)| dist2d(*ox, *oy, cx, cy))
                     .fold(f32::INFINITY, f32::min);
                 let other_pet_dist = if other_pet_dist.is_infinite() { f32::MAX } else { other_pet_dist };
 
