@@ -8,6 +8,7 @@ use ferrite::{
     },
     window::blender::alpha_at,
 };
+use ferrite_core::geometry::PlatformBounds;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CYSCREEN};
 
 fn test_sheet() -> ferrite::sprite::sheet::SpriteSheet {
@@ -66,7 +67,7 @@ fn petted_state_resolves_back_to_idle() {
     );
     // Force pet to virtual ground so the snap logic in tick() cannot trigger Fall.
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-    let ground_y = screen_h - 4 - pet.window.height as i32;
+    let ground_y = PlatformBounds { screen_w: 0, screen_h }.virtual_ground_y() - pet.window.height as i32;
     pet.y = ground_y;
     pet.window.move_to(pet.x, ground_y);
     // Trigger petted interrupt
