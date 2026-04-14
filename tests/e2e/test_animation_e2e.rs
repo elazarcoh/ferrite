@@ -39,7 +39,11 @@ fn animation_frame_advances_after_one_frame_duration() {
 
 #[test]
 fn animation_cycles_forward_over_multiple_ticks() {
+    use ferrite::sprite::animation::AnimationState;
     let mut pet = make_pet();
+    // Force into Idle state and reset animation, so timing is deterministic.
+    pet.runner.active = ActiveState::Named("idle".to_string());
+    pet.anim = AnimationState::new("idle");
     // idle is pingpong with 200 ms frames: 0 → 1 → 0 in 400 ms total.
     // Accumulate 400ms via small ticks.
     let mut cache = ferrite::window::surfaces::SurfaceCache::default();
@@ -115,15 +119,14 @@ fn thrown_pet_lands_and_returns_to_idle() {
         pet.tick(20, &mut cache).unwrap();
     }
     // Now throw it with a high downward velocity; it should hit the floor quickly.
-    pet.runner.active = ActiveState::Thrown { vx: 50.0, vy: 1000.0 };
+    pet.runner.active = ActiveState::Airborne { vx: 50.0, vy: 1000.0 };
     for _ in 0..100 {
         if matches!(&pet.runner.active, ActiveState::Named(n) if n == "idle") { break; }
         pet.tick(20, &mut cache).unwrap();
     }
     assert!(
-        matches!(&pet.runner.active, ActiveState::Named(n) if n == "idle")
-        || matches!(&pet.runner.active, ActiveState::Fall { .. }),
-        "pet should be Idle or Fall after landing, got {:?}",
+        matches!(&pet.runner.active, ActiveState::Named(n) if n == "idle"),
+        "pet should be Idle after landing, got {:?}",
         pet.runner.active
     );
 }

@@ -63,8 +63,9 @@ impl Default for EnvironmentSnapshot {
 #[derive(Debug, Clone)]
 pub enum ActiveState {
     Named(String),
-    Fall { vy: f32 },
-    Thrown { vx: f32, vy: f32 },
+    /// Airborne physics (falling or thrown). `vx == 0` is a pure fall;
+    /// `vx.abs() > 10` is a throw with horizontal bounce.
+    Airborne { vx: f32, vy: f32 },
     Grabbed { cursor_offset: (i32, i32) },
 }
 
@@ -165,8 +166,9 @@ impl SMRunner {
     pub fn current_state_name(&self) -> &str {
         match &self.active {
             ActiveState::Named(name) => name.as_str(),
-            ActiveState::Fall { .. } => "fall",
-            ActiveState::Thrown { .. } => "thrown",
+            ActiveState::Airborne { vx, .. } => {
+                if vx.abs() > 10.0 { "thrown" } else { "fall" }
+            }
             ActiveState::Grabbed { .. } => "grabbed",
         }
     }
@@ -217,8 +219,7 @@ impl SMRunner {
     /// Returns `(0.0, 0.0)` for Named and Grabbed states.
     pub fn speed(&self) -> (f32, f32) {
         match &self.active {
-            ActiveState::Fall { vy } => (0.0, *vy),
-            ActiveState::Thrown { vx, vy } => (*vx, *vy),
+            ActiveState::Airborne { vx, vy } => (*vx, *vy),
             _ => (0.0, 0.0),
         }
     }
@@ -295,11 +296,8 @@ impl SMRunner {
 
     pub fn release(&mut self, velocity: (f32, f32)) {
         let (vx, vy) = velocity;
-        if vx.abs() > 10.0 || vy.abs() > 10.0 {
-            self.active = ActiveState::Thrown { vx, vy };
-        } else {
-            self.active = ActiveState::Fall { vy: 0.0 };
-        }
+        let (vx, vy) = if vx.abs() > 10.0 || vy.abs() > 10.0 { (vx, vy) } else { (0.0, 0.0) };
+        self.active = ActiveState::Airborne { vx, vy };
         self.state_time_ms = 0;
     }
 
@@ -307,7 +305,7 @@ impl SMRunner {
     /// Called by the web renderer when the pet walks off the edge of a DOM surface.
     pub fn start_fall(&mut self) {
         self.set_previous_from_current();
-        self.active = ActiveState::Fall { vy: 0.0 };
+        self.active = ActiveState::Airborne { vx: 0.0, vy: 0.0 };
         self.state_time_ms = 0;
     }
 
@@ -463,8 +461,7 @@ impl SMRunner {
                             }
                         }
                         ActionType::Fall => {
-                            // Named state with action=fall: treat same as ActiveState::Fall
-                            // Normally handled via ActiveState::Fall variant
+                            // Named state with action=fall: normally handled via ActiveState::Airborne
                         }
                         ActionType::Grabbed | ActionType::Thrown => {
                             // These are handled via ActiveState variants
@@ -476,30 +473,14 @@ impl SMRunner {
                 }
             }
 
-            ActiveState::Fall { vy } => {
-                let mut vy = vy;
-                vy += GRAVITY * dt;
-                let new_y = *y + (vy * dt) as i32;
-                if new_y >= floor_y {
-                    *y = floor_y;
-                    self.last_vars.on_surface = true;
-                    let fallback = self.sm.default_fallback.clone();
-                    self.transition_to(&fallback, "landed");
-                } else {
-                    *y = new_y;
-                    self.active = ActiveState::Fall { vy };
-                    self.last_vars.on_surface = false;
-                }
-            }
-
-            ActiveState::Thrown { vx, vy } => {
+            ActiveState::Airborne { vx, vy } => {
                 let mut vx = vx;
                 let mut vy = vy;
                 vy += GRAVITY * dt;
                 let new_x = *x + (vx * dt) as i32;
                 let new_y = *y + (vy * dt) as i32;
 
-                // Horizontal bounce
+                // Horizontal boundary bounce (no-op when vx == 0).
                 let (clamped_x, new_vx) = if new_x <= 0 {
                     (0, vx.abs())
                 } else if new_x + pet_w >= bounds.screen_w {
@@ -513,13 +494,12 @@ impl SMRunner {
                     *x = clamped_x;
                     *y = floor_y;
                     self.last_vars.on_surface = true;
-                    // Transition to fall state (land from thrown)
-                    self.active = ActiveState::Fall { vy: 0.0 };
-                    self.state_time_ms = 0;
+                    let fallback = self.sm.default_fallback.clone();
+                    self.transition_to(&fallback, "landed");
                 } else {
                     *x = clamped_x;
                     *y = new_y;
-                    self.active = ActiveState::Thrown { vx, vy };
+                    self.active = ActiveState::Airborne { vx, vy };
                     self.last_vars.on_surface = false;
                 }
             }
@@ -534,7 +514,7 @@ impl SMRunner {
         // Only Named states have data-driven transitions
         let state_name = match &self.active {
             ActiveState::Named(n) => n.clone(),
-            _ => return, // physics states transition via execute_action
+            _ => return, // Airborne and Grabbed transition via execute_action
         };
 
         let state = match self.sm.states.get(&state_name) {
@@ -857,7 +837,7 @@ mod tests {
         let mut r = make_runner();
         assert!(matches!(&r.active, ActiveState::Named(_)));
         r.start_fall();
-        assert!(matches!(&r.active, ActiveState::Fall { vy } if *vy == 0.0));
+        assert!(matches!(&r.active, ActiveState::Airborne { vx, vy } if *vx == 0.0 && *vy == 0.0));
     }
 
     #[test]
@@ -865,7 +845,8 @@ mod tests {
         let mut r = make_runner();
         r.grab((0, 0));
         r.release((200.0, -100.0));
-        assert!(matches!(&r.active, ActiveState::Thrown { .. }));
+        assert!(matches!(&r.active, ActiveState::Airborne { .. }));
+        assert_eq!(r.current_state_name(), "thrown");
     }
 
     #[test]
@@ -1202,9 +1183,9 @@ action = "sit"
     #[test]
     fn speed_returns_velocity_from_active_state() {
         let mut r = SMRunner::new(make_collide_sm(), 80.0);
-        r.active = ActiveState::Thrown { vx: 100.0, vy: -50.0 };
+        r.active = ActiveState::Airborne { vx: 100.0, vy: -50.0 };
         assert_eq!(r.speed(), (100.0, -50.0));
-        r.active = ActiveState::Fall { vy: 200.0 };
+        r.active = ActiveState::Airborne { vx: 0.0, vy: 200.0 };
         assert_eq!(r.speed(), (0.0, 200.0));
         r.active = ActiveState::Named("idle".to_string());
         assert_eq!(r.speed(), (0.0, 0.0));
@@ -1241,7 +1222,7 @@ action = "sit"
     #[test]
     fn tick_populates_velocity_from_thrown_state() {
         let mut r = SMRunner::new(make_collide_sm(), 80.0);
-        r.active = ActiveState::Thrown { vx: 120.0, vy: -80.0 };
+        r.active = ActiveState::Airborne { vx: 120.0, vy: -80.0 };
         let sheet = mock_sheet();
         let mut x = 0i32; let mut y = 0i32;
         let bounds = crate::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
@@ -1294,5 +1275,40 @@ action = "sit"
         r.facing = Facing::Left;
         r.active = ActiveState::Named("idle".to_string());
         assert!(r.compute_flip(&sheet));
+    }
+
+    #[test]
+    fn current_state_name_airborne_zero_velocity_is_fall() {
+        let mut runner = SMRunner::new(load_default_sm(), 100.0);
+        runner.active = ActiveState::Airborne { vx: 0.0, vy: 0.0 };
+        assert_eq!(runner.current_state_name(), "fall");
+    }
+
+    #[test]
+    fn current_state_name_airborne_large_vx_is_thrown() {
+        let mut runner = SMRunner::new(load_default_sm(), 100.0);
+        runner.active = ActiveState::Airborne { vx: 500.0, vy: 100.0 };
+        assert_eq!(runner.current_state_name(), "thrown");
+    }
+
+    #[test]
+    fn release_large_velocity_produces_thrown() {
+        let mut runner = SMRunner::new(load_default_sm(), 100.0);
+        runner.release((500.0, -200.0));
+        assert_eq!(runner.current_state_name(), "thrown");
+    }
+
+    #[test]
+    fn release_small_velocity_produces_fall() {
+        let mut runner = SMRunner::new(load_default_sm(), 100.0);
+        runner.release((1.0, 1.0));
+        assert_eq!(runner.current_state_name(), "fall");
+    }
+
+    #[test]
+    fn start_fall_produces_fall() {
+        let mut runner = SMRunner::new(load_default_sm(), 100.0);
+        runner.start_fall();
+        assert_eq!(runner.current_state_name(), "fall");
     }
 }

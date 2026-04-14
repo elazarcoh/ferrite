@@ -149,8 +149,7 @@ impl PetInstance {
         let geom_post_tick = PetGeom { x: self.x, y: self.y, w: pet_w, h: pet_h, baseline_offset: baseline_offset_px };
         let is_airborne = matches!(
             self.runner.active,
-            crate::sprite::sm_runner::ActiveState::Fall { .. }
-            | crate::sprite::sm_runner::ActiveState::Thrown { .. }
+            crate::sprite::sm_runner::ActiveState::Airborne { .. }
             | crate::sprite::sm_runner::ActiveState::Grabbed { .. }
         );
         if !being_dragged && !is_airborne {
@@ -158,7 +157,7 @@ impl PetInstance {
             // If the floor dropped more than one pet height, the pet walked
             // off a window edge — start falling.
             if new_floor > self.y + pet_h {
-                self.runner.active = crate::sprite::sm_runner::ActiveState::Fall { vy: 0.0 };
+                self.runner.active = crate::sprite::sm_runner::ActiveState::Airborne { vx: 0.0, vy: 0.0 };
             } else {
                 // Snap to surface (handles small steps up/down between windows)
                 self.y = new_floor;
@@ -176,7 +175,7 @@ impl PetInstance {
             self.elevated_ms = self.elevated_ms.saturating_add(delta_ms);
             if self.elevated_ms >= ELEVATED_DROP_MS {
                 log::debug!("elevated_drop after {}ms at y={}", self.elevated_ms, self.y);
-                self.runner.active = crate::sprite::sm_runner::ActiveState::Fall { vy: 0.0 };
+                self.runner.active = crate::sprite::sm_runner::ActiveState::Airborne { vx: 0.0, vy: 0.0 };
                 self.elevated_ms = 0;
             }
         }

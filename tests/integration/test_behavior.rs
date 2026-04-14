@@ -74,7 +74,8 @@ fn grabbed_then_thrown() {
     r.grab((5, 5));
     assert!(matches!(&r.active, ActiveState::Grabbed { .. }));
     r.release((200.0, -50.0));
-    assert!(matches!(&r.active, ActiveState::Thrown { .. }));
+    assert!(matches!(&r.active, ActiveState::Airborne { .. }));
+    assert_eq!(r.current_state_name(), "thrown");
 }
 
 #[test]
@@ -82,24 +83,23 @@ fn grabbed_slow_release_falls() {
     let mut r = make_runner();
     r.grab((0, 0));
     r.release((0.0, 0.0));
-    assert!(matches!(&r.active, ActiveState::Fall { .. }));
+    assert!(matches!(&r.active, ActiveState::Airborne { .. }));
+    assert_eq!(r.current_state_name(), "fall");
 }
 
 #[test]
-fn thrown_hits_ground_returns_to_fall_then_idle() {
+fn thrown_hits_ground_transitions_to_idle() {
     let mut r = make_runner();
     let sheet = mock_sheet();
-    r.active = ActiveState::Thrown { vx: 0.0, vy: 1000.0 };
+    r.active = ActiveState::Airborne { vx: 0.0, vy: 1000.0 };
     let mut y = 900i32;
     // vy=1000 + gravity*0.2=196 → new_y=1139 > floor_y=1044
     let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
     r.tick(200, &mut 100, &mut y, &bounds, 32, 32, 1044, &sheet);
-    // After landing from throw, transitions to Fall with vy=0, then to idle
-    // In one tick it may land and go to idle or fall briefly.
+    // Airborne lands directly into idle in one tick.
     assert!(
-        matches!(&r.active, ActiveState::Named(n) if n == "idle")
-        || matches!(&r.active, ActiveState::Fall { .. }),
-        "after landing from thrown, should be idle or fall"
+        matches!(&r.active, ActiveState::Named(n) if n == "idle"),
+        "after landing from airborne, should be idle; got {:?}", r.active
     );
 }
 

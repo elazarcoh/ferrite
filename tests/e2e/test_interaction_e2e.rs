@@ -103,9 +103,10 @@ fn fast_release_causes_thrown() {
     pet.runner.grab((0, 0));
     pet.runner.release((500.0, -200.0));
     assert!(
-        matches!(&pet.runner.active, ActiveState::Thrown { .. }),
-        "fast release must transition to Thrown"
+        matches!(&pet.runner.active, ActiveState::Airborne { .. }),
+        "fast release must transition to Airborne (thrown)"
     );
+    assert_eq!(pet.runner.current_state_name(), "thrown");
 }
 
 #[test]
@@ -114,7 +115,8 @@ fn slow_release_causes_fall() {
     pet.runner.grab((0, 0));
     pet.runner.release((0.0, 0.0));
     assert!(
-        matches!(&pet.runner.active, ActiveState::Fall { .. }),
-        "slow release must transition to Fall"
+        matches!(&pet.runner.active, ActiveState::Airborne { .. }),
+        "slow release must transition to Airborne (fall)"
     );
+    assert_eq!(pet.runner.current_state_name(), "fall");
 }
