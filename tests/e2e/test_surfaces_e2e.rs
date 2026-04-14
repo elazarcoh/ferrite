@@ -3,7 +3,7 @@
 /// SURFACE_LOCK serialises all tests in this module — Win32 Z-order and
 /// WindowFromPoint are global and would produce flaky results if tests
 /// create windows concurrently.
-use ferrite::window::surfaces::{find_floor, find_floor_info};
+use ferrite::window::surfaces::find_floor;
 use ferrite_core::geometry::PetGeom;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
@@ -293,12 +293,12 @@ fn find_floor_info_with_baseline_offset_detects_surface() {
     let geom = PetGeom { x: pet_x, y: expected_floor - 50, w: pet_w, h: pet_h, baseline_offset };
 
     let mut cache = ferrite::window::surfaces::SurfaceCache::default();
-    let hit = find_floor_info(&geom, screen_w, screen_h, &mut cache);
+    let floor = find_floor(&geom, screen_w, screen_h, &mut cache);
     unsafe { DestroyWindow(hwnd) };
 
     assert_eq!(
-        hit.floor_y, expected_floor,
+        floor, expected_floor,
         "pet with baseline_offset={baseline_offset} above surface at y={} should get floor_y={}; got {}",
-        rc.top, expected_floor, hit.floor_y
+        rc.top, expected_floor, floor
     );
 }
