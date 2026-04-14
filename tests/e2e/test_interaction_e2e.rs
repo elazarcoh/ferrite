@@ -67,6 +67,7 @@ fn petted_state_resolves_back_to_idle() {
     );
     // Force pet to virtual ground so the snap logic in tick() cannot trigger Fall.
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+    // screen_w is unused by virtual_ground_y(); 0 is a safe placeholder here.
     let ground_y = PlatformBounds { screen_w: 0, screen_h }.virtual_ground_y() - pet.window.height as i32;
     pet.y = ground_y;
     pet.window.move_to(pet.x, ground_y);

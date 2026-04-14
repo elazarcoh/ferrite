@@ -55,8 +55,8 @@ fn walk_to_idle_when_distance_exhausted() {
     // Tick many times to exhaust walk distance.
     let mut x = 100i32;
     let mut y = 100i32;
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
     for _ in 0..200 {
-        let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
         r.tick(50, &mut x, &mut y, &bounds, 32, 32, 1044, &sheet);
         if matches!(&r.active, ActiveState::Named(n) if n == "idle") {
             break;
