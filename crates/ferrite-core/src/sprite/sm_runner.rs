@@ -9,6 +9,10 @@ use crate::sprite::sm_compiler::compile;
 
 const GRAVITY: f32 = 980.0;
 
+/// Minimum absolute horizontal velocity (px/s) for a release to be classified as a throw.
+/// Below this threshold, `release()` zeroes the velocity and the state reads as "fall".
+const THROW_VX_THRESHOLD: f32 = 10.0;
+
 pub const DEFAULT_SM_TOML: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/default.petstate"));
 
 pub fn load_default_sm() -> Arc<CompiledSM> {
@@ -64,7 +68,12 @@ impl Default for EnvironmentSnapshot {
 pub enum ActiveState {
     Named(String),
     /// Airborne physics (falling or thrown). `vx == 0` is a pure fall;
-    /// `vx.abs() > 10` is a throw with horizontal bounce.
+    /// `vx.abs() > THROW_VX_THRESHOLD` is a throw with horizontal bounce.
+    ///
+    /// Note: `release()` tests both `vx` and `vy` to decide whether to preserve
+    /// velocity (the user imparted real momentum). `current_state_name()` tests
+    /// only `vx` because gravity quickly raises `vy` even during a pure fall,
+    /// making `vy` an unreliable display classifier.
     Airborne { vx: f32, vy: f32 },
     Grabbed { cursor_offset: (i32, i32) },
 }
@@ -167,7 +176,7 @@ impl SMRunner {
         match &self.active {
             ActiveState::Named(name) => name.as_str(),
             ActiveState::Airborne { vx, .. } => {
-                if vx.abs() > 10.0 { "thrown" } else { "fall" }
+                if vx.abs() > THROW_VX_THRESHOLD { "thrown" } else { "fall" }
             }
             ActiveState::Grabbed { .. } => "grabbed",
         }
@@ -296,7 +305,7 @@ impl SMRunner {
 
     pub fn release(&mut self, velocity: (f32, f32)) {
         let (vx, vy) = velocity;
-        let (vx, vy) = if vx.abs() > 10.0 || vy.abs() > 10.0 { (vx, vy) } else { (0.0, 0.0) };
+        let (vx, vy) = if vx.abs() > THROW_VX_THRESHOLD || vy.abs() > THROW_VX_THRESHOLD { (vx, vy) } else { (0.0, 0.0) };
         self.active = ActiveState::Airborne { vx, vy };
         self.state_time_ms = 0;
     }
