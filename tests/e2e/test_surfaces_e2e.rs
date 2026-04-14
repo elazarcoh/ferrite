@@ -262,7 +262,7 @@ fn find_floor_ignores_window_too_close_to_screen_top() {
 // ─── baseline_offset > 0 still detects elevated surface ──────────────────────
 
 #[test]
-fn find_floor_info_with_baseline_offset_detects_surface() {
+fn find_floor_with_baseline_offset_detects_surface() {
     // Regression for: custom sprites with baseline_offset > 0 fell through
     // elevated surfaces to virtual ground because min_surface was computed
     // from the window bottom (y + h) instead of the visual contact point
