@@ -143,6 +143,24 @@ impl SMRunner {
         self.facing.clone()
     }
 
+    /// Returns `true` if the current animation frame should be rendered
+    /// flipped horizontally.
+    ///
+    /// Sprites are authored facing **right** by default (`flip_h = false`).
+    /// A tag with `flip_h = true` is authored facing **left**; the logic
+    /// inverts so the result still tracks the `Facing` direction correctly.
+    pub fn compute_flip(&self, sheet: &SpriteSheet) -> bool {
+        let tag_name = self.current_state_name();
+        let tag_flip_h = sheet.tags.iter()
+            .find(|t| t.name == tag_name)
+            .map(|t| t.flip_h)
+            .unwrap_or(false);
+        match self.facing {
+            Facing::Right => tag_flip_h,
+            Facing::Left  => !tag_flip_h,
+        }
+    }
+
     /// Returns the name of the current Named state, or the physics state name.
     pub fn current_state_name(&self) -> &str {
         match &self.active {
@@ -1255,5 +1273,26 @@ action = "sit"
         assert_eq!(v.other_pet_dist, 250.0);
         assert_eq!(v.surface_w, 1920.0);
         assert_eq!(v.surface_label, "taskbar");
+    }
+
+    #[test]
+    fn compute_flip_facing_right_flip_h_false_returns_false() {
+        let mut r = make_runner();
+        let sheet = mock_sheet();
+        // Default facing is Right; idle tag has flip_h = false
+        r.facing = Facing::Right;
+        // Ensure we are in the idle state
+        r.active = ActiveState::Named("idle".to_string());
+        assert!(!r.compute_flip(&sheet));
+    }
+
+    #[test]
+    fn compute_flip_facing_left_flip_h_false_returns_true() {
+        let mut r = make_runner();
+        let sheet = mock_sheet();
+        // Facing left with flip_h = false means we should flip the sprite
+        r.facing = Facing::Left;
+        r.active = ActiveState::Named("idle".to_string());
+        assert!(r.compute_flip(&sheet));
     }
 }

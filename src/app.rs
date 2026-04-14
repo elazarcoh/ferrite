@@ -195,7 +195,7 @@ impl PetInstance {
     /// `flip_h=false` (default) = sprite faces RIGHT. Flip when going LEFT.
     /// `flip_h=true`            = sprite faces LEFT.  Flip when going RIGHT.
     pub fn compute_flip(&self) -> bool {
-        compute_flip(&self.runner, &self.sheet)
+        self.runner.compute_flip(&self.sheet)
     }
 
     fn render_current_frame(&mut self) -> Result<()> {
@@ -934,20 +934,6 @@ fn sanitize_id(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
         .collect()
-}
-
-fn compute_flip(runner: &SMRunner, sheet: &SpriteSheet) -> bool {
-    use crate::sprite::sm_runner::Facing;
-    let facing = runner.current_facing();
-    let tag_name = runner.current_state_name();
-    let flip_h = sheet.tags.iter()
-        .find(|t| t.name == tag_name)
-        .map(|t| t.flip_h)
-        .unwrap_or(false);
-    match facing {
-        Facing::Right => flip_h,
-        Facing::Left  => !flip_h,
-    }
 }
 
 fn build_pet(cfg: &PetConfig) -> Result<PetInstance> {

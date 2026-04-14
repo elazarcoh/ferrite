@@ -214,7 +214,12 @@ impl SimulationState {
                         egui::TextureOptions::LINEAR,
                     );
 
-                    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                    let flip = pet.sm.compute_flip(&pet.sheet);
+                    let (uv_x0, uv_x1) = if flip { (1.0_f32, 0.0_f32) } else { (0.0_f32, 1.0_f32) };
+                    let uv = egui::Rect::from_min_max(
+                        egui::pos2(uv_x0, 0.0),
+                        egui::pos2(uv_x1, 1.0),
+                    );
                     ui.painter().image(tex.id(), rect, uv, egui::Color32::WHITE);
                 } else {
                     // Fallback: placeholder rectangle
