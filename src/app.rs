@@ -1,4 +1,5 @@
 use ferrite_core::geometry::{PetGeom, PlatformBounds};
+use ferrite_core::sprite::collision::{detect_new_collisions, overlapping_pairs, Collidable};
 use ferrite_core::sprite::sm_runner::EnvironmentSnapshot;
 use crate::{
     assets,
@@ -587,19 +588,8 @@ impl App {
 
 // ── Collision helpers ─────────────────────────────────────────────────────────
 
-struct PetBox {
-    id: String,
-    left: i32,
-    right: i32,
-    top: i32,
-    bottom: i32,
-    center_y: i32,
-    vx: f32,
-    vy: f32,
-}
-
-fn collect_boxes(pets: &std::collections::HashMap<String, PetInstance>) -> Vec<PetBox> {
-    let mut boxes: Vec<PetBox> = pets.iter().map(|(id, pet)| {
+fn collect_collidables(pets: &std::collections::HashMap<String, PetInstance>) -> Vec<Collidable> {
+    let mut items: Vec<Collidable> = pets.iter().map(|(id, pet)| {
         let frame_idx = pet.anim.absolute_frame(&pet.sheet);
         let flip = pet.compute_flip();
         let scale = pet.cfg.scale.round() as u32;
@@ -607,7 +597,7 @@ fn collect_boxes(pets: &std::collections::HashMap<String, PetInstance>) -> Vec<P
         let left = pet.x + dx;
         let top = pet.y + dy;
         let (vx, vy) = pet.runner.speed();
-        PetBox {
+        Collidable {
             id: id.clone(),
             left,
             right: left + w as i32,
@@ -618,45 +608,8 @@ fn collect_boxes(pets: &std::collections::HashMap<String, PetInstance>) -> Vec<P
             vy,
         }
     }).collect();
-    boxes.sort_by_key(|b| b.left);
-    boxes
-}
-
-fn canonical_key(a: &str, b: &str) -> (String, String) {
-    if a <= b { (a.to_string(), b.to_string()) } else { (b.to_string(), a.to_string()) }
-}
-
-fn classify_collision(a: &PetBox, b: &PetBox) -> (String, String) {
-    let rel_vx = a.vx - b.vx;
-    let rel_vy = a.vy - b.vy;
-
-    if rel_vx.abs() >= rel_vy.abs() {
-        let a_cx = (a.left + a.right) / 2;
-        let b_cx = (b.left + b.right) / 2;
-        let approaching = (a_cx < b_cx && a.vx > b.vx) || (a_cx > b_cx && a.vx < b.vx);
-        let t = if approaching { "head_on" } else { "same_dir" };
-        (t.to_string(), t.to_string())
-    } else {
-        let a_above = a.center_y < b.center_y;
-        let a_moving_down = a.vy > b.vy;
-        match (a_above, a_moving_down) {
-            (true, true)   => ("fell_on".to_string(),        "landed_on".to_string()),
-            (true, false)  => ("landed_on".to_string(),      "fell_on".to_string()),
-            (false, true)  => ("hit_from_below".to_string(), "hit_into_above".to_string()),
-            (false, false) => ("hit_into_above".to_string(), "hit_from_below".to_string()),
-        }
-    }
-}
-
-fn make_collide_data(
-    my_box: &PetBox,
-    other_box: &PetBox,
-    collide_type: String,
-) -> crate::sprite::sm_runner::CollideData {
-    let vx = my_box.vx - other_box.vx;
-    let vy = my_box.vy - other_box.vy;
-    let v = (vx * vx + vy * vy).sqrt();
-    crate::sprite::sm_runner::CollideData { collide_type, vx, vy, v }
+    items.sort_by_key(|c| c.left);
+    items
 }
 
 impl eframe::App for App {
@@ -766,37 +719,16 @@ impl eframe::App for App {
 
         // ── Collision detection ──────────────────────────────────────────────────
         if self.pets.len() >= 2 {
-            let boxes = collect_boxes(&self.pets);
-            let mut new_overlapping = std::collections::HashSet::new();
-
-            for i in 0..boxes.len() {
-                for j in (i + 1)..boxes.len() {
-                    let a = &boxes[i];
-                    let b = &boxes[j];
-                    if b.left >= a.right { break; }
-                    if a.bottom <= b.top || b.bottom <= a.top { continue; }
-                    if a.left == a.right || b.left == b.right { continue; }
-                    new_overlapping.insert(canonical_key(&a.id, &b.id));
+            let collidables = collect_collidables(&self.pets);
+            let new_overlapping = overlapping_pairs(&collidables);
+            for pair in detect_new_collisions(&collidables, &self.overlapping) {
+                if let Some(pet) = self.pets.get_mut(&pair.id_a) {
+                    pet.runner.on_collide(pair.data_a);
+                }
+                if let Some(pet) = self.pets.get_mut(&pair.id_b) {
+                    pet.runner.on_collide(pair.data_b);
                 }
             }
-
-            for (id_min, id_max) in &new_overlapping {
-                if self.overlapping.contains(&(id_min.clone(), id_max.clone())) {
-                    continue;
-                }
-                let box_a = match boxes.iter().find(|b| &b.id == id_min) { Some(b) => b, None => continue };
-                let box_b = match boxes.iter().find(|b| &b.id == id_max) { Some(b) => b, None => continue };
-                let (type_a, type_b) = classify_collision(box_a, box_b);
-                let data_a = make_collide_data(box_a, box_b, type_a);
-                let data_b = make_collide_data(box_b, box_a, type_b);
-                if let Some(pet) = self.pets.get_mut(id_min) {
-                    pet.runner.on_collide(data_a);
-                }
-                if let Some(pet) = self.pets.get_mut(id_max) {
-                    pet.runner.on_collide(data_b);
-                }
-            }
-
             self.overlapping = new_overlapping;
         }
 
