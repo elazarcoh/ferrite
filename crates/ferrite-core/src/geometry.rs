@@ -21,8 +21,12 @@ impl PetGeom {
     }
 
     /// Minimum surface `top` y-coordinate for a surface to count as
-    /// below the pet. Surfaces at `rect.top < min_surface_threshold()`
+    /// below the pet. Surfaces with `rect.top < min_surface_threshold()`
     /// are above the pet's contact zone and must be filtered out.
+    ///
+    /// The lower bound is `self.h` to guarantee surfaces above the very
+    /// top of the screen are never considered, even when `y` is small
+    /// relative to `baseline_offset`.
     pub fn min_surface_threshold(&self) -> i32 {
         self.effective_bottom().max(self.h)
     }
@@ -39,7 +43,7 @@ mod tests {
     use super::*;
 
     fn geom(y: i32, h: i32, baseline_offset: i32) -> PetGeom {
-        PetGeom { x: 0, y, w: h, h, baseline_offset }
+        PetGeom { x: 0, y, w: 1, h, baseline_offset }
     }
 
     #[test]
