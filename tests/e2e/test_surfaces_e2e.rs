@@ -3,7 +3,7 @@
 /// SURFACE_LOCK serialises all tests in this module — Win32 Z-order and
 /// WindowFromPoint are global and would produce flaky results if tests
 /// create windows concurrently.
-use ferrite::window::surfaces::find_floor;
+use ferrite::window::surfaces::{find_floor, find_floor_info};
 use ferrite_core::geometry::PetGeom;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
@@ -256,5 +256,49 @@ fn find_floor_ignores_window_too_close_to_screen_top() {
         floor >= 0,
         "window at y={} must not produce off-screen floor; got {}",
         rc.top, floor
+    );
+}
+
+// ─── baseline_offset > 0 still detects elevated surface ──────────────────────
+
+#[test]
+fn find_floor_info_with_baseline_offset_detects_surface() {
+    // Regression for: custom sprites with baseline_offset > 0 fell through
+    // elevated surfaces to virtual ground because min_surface was computed
+    // from the window bottom (y + h) instead of the visual contact point
+    // (y + h - baseline_offset).
+    let _g = lock();
+    let (screen_w, screen_h) = screen_dims();
+
+    let win_x = screen_w / 4;
+    let win_y = screen_h / 2;
+    let win_w = screen_w / 2;
+    let baseline_offset = 29i32;
+
+    let hwnd = unsafe { make_test_window(win_x, win_y, win_w, 200) };
+    assert!(!hwnd.is_null(), "CreateWindowExW failed");
+    let rc = get_rect(hwnd);
+
+    // Simulate a large sprite (137 px tall, Ferris-crab scale) at the expected
+    // landing position above the test window.
+    let pet_w = 137i32;
+    let pet_h = 137i32;
+    let pet_x = win_x + win_w / 4;
+
+    // Expected landing y: the position floor_landing_y would give for this surface.
+    let template = PetGeom { x: pet_x, y: 0, w: pet_w, h: pet_h, baseline_offset };
+    let expected_floor = template.floor_landing_y(rc.top);
+
+    // Place the pet just above the expected landing point.
+    let geom = PetGeom { x: pet_x, y: expected_floor - 50, w: pet_w, h: pet_h, baseline_offset };
+
+    let mut cache = ferrite::window::surfaces::SurfaceCache::default();
+    let hit = find_floor_info(&geom, screen_w, screen_h, &mut cache);
+    unsafe { DestroyWindow(hwnd) };
+
+    assert_eq!(
+        hit.floor_y, expected_floor,
+        "pet with baseline_offset={baseline_offset} above surface at y={} should get floor_y={}; got {}",
+        rc.top, expected_floor, hit.floor_y
     );
 }
