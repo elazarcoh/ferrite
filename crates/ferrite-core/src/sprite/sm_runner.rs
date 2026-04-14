@@ -17,6 +17,49 @@ pub fn load_default_sm() -> Arc<CompiledSM> {
     compile(&file).expect("default.petstate must compile")
 }
 
+/// All externally-sourced inputs the state machine can observe each frame.
+///
+/// Construct once per pet per frame in the platform layer; pass to
+/// [`SMRunner::update_env`]. Use `EnvironmentSnapshot::default()` as a
+/// starting point and override only the fields your platform can observe.
+///
+/// `screen_w` and `screen_h` are NOT here — they come via `PlatformBounds`
+/// in `SMRunner::tick`.
+#[derive(Debug, Clone)]
+pub struct EnvironmentSnapshot {
+    /// Distance from the cursor to the pet's center, in screen pixels.
+    /// Set to `f32::MAX` when there is no cursor (headless / WASM sim).
+    pub cursor_dist: f32,
+    /// Local hour of day [0, 23].
+    pub hour: u32,
+    /// Title of the foreground window, or empty string.
+    pub focused_app: String,
+    /// Total number of live pets on screen (including this one).
+    pub pet_count: u32,
+    /// Distance to the nearest other pet's center, in screen pixels.
+    /// Set to `f32::MAX` when this is the only pet.
+    pub other_pet_dist: f32,
+    /// Width of the surface the pet is standing on, in screen pixels.
+    /// 0.0 when on virtual ground.
+    pub surface_w: f32,
+    /// Classification of the current surface: `"taskbar"`, `"window"`, or `""`.
+    pub surface_label: String,
+}
+
+impl Default for EnvironmentSnapshot {
+    fn default() -> Self {
+        Self {
+            cursor_dist: f32::MAX,
+            hour: 0,
+            focused_app: String::new(),
+            pet_count: 1,
+            other_pet_dist: f32::MAX,
+            surface_w: 0.0,
+            surface_label: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ActiveState {
     Named(String),
@@ -132,27 +175,17 @@ impl SMRunner {
         &self.last_vars
     }
 
-    /// Update externally-computed condition variables.
-    /// Called from App::update() each frame after the tick loop.
-    #[allow(clippy::too_many_arguments)]
-    pub fn update_env_vars(
-        &mut self,
-        cursor_dist: f32,
-        hour: u32,
-        focused_app: String,
-        pet_count: u32,
-        other_pet_dist: f32,
-        surface_w: f32,
-        surface_label: String,
-    ) {
-        self.last_vars.cursor_dist = cursor_dist;
-        self.last_vars.hour = hour;
-        self.last_vars.focused_app = focused_app;
-        // screen_h is set by tick() via PlatformBounds — not here.
-        self.last_vars.pet_count = pet_count;
-        self.last_vars.other_pet_dist = other_pet_dist;
-        self.last_vars.surface_w = surface_w;
-        self.last_vars.surface_label = surface_label;
+    /// Apply a platform-sourced environment snapshot.
+    /// Called once per pet per frame, after `tick`.
+    pub fn update_env(&mut self, env: EnvironmentSnapshot) {
+        self.last_vars.cursor_dist    = env.cursor_dist;
+        self.last_vars.hour           = env.hour;
+        self.last_vars.focused_app    = env.focused_app;
+        self.last_vars.pet_count      = env.pet_count;
+        self.last_vars.other_pet_dist = env.other_pet_dist;
+        self.last_vars.surface_w      = env.surface_w;
+        self.last_vars.surface_label  = env.surface_label;
+        // screen_w / screen_h are set by tick() via PlatformBounds.
     }
 
     /// Returns the last up-to-10 transition log entries (oldest first).
@@ -1201,9 +1234,17 @@ action = "sit"
     }
 
     #[test]
-    fn update_env_vars_sets_all_fields() {
+    fn update_env_sets_all_fields() {
         let mut r = SMRunner::new(make_collide_sm(), 80.0);
-        r.update_env_vars(42.5, 14, "MyEditor".to_string(), 3, 250.0, 1920.0, "taskbar".to_string());
+        r.update_env(EnvironmentSnapshot {
+            cursor_dist: 42.5,
+            hour: 14,
+            focused_app: "MyEditor".to_string(),
+            pet_count: 3,
+            other_pet_dist: 250.0,
+            surface_w: 1920.0,
+            surface_label: "taskbar".to_string(),
+        });
         let v = r.last_condition_vars();
         assert_eq!(v.cursor_dist, 42.5);
         assert_eq!(v.hour, 14);

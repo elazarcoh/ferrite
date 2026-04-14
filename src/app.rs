@@ -1,4 +1,5 @@
 use ferrite_core::geometry::{PetGeom, PlatformBounds};
+use ferrite_core::sprite::sm_runner::EnvironmentSnapshot;
 use crate::{
     assets,
     config::{self, schema::PetConfig, watcher::spawn_watcher},
@@ -751,15 +752,15 @@ impl eframe::App for App {
                     .fold(f32::INFINITY, f32::min);
                 let other_pet_dist = if other_pet_dist.is_infinite() { f32::MAX } else { other_pet_dist };
 
-                pet.runner.update_env_vars(
+                pet.runner.update_env(EnvironmentSnapshot {
                     cursor_dist,
                     hour,
-                    focused_app.clone(),
+                    focused_app: focused_app.clone(),
                     pet_count,
                     other_pet_dist,
-                    pet.last_surface_hit.surface_w,
-                    pet.last_surface_hit.surface_label.clone(),
-                );
+                    surface_w: pet.last_surface_hit.surface_w,
+                    surface_label: pet.last_surface_hit.surface_label.clone(),
+                });
             }
         }
 

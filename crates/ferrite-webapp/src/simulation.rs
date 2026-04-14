@@ -3,7 +3,7 @@ use ferrite_core::config::schema::Config;
 use ferrite_core::geometry::PlatformBounds;
 use ferrite_core::sprite::animation::AnimationState;
 use ferrite_core::sprite::sheet::SpriteSheet;
-use ferrite_core::sprite::sm_runner::{load_default_sm, SMRunner};
+use ferrite_core::sprite::sm_runner::{load_default_sm, EnvironmentSnapshot, SMRunner};
 
 pub struct PetSimState {
     pub id: String,
@@ -73,15 +73,12 @@ impl SimulationState {
                 (32, 32)
             };
 
-            pet.sm.update_env_vars(
-                f32::MAX,       // cursor_dist: no cursor in headless web sim
-                0,              // hour
-                String::new(),  // focused_app
+            pet.sm.update_env(EnvironmentSnapshot {
                 pet_count,
-                f32::MAX,       // other_pet_dist
-                SIM_SCREEN_W as f32, // surface_w
-                String::new(),  // surface_label
-            );
+                surface_w: SIM_SCREEN_W as f32,
+                // No cursor, no app focus, no time-of-day in headless sim.
+                ..EnvironmentSnapshot::default()
+            });
 
             let bounds = PlatformBounds {
                 screen_w: SIM_SCREEN_W,
