@@ -1,8 +1,9 @@
 use egui;
 use ferrite_core::config::schema::Config;
+use ferrite_core::geometry::PlatformBounds;
 use ferrite_core::sprite::animation::AnimationState;
 use ferrite_core::sprite::sheet::SpriteSheet;
-use ferrite_core::sprite::sm_runner::{load_default_sm, SMRunner};
+use ferrite_core::sprite::sm_runner::{load_default_sm, EnvironmentSnapshot, SMRunner};
 
 pub struct PetSimState {
     pub id: String,
@@ -72,22 +73,24 @@ impl SimulationState {
                 (32, 32)
             };
 
-            pet.sm.update_env_vars(
-                f32::MAX, // cursor_dist: no cursor in headless web sim
-                0,        // hour
-                String::new(), // focused_app
-                SIM_FLOOR_Y as f32, // screen_h (use floor as proxy)
-                pet_count, // pet_count
-                f32::MAX, // other_pet_dist
-                SIM_SCREEN_W as f32, // surface_w (full sim width)
-                String::new(), // surface_label
-            );
+            pet.sm.update_env(EnvironmentSnapshot {
+                pet_count,
+                // sim floor is treated as one full-width surface; no virtual-ground distinction.
+                surface_w: SIM_SCREEN_W as f32,
+                // No cursor, no app focus, no time-of-day in headless sim.
+                ..EnvironmentSnapshot::default()
+            });
+
+            let bounds = PlatformBounds {
+                screen_w: SIM_SCREEN_W,
+                screen_h: SIM_FLOOR_Y + 4,  // virtual_ground_y() == SIM_FLOOR_Y
+            };
 
             let tag = pet.sm.tick(
                 delta_ms,
                 &mut pet.x,
                 &mut pet.y,
-                SIM_SCREEN_W,
+                &bounds,
                 pet_w,
                 pet_h,
                 SIM_FLOOR_Y,
@@ -211,7 +214,12 @@ impl SimulationState {
                         egui::TextureOptions::LINEAR,
                     );
 
-                    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                    let flip = pet.sm.compute_flip(&pet.sheet);
+                    let (uv_x0, uv_x1) = if flip { (1.0_f32, 0.0_f32) } else { (0.0_f32, 1.0_f32) };
+                    let uv = egui::Rect::from_min_max(
+                        egui::pos2(uv_x0, 0.0),
+                        egui::pos2(uv_x1, 1.0),
+                    );
                     ui.painter().image(tex.id(), rect, uv, egui::Color32::WHITE);
                 } else {
                     // Fallback: placeholder rectangle
@@ -235,7 +243,7 @@ impl SimulationState {
             x: pet.x as f32,
             y: pet.y as f32,
             sm_state: pet.sm.current_state_name().to_string(),
-            animation_tag: pet.anim.current_tag.clone(),
+            animation_tag: pet.anim.current_tag().to_owned(),
         }).collect()
     }
 }

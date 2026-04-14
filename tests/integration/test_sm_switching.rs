@@ -73,7 +73,8 @@ fn sm_hot_swap_preserves_position() {
 
     // Tick once to settle into the initial state.
     let sheet = mock_sheet();
-    runner.tick(16, &mut x, &mut y, 1920, 32, 32, 1044, &sheet);
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+    runner.tick(16, &mut x, &mut y, &bounds, 32, 32, 1044, &sheet);
 
     // Position is whatever the runner set; we now record it and assert after swap.
     // For this test we care that x/y are NOT touched by replace_sm (replace_sm has

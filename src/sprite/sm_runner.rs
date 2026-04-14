@@ -32,8 +32,9 @@ pub struct CollideData {
 #[derive(Debug, Clone)]
 pub enum ActiveState {
     Named(String),
-    Fall { vy: f32 },
-    Thrown { vx: f32, vy: f32 },
+    /// Airborne physics (falling or thrown). `vx == 0` is a pure fall;
+    /// `vx.abs() > 10` is a throw with horizontal bounce.
+    Airborne { vx: f32, vy: f32 },
     Grabbed { cursor_offset: (i32, i32) },
 }
 
@@ -102,19 +103,19 @@ impl SMRunner {
     pub fn current_state_name(&self) -> &str {
         match &self.active {
             ActiveState::Named(name) => name.as_str(),
-            ActiveState::Fall { .. } => "fall",
-            ActiveState::Thrown { .. } => "thrown",
+            ActiveState::Airborne { vx, .. } => {
+                if vx.abs() > 10.0 { "thrown" } else { "fall" }
+            }
             ActiveState::Grabbed { .. } => "grabbed",
         }
     }
 
     /// Returns the current velocity of this pet in px/s as `(vx, vy)`.
     /// Walk/Run states return the speed in the current facing direction;
-    /// Fall/Thrown return their physics velocities; Grabbed/Idle return `(0.0, 0.0)`.
+    /// Airborne returns physics velocities; Grabbed/Idle return `(0.0, 0.0)`.
     pub fn speed(&self) -> (f32, f32) {
         match &self.active {
-            ActiveState::Fall { vy } => (0.0, *vy),
-            ActiveState::Thrown { vx, vy } => (*vx, *vy),
+            ActiveState::Airborne { vx, vy } => (*vx, *vy),
             ActiveState::Grabbed { .. } => (0.0, 0.0),
             ActiveState::Named(name) => {
                 if let Some(state) = self.sm.states.get(name.as_str()) {
@@ -264,11 +265,8 @@ impl SMRunner {
 
     pub fn release(&mut self, velocity: (f32, f32)) {
         let (vx, vy) = velocity;
-        if vx.abs() > 10.0 || vy.abs() > 10.0 {
-            self.active = ActiveState::Thrown { vx, vy };
-        } else {
-            self.active = ActiveState::Fall { vy: 0.0 };
-        }
+        let (vx, vy) = if vx.abs() > 10.0 || vy.abs() > 10.0 { (vx, vy) } else { (0.0, 0.0) };
+        self.active = ActiveState::Airborne { vx, vy };
         self.state_time_ms = 0;
     }
 
@@ -423,8 +421,7 @@ impl SMRunner {
                             }
                         }
                         ActionType::Fall => {
-                            // Named state with action=fall: treat same as ActiveState::Fall
-                            // Normally handled via ActiveState::Fall variant
+                            // Named state with action=fall: normally handled via ActiveState::Airborne
                         }
                         ActionType::Grabbed | ActionType::Thrown => {
                             // These are handled via ActiveState variants
@@ -436,30 +433,14 @@ impl SMRunner {
                 }
             }
 
-            ActiveState::Fall { vy } => {
-                let mut vy = vy;
-                vy += GRAVITY * dt;
-                let new_y = *y + (vy * dt) as i32;
-                if new_y >= floor_y {
-                    *y = floor_y;
-                    self.last_vars.on_surface = true;
-                    let fallback = self.sm.default_fallback.clone();
-                    self.transition_to(&fallback, "landed");
-                } else {
-                    *y = new_y;
-                    self.active = ActiveState::Fall { vy };
-                    self.last_vars.on_surface = false;
-                }
-            }
-
-            ActiveState::Thrown { vx, vy } => {
+            ActiveState::Airborne { vx, vy } => {
                 let mut vx = vx;
                 let mut vy = vy;
                 vy += GRAVITY * dt;
                 let new_x = *x + (vx * dt) as i32;
                 let new_y = *y + (vy * dt) as i32;
 
-                // Horizontal bounce
+                // Horizontal boundary bounce (no-op when vx == 0).
                 let (clamped_x, new_vx) = if new_x <= 0 {
                     (0, vx.abs())
                 } else if new_x + pet_w >= screen_w {
@@ -473,13 +454,12 @@ impl SMRunner {
                     *x = clamped_x;
                     *y = floor_y;
                     self.last_vars.on_surface = true;
-                    // Transition to fall state (land from thrown)
-                    self.active = ActiveState::Fall { vy: 0.0 };
-                    self.state_time_ms = 0;
+                    let fallback = self.sm.default_fallback.clone();
+                    self.transition_to(&fallback, "landed");
                 } else {
                     *x = clamped_x;
                     *y = new_y;
-                    self.active = ActiveState::Thrown { vx, vy };
+                    self.active = ActiveState::Airborne { vx, vy };
                     self.last_vars.on_surface = false;
                 }
             }
@@ -797,7 +777,8 @@ mod tests {
         let mut r = make_runner();
         r.grab((0, 0));
         r.release((200.0, -100.0));
-        assert!(matches!(&r.active, ActiveState::Thrown { .. }));
+        assert!(matches!(&r.active, ActiveState::Airborne { .. }));
+        assert_eq!(r.current_state_name(), "thrown");
     }
 
     #[test]
@@ -1021,7 +1002,7 @@ transitions = []
     #[test]
     fn tick_populates_velocity_from_thrown_state() {
         let mut r = SMRunner::new(make_collide_sm(), 80.0);
-        r.active = ActiveState::Thrown { vx: 120.0, vy: -80.0 };
+        r.active = ActiveState::Airborne { vx: 120.0, vy: -80.0 };
         let sheet = mock_sheet();
         let mut x = 0i32; let mut y = 0i32;
         r.tick(16, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);

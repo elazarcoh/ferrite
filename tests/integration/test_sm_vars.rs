@@ -1,4 +1,4 @@
-use ferrite::sprite::sm_runner::{SMRunner, ActiveState};
+use ferrite::sprite::sm_runner::{SMRunner, ActiveState, EnvironmentSnapshot};
 use ferrite::sprite::sm_compiler::compile;
 use ferrite::sprite::sm_format::SmFile;
 use ferrite::sprite::sheet::{SpriteSheet, Frame, FrameTag, TagDirection};
@@ -32,7 +32,8 @@ fn mock_sheet() -> SpriteSheet {
 
 fn tick(r: &mut SMRunner, ms: u32) {
     let sheet = mock_sheet();
-    r.tick(ms, &mut 100, &mut 100, 1920, 32, 32, 1044, &sheet);
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+    r.tick(ms, &mut 100, &mut 100, &bounds, 32, 32, 1044, &sheet);
 }
 
 /// Build a minimal SM where "idle" transitions to "sit" if the given condition is met
@@ -80,7 +81,7 @@ fn runner_with_sm(sm: std::sync::Arc<ferrite::sprite::sm_compiler::CompiledSM>) 
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: pet_count var reflects update_env_vars and gates transition
+// Test 1: pet_count var reflects update_env and gates transition
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -89,7 +90,7 @@ fn pet_count_var_threshold() {
     let mut r = runner_with_sm(sm);
 
     // With pet_count=1 the condition is false → should stay in idle
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 0.0, 1920.0, String::new());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, surface_w: 1920.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "idle"),
@@ -97,7 +98,7 @@ fn pet_count_var_threshold() {
     );
 
     // With pet_count=2 the condition is true → should transition to sit
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 2, 0.0, 1920.0, String::new());
+    r.update_env(EnvironmentSnapshot { pet_count: 2, surface_w: 1920.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "sit"),
@@ -115,7 +116,7 @@ fn other_pet_dist_var_threshold() {
     let mut r = runner_with_sm(sm);
 
     // Far away — condition false → stays in idle
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 200.0, 1920.0, String::new());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, other_pet_dist: 200.0, surface_w: 1920.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "idle"),
@@ -123,7 +124,7 @@ fn other_pet_dist_var_threshold() {
     );
 
     // Close — condition true → transitions to sit
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 50.0, 1920.0, String::new());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, other_pet_dist: 50.0, surface_w: 1920.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "sit"),
@@ -141,7 +142,7 @@ fn surface_label_var_string_match() {
     let mut r = runner_with_sm(sm);
 
     // Wrong label — condition false → stays in idle
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 0.0, 1920.0, "window".to_string());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, surface_w: 1920.0, surface_label: "window".to_string(), ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "idle"),
@@ -149,7 +150,7 @@ fn surface_label_var_string_match() {
     );
 
     // Matching label — condition true → transitions to sit
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 0.0, 1920.0, "taskbar".to_string());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, surface_w: 1920.0, surface_label: "taskbar".to_string(), ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "sit"),
@@ -167,7 +168,7 @@ fn surface_w_var_threshold() {
     let mut r = runner_with_sm(sm);
 
     // Narrow surface — condition false → stays in idle
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 0.0, 50.0, String::new());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, surface_w: 50.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "idle"),
@@ -175,7 +176,7 @@ fn surface_w_var_threshold() {
     );
 
     // Wide surface — condition true → transitions to sit
-    r.update_env_vars(0.0, 0, String::new(), 1080.0, 1, 0.0, 200.0, String::new());
+    r.update_env(EnvironmentSnapshot { pet_count: 1, surface_w: 200.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "sit"),
@@ -184,7 +185,7 @@ fn surface_w_var_threshold() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: cursor_dist after update_env_vars
+// Test 5: cursor_dist after update_env
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -193,7 +194,7 @@ fn cursor_dist_var_after_update() {
     let mut r = runner_with_sm(sm);
 
     // Far cursor — condition false → stays in idle
-    r.update_env_vars(100.0, 0, String::new(), 1080.0, 1, 0.0, 1920.0, String::new());
+    r.update_env(EnvironmentSnapshot { cursor_dist: 100.0, pet_count: 1, surface_w: 1920.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "idle"),
@@ -201,7 +202,7 @@ fn cursor_dist_var_after_update() {
     );
 
     // Close cursor — condition true → transitions to sit
-    r.update_env_vars(30.0, 0, String::new(), 1080.0, 1, 0.0, 1920.0, String::new());
+    r.update_env(EnvironmentSnapshot { cursor_dist: 30.0, pet_count: 1, surface_w: 1920.0, ..EnvironmentSnapshot::default() });
     tick(&mut r, 100);
     assert!(
         matches!(&r.active, ActiveState::Named(n) if n == "sit"),

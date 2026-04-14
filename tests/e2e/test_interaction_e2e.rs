@@ -8,6 +8,7 @@ use ferrite::{
     },
     window::blender::alpha_at,
 };
+use ferrite_core::geometry::PlatformBounds;
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CYSCREEN};
 
 fn test_sheet() -> ferrite::sprite::sheet::SpriteSheet {
@@ -66,7 +67,8 @@ fn petted_state_resolves_back_to_idle() {
     );
     // Force pet to virtual ground so the snap logic in tick() cannot trigger Fall.
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-    let ground_y = screen_h - 4 - pet.window.height as i32;
+    // screen_w is unused by virtual_ground_y(); 0 is a safe placeholder here.
+    let ground_y = PlatformBounds { screen_w: 0, screen_h }.virtual_ground_y() - pet.window.height as i32;
     pet.y = ground_y;
     pet.window.move_to(pet.x, ground_y);
     // Trigger petted interrupt
@@ -101,9 +103,10 @@ fn fast_release_causes_thrown() {
     pet.runner.grab((0, 0));
     pet.runner.release((500.0, -200.0));
     assert!(
-        matches!(&pet.runner.active, ActiveState::Thrown { .. }),
-        "fast release must transition to Thrown"
+        matches!(&pet.runner.active, ActiveState::Airborne { .. }),
+        "fast release must transition to Airborne (thrown)"
     );
+    assert_eq!(pet.runner.current_state_name(), "thrown");
 }
 
 #[test]
@@ -112,7 +115,8 @@ fn slow_release_causes_fall() {
     pet.runner.grab((0, 0));
     pet.runner.release((0.0, 0.0));
     assert!(
-        matches!(&pet.runner.active, ActiveState::Fall { .. }),
-        "slow release must transition to Fall"
+        matches!(&pet.runner.active, ActiveState::Airborne { .. }),
+        "slow release must transition to Airborne (fall)"
     );
+    assert_eq!(pet.runner.current_state_name(), "fall");
 }

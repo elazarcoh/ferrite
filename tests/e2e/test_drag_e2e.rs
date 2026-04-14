@@ -77,7 +77,7 @@ fn nchittest_opaque_pixel_returns_htclient() {
     let mut pet = make_pet();
     let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Airborne { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
@@ -106,7 +106,7 @@ fn click_sends_pet_clicked_event() {
     // Land pet first.
     let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Airborne { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
@@ -140,7 +140,7 @@ fn drag_sends_drag_start_and_end_events() {
     // Land pet first.
     let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Airborne { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
@@ -187,9 +187,10 @@ fn grab_then_fast_release_makes_thrown_state() {
     assert!(matches!(&pet.runner.active, ActiveState::Grabbed { .. }));
     pet.runner.release((600.0, -200.0));
     assert!(
-        matches!(&pet.runner.active, ActiveState::Thrown { .. }),
-        "fast release must produce Thrown state"
+        matches!(&pet.runner.active, ActiveState::Airborne { .. }),
+        "fast release must produce Airborne (thrown) state"
     );
+    assert_eq!(pet.runner.current_state_name(), "thrown");
 }
 
 #[test]
@@ -198,9 +199,10 @@ fn grab_then_slow_release_makes_fall_state() {
     pet.runner.grab((0, 0));
     pet.runner.release((0.0, 0.0));
     assert!(
-        matches!(&pet.runner.active, ActiveState::Fall { .. }),
-        "slow release must produce Fall state"
+        matches!(&pet.runner.active, ActiveState::Airborne { .. }),
+        "slow release must produce Airborne (fall) state"
     );
+    assert_eq!(pet.runner.current_state_name(), "fall");
 }
 
 // ─── Alpha buffer correctness ─────────────────────────────────────────────────
@@ -211,7 +213,7 @@ fn alpha_buf_center_pixel_is_opaque_after_render() {
     // Land pet so render_current_frame has been called.
     let mut cache = ferrite::window::surfaces::SurfaceCache::default();
     for _ in 0..300 {
-        if !matches!(&pet.runner.active, ActiveState::Fall { .. }) {
+        if !matches!(&pet.runner.active, ActiveState::Airborne { .. }) {
             break;
         }
         pet.tick(20, &mut cache).unwrap();
