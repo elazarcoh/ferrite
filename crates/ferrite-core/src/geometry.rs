@@ -38,6 +38,26 @@ impl PetGeom {
     }
 }
 
+/// Screen-level geometry provided by the platform.
+///
+/// On Win32:  `screen_w = GetSystemMetrics(SM_CXSCREEN)`,
+///            `screen_h = GetSystemMetrics(SM_CYSCREEN)`.
+/// On WASM:   set `screen_h = SIM_FLOOR_Y + 4` so `virtual_ground_y()` == `SIM_FLOOR_Y`.
+#[derive(Debug, Clone, Copy)]
+pub struct PlatformBounds {
+    pub screen_w: i32,
+    pub screen_h: i32,
+}
+
+impl PlatformBounds {
+    /// Y-coordinate of the virtual ground — the fallback floor used when no
+    /// real surface is detected below the pet.
+    /// 4 px above the raw screen bottom avoids pixel-level clipping at the taskbar.
+    pub fn virtual_ground_y(&self) -> i32 {
+        self.screen_h - 4
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +122,18 @@ mod tests {
         // visual feet (pet_h - 16 from top) align with the surface.
         let g = geom(0, 64, 16);
         assert_eq!(g.floor_landing_y(500), 500 - 64 + 16); // 452
+    }
+
+    #[test]
+    fn virtual_ground_y_is_four_px_above_bottom() {
+        let b = PlatformBounds { screen_w: 1920, screen_h: 1080 };
+        assert_eq!(b.virtual_ground_y(), 1076);
+    }
+
+    #[test]
+    fn virtual_ground_y_for_sim_floor_500() {
+        // Webapp: screen_h = SIM_FLOOR_Y + 4 = 504
+        let b = PlatformBounds { screen_w: 800, screen_h: 504 };
+        assert_eq!(b.virtual_ground_y(), 500);
     }
 }

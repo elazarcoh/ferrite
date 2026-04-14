@@ -1,4 +1,4 @@
-use ferrite_core::geometry::PetGeom;
+use ferrite_core::geometry::{PetGeom, PlatformBounds};
 use crate::{
     assets,
     config::{self, schema::PetConfig, watcher::spawn_watcher},
@@ -123,8 +123,9 @@ impl PetInstance {
 
         // Compute the nearest walkable surface below the pet before the AI tick
         // (used by Fall/Thrown physics for landing termination).
+        let bounds = PlatformBounds { screen_w, screen_h };
         let geom = PetGeom { x: self.x, y: self.y, w: pet_w, h: pet_h, baseline_offset: baseline_offset_px };
-        let hit = crate::window::surfaces::find_floor_info(&geom, screen_w, screen_h, cache);
+        let hit = crate::window::surfaces::find_floor_info(&geom, &bounds, cache);
         let floor_y = hit.floor_y;
         self.last_surface_hit = hit;
 
@@ -132,7 +133,7 @@ impl PetInstance {
             delta_ms,
             &mut self.x,
             &mut self.y,
-            screen_w,
+            &bounds,
             pet_w,
             pet_h,
             floor_y,
@@ -151,7 +152,7 @@ impl PetInstance {
             | crate::sprite::sm_runner::ActiveState::Grabbed { .. }
         );
         if !being_dragged && !is_airborne {
-            let new_floor = crate::window::surfaces::find_floor(&geom_post_tick, screen_w, screen_h, cache);
+            let new_floor = crate::window::surfaces::find_floor(&geom_post_tick, &bounds, cache);
             // If the floor dropped more than one pet height, the pet walked
             // off a window edge — start falling.
             if new_floor > self.y + pet_h {
@@ -165,7 +166,7 @@ impl PetInstance {
         // Elevated-surface drop: if the pet has been sitting on a raised window
         // for too long, make it fall off (eSheep-style edge drop).
         const ELEVATED_DROP_MS: u32 = 20_000; // 20 s before dropping
-        let virtual_ground = geom_post_tick.floor_landing_y(screen_h - 4);
+        let virtual_ground = geom_post_tick.floor_landing_y(bounds.virtual_ground_y());
         if is_airborne || self.y >= virtual_ground - 4 {
             // On ground or in the air — reset timer.
             self.elevated_ms = 0;
@@ -715,7 +716,6 @@ impl eframe::App for App {
             }
         };
 
-        let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f32;
         let pet_count = self.pets.len() as u32;
 
         // Tick all pets.
@@ -755,7 +755,6 @@ impl eframe::App for App {
                     cursor_dist,
                     hour,
                     focused_app.clone(),
-                    screen_h,
                     pet_count,
                     other_pet_dist,
                     pet.last_surface_hit.surface_w,

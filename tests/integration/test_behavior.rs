@@ -23,7 +23,8 @@ fn make_runner() -> SMRunner {
 
 fn tick(r: &mut SMRunner, ms: u32) {
     let sheet = mock_sheet();
-    r.tick(ms, &mut 100, &mut 100, 1920, 32, 32, 1044, &sheet);
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+    r.tick(ms, &mut 100, &mut 100, &bounds, 32, 32, 1044, &sheet);
 }
 
 #[test]
@@ -55,7 +56,8 @@ fn walk_to_idle_when_distance_exhausted() {
     let mut x = 100i32;
     let mut y = 100i32;
     for _ in 0..200 {
-        r.tick(50, &mut x, &mut y, 1920, 32, 32, 1044, &sheet);
+        let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+        r.tick(50, &mut x, &mut y, &bounds, 32, 32, 1044, &sheet);
         if matches!(&r.active, ActiveState::Named(n) if n == "idle") {
             break;
         }
@@ -90,7 +92,8 @@ fn thrown_hits_ground_returns_to_fall_then_idle() {
     r.active = ActiveState::Thrown { vx: 0.0, vy: 1000.0 };
     let mut y = 900i32;
     // vy=1000 + gravity*0.2=196 → new_y=1139 > floor_y=1044
-    r.tick(200, &mut 100, &mut y, 1920, 32, 32, 1044, &sheet);
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+    r.tick(200, &mut 100, &mut y, &bounds, 32, 32, 1044, &sheet);
     // After landing from throw, transitions to Fall with vy=0, then to idle
     // In one tick it may land and go to idle or fall briefly.
     assert!(

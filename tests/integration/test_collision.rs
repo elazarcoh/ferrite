@@ -136,7 +136,8 @@ fn runner_with_sm(sm: Arc<ferrite::sprite::sm_compiler::CompiledSM>) -> SMRunner
 /// Tick the runner forward by `ms` milliseconds.
 fn tick(r: &mut SMRunner, ms: u32) {
     let sheet = opaque_sheet();
-    r.tick(ms, &mut 100, &mut 100, 1920, 32, 32, 1044, &sheet);
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+    r.tick(ms, &mut 100, &mut 100, &bounds, 32, 32, 1044, &sheet);
 }
 
 // ---------------------------------------------------------------------------

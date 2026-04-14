@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use ferrite_core::geometry::PlatformBounds;
 use my_pet::sprite::{
     animation::AnimationState,
     sheet::load_embedded,
@@ -24,11 +25,12 @@ fn bench_behavior_tick(c: &mut Criterion) {
     .unwrap();
     let sm = load_default_sm();
     let mut runner = SMRunner::new(sm, 100.0);
+    let bounds = PlatformBounds { screen_w: 1920, screen_h: 1080 };
     c.bench_function("behavior_tick", |b| {
         b.iter(|| {
             let mut x = 100i32;
             let mut y = 0i32;
-            runner.tick(16, &mut x, &mut y, 1920, 32, 32, 1000, &sheet)
+            runner.tick(16, &mut x, &mut y, &bounds, 32, 32, 1000, &sheet)
         })
     });
 }

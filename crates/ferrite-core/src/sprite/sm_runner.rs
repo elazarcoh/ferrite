@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::sync::Arc;
+use crate::geometry::PlatformBounds;
 use crate::sprite::sm_compiler::{CompiledSM, ActionType, Direction};
 use crate::sprite::sm_expr::ConditionVars;
 use crate::sprite::sheet::SpriteSheet;
@@ -139,7 +140,6 @@ impl SMRunner {
         cursor_dist: f32,
         hour: u32,
         focused_app: String,
-        screen_h: f32,
         pet_count: u32,
         other_pet_dist: f32,
         surface_w: f32,
@@ -148,7 +148,7 @@ impl SMRunner {
         self.last_vars.cursor_dist = cursor_dist;
         self.last_vars.hour = hour;
         self.last_vars.focused_app = focused_app;
-        self.last_vars.screen_h = screen_h;
+        // screen_h is set by tick() via PlatformBounds — not here.
         self.last_vars.pet_count = pet_count;
         self.last_vars.other_pet_dist = other_pet_dist;
         self.last_vars.surface_w = surface_w;
@@ -305,7 +305,7 @@ impl SMRunner {
         delta_ms: u32,
         x: &mut i32,
         y: &mut i32,
-        screen_w: i32,
+        bounds: &PlatformBounds,
         pet_w: i32,
         pet_h: i32,
         floor_y: i32,
@@ -332,7 +332,8 @@ impl SMRunner {
         self.last_vars.state_time_ms = self.state_time_ms;
         self.last_vars.pet_x = *x as f32;
         self.last_vars.pet_y = *y as f32;
-        self.last_vars.screen_w = screen_w as f32;
+        self.last_vars.screen_w = bounds.screen_w as f32;
+        self.last_vars.screen_h = bounds.screen_h as f32;
         self.last_vars.pet_w = pet_w as f32;
         self.last_vars.pet_h = pet_h as f32;
 
@@ -341,12 +342,12 @@ impl SMRunner {
         self.last_vars.pet_vx = vx;
         self.last_vars.pet_vy = vy;
         self.last_vars.pet_v = (vx * vx + vy * vy).sqrt();
-        self.execute_action(dt, x, y, screen_w, pet_w, pet_h, floor_y);
+        self.execute_action(dt, x, y, bounds, pet_w, pet_h, floor_y);
 
         // 5. Evaluate transitions (unless step_mode without advance)
         if !self.step_mode || self.step_advance {
             self.step_advance = false;
-            self.try_transitions(screen_w, pet_w, pet_h, floor_y);
+            self.try_transitions(bounds, pet_w, pet_h, floor_y);
         }
 
         // 6. Resolve and store tag name, then return reference to stored field
@@ -354,7 +355,7 @@ impl SMRunner {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn execute_action(&mut self, dt: f32, x: &mut i32, y: &mut i32, screen_w: i32, pet_w: i32, _pet_h: i32, floor_y: i32) {
+    fn execute_action(&mut self, dt: f32, x: &mut i32, y: &mut i32, bounds: &PlatformBounds, pet_w: i32, _pet_h: i32, floor_y: i32) {
         match self.active.clone() {
             ActiveState::Named(name) => {
                 // Determine the effective state name to use for action lookup.
@@ -394,8 +395,8 @@ impl SMRunner {
                             if new_x <= 0 {
                                 *x = 0;
                                 self.facing = Facing::Right;
-                            } else if new_x + pet_w >= screen_w {
-                                *x = screen_w - pet_w;
+                            } else if new_x + pet_w >= bounds.screen_w {
+                                *x = bounds.screen_w - pet_w;
                                 self.facing = Facing::Left;
                             } else {
                                 *x = new_x;
@@ -448,8 +449,8 @@ impl SMRunner {
                 // Horizontal bounce
                 let (clamped_x, new_vx) = if new_x <= 0 {
                     (0, vx.abs())
-                } else if new_x + pet_w >= screen_w {
-                    (screen_w - pet_w, -vx.abs())
+                } else if new_x + pet_w >= bounds.screen_w {
+                    (bounds.screen_w - pet_w, -vx.abs())
                 } else {
                     (new_x, vx)
                 };
@@ -476,7 +477,7 @@ impl SMRunner {
         }
     }
 
-    fn try_transitions(&mut self, screen_w: i32, pet_w: i32, pet_h: i32, floor_y: i32) {
+    fn try_transitions(&mut self, bounds: &PlatformBounds, pet_w: i32, pet_h: i32, floor_y: i32) {
         // Only Named states have data-driven transitions
         let state_name = match &self.active {
             ActiveState::Named(n) => n.clone(),
@@ -582,7 +583,7 @@ impl SMRunner {
             }
         }
 
-        let _ = (screen_w, pet_w, pet_h, floor_y); // suppress unused warnings
+        let _ = (bounds, pet_w, pet_h, floor_y); // suppress unused warnings
     }
 
     /// Process sequential or weighted transitions for an atomic state.
@@ -872,17 +873,18 @@ transitions = [{ goto = "idle" }]
         let mut x = 0;
         let mut y = 800;
 
+        let bounds = crate::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
         // Tick once to process force (1ms delta — not enough to expire step)
-        r.tick(1, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
+        r.tick(1, &mut x, &mut y, &bounds, 32, 32, 800, &sheet);
         assert!(matches!(&r.active, ActiveState::Named(n) if n == "routine"), "should be in routine");
         assert_eq!(r.step_index, 0, "should be on step 0");
 
         // Tick past step_a duration (100ms)
-        r.tick(110, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
+        r.tick(110, &mut x, &mut y, &bounds, 32, 32, 800, &sheet);
         assert_eq!(r.step_index, 1, "should advance to step 1");
 
         // Tick past step_b duration (100ms)
-        r.tick(110, &mut x, &mut y, 1920, 32, 32, 800, &sheet);
+        r.tick(110, &mut x, &mut y, &bounds, 32, 32, 800, &sheet);
         // After all steps done, should go to idle
         assert!(matches!(&r.active, ActiveState::Named(n) if n == "idle"), "should return to idle");
     }
@@ -1025,12 +1027,12 @@ transitions = []
 
         let mut x: i32 = 500;
         let mut y: i32 = 800;
-        let screen_w = 1920;
+        let bounds = crate::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
         let pet_w = 32;
         let pet_h = 32;
         let floor_y = 800;
 
-        r.tick(16, &mut x, &mut y, screen_w, pet_w, pet_h, floor_y, &sheet);
+        r.tick(16, &mut x, &mut y, &bounds, pet_w, pet_h, floor_y, &sheet);
 
         assert!(
             matches!(&r.active, ActiveState::Named(n) if n == "walk"),
@@ -1040,7 +1042,7 @@ transitions = []
         let initial_facing = r.current_facing();
 
         for _ in 0..30 {
-            r.tick(16, &mut x, &mut y, screen_w, pet_w, pet_h, floor_y, &sheet);
+            r.tick(16, &mut x, &mut y, &bounds, pet_w, pet_h, floor_y, &sheet);
             assert!(
                 matches!(&r.active, ActiveState::Named(n) if n == "walk"),
                 "runner left walk state unexpectedly"
@@ -1161,7 +1163,8 @@ action = "sit"
         let sheet = mock_sheet();
         let mut x = 100i32;
         let mut y = 200i32;
-        r.tick(16, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        let bounds = crate::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+        r.tick(16, &mut x, &mut y, &bounds, 64, 64, 1000, &sheet);
         let v = r.last_condition_vars();
         assert_eq!(v.pet_x, 100.0);
         assert_eq!(v.pet_y, 200.0);
@@ -1175,8 +1178,9 @@ action = "sit"
         let mut r = SMRunner::new(make_collide_sm(), 80.0);
         let sheet = mock_sheet();
         let mut x = 0i32; let mut y = 0i32;
-        r.tick(100, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
-        r.tick(150, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        let bounds = crate::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+        r.tick(100, &mut x, &mut y, &bounds, 64, 64, 1000, &sheet);
+        r.tick(150, &mut x, &mut y, &bounds, 64, 64, 1000, &sheet);
         // state_time_ms should be 250 (100 + 150)
         assert_eq!(r.last_condition_vars().state_time_ms, 250);
     }
@@ -1187,7 +1191,8 @@ action = "sit"
         r.active = ActiveState::Thrown { vx: 120.0, vy: -80.0 };
         let sheet = mock_sheet();
         let mut x = 0i32; let mut y = 0i32;
-        r.tick(16, &mut x, &mut y, 1920, 64, 64, 1000, &sheet);
+        let bounds = crate::geometry::PlatformBounds { screen_w: 1920, screen_h: 1080 };
+        r.tick(16, &mut x, &mut y, &bounds, 64, 64, 1000, &sheet);
         let v = r.last_condition_vars();
         assert_eq!(v.pet_vx, 120.0);
         assert_eq!(v.pet_vy, -80.0);
@@ -1198,12 +1203,11 @@ action = "sit"
     #[test]
     fn update_env_vars_sets_all_fields() {
         let mut r = SMRunner::new(make_collide_sm(), 80.0);
-        r.update_env_vars(42.5, 14, "MyEditor".to_string(), 1080.0, 3, 250.0, 1920.0, "taskbar".to_string());
+        r.update_env_vars(42.5, 14, "MyEditor".to_string(), 3, 250.0, 1920.0, "taskbar".to_string());
         let v = r.last_condition_vars();
         assert_eq!(v.cursor_dist, 42.5);
         assert_eq!(v.hour, 14);
         assert_eq!(v.focused_app, "MyEditor");
-        assert_eq!(v.screen_h, 1080.0);
         assert_eq!(v.pet_count, 3);
         assert_eq!(v.other_pet_dist, 250.0);
         assert_eq!(v.surface_w, 1920.0);

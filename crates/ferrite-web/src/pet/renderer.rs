@@ -34,8 +34,9 @@ pub fn tick_and_draw(
     }
     let floor_y = super::surfaces::find_floor(s.x, s.y, pet_w, pet_h, win_h, &s.surfaces);
 
+    let bounds = ferrite_core::geometry::PlatformBounds { screen_w: win_w, screen_h: win_h };
     let tag_name = s.runner.tick(delta_ms, &mut s.x, &mut s.y,
-                                  win_w, pet_w, pet_h, floor_y, &s.sheet).to_owned();
+                                  &bounds, pet_w, pet_h, floor_y, &s.sheet).to_owned();
 
     // Edge-fall: if the pet walked off the edge of a DOM surface, start falling.
     if matches!(s.runner.active, ActiveState::Named(_)) && !s.is_dragging && floor_y > s.y {
