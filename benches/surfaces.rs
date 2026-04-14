@@ -6,6 +6,7 @@ fn bench_find_floor_cold(c: &mut Criterion) {
     let screen_w = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(0) };
     let screen_h = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetSystemMetrics(1) };
     let geom = PetGeom { x: 100, y: 0, w: 32, h: 32, baseline_offset: 0 };
+    // Reduced sample size: EnumWindows is a blocking syscall with OS scheduling jitter.
     c.bench_function("find_floor_cold", |b| {
         b.iter(|| {
             let mut cache = SurfaceCache::default();
