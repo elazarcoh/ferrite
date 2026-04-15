@@ -15,7 +15,10 @@ use crate::{
         window_lifecycle::AppWindowLifecycle,
         SystemTray,
     },
-    window::pet_window::PetWindow,
+    window::{
+        blender::{build_frame_cache, FrameCache},
+        pet_window::PetWindow,
+    },
 };
 use anyhow::{Context, Result};
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -64,6 +67,9 @@ pub struct PetInstance {
     last_flip: bool,
     /// Surface metadata from the last call to `find_floor_info`.
     last_surface_hit: crate::window::surfaces::SurfaceHit,
+    /// Pre-scaled + premultiplied BGRA buffers for every frame, keyed to `cfg.scale`.
+    /// Rebuilt automatically when the scale changes or the sheet is reloaded.
+    frame_cache: Option<FrameCache>,
 }
 
 impl PetInstance {
@@ -112,6 +118,7 @@ impl PetInstance {
                 surface_w: 0.0,
                 surface_label: String::new(),
             },
+            frame_cache: None,
         };
 
         inst.render_current_frame()?;
@@ -213,16 +220,16 @@ impl PetInstance {
     }
 
     fn render_current_frame(&mut self) -> Result<()> {
+        let scale = self.cfg.scale;
+        // Rebuild cache when missing or when scale has changed.
+        if self.frame_cache.as_ref().is_none_or(|c| c.scale != scale) {
+            self.frame_cache = Some(build_frame_cache(&self.sheet.image, &self.sheet.frames, scale));
+        }
+        let cache = self.frame_cache.as_ref().unwrap();
         let abs = self.anim.absolute_frame(&self.sheet);
-        let f = &self.sheet.frames[abs];
         let flip = self.compute_flip();
         self.last_flip = flip;
-        self.window.render_frame(
-            &self.sheet.image,
-            f.x, f.y, f.w, f.h,
-            self.cfg.scale,
-            flip,
-        )
+        self.window.render_cached_frame(cache, abs, flip)
     }
 
     // ─── Test-helper accessors ───────────────────────────────────────────────
@@ -335,6 +342,7 @@ impl App {
                 match load_sheet(&inst.cfg.sheet_path) {
                     Ok(new_sheet) => {
                         inst.sheet = new_sheet;
+                        inst.frame_cache = None; // invalidate: new pixels
                         log::info!("hot-reloaded sheet for pet '{}'", inst.cfg.id);
                     }
                     Err(e) => log::warn!("sheet reload failed for '{}': {e}", inst.cfg.id),

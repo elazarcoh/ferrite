@@ -1,4 +1,4 @@
-use crate::window::blender::{alpha_at, blit_frame};
+use crate::window::blender::{alpha_at, blit_frame, FrameCache};
 use anyhow::Result;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
@@ -221,6 +221,62 @@ impl PetWindow {
         }
 
         // Update the per-pixel hit-test registry after rendering.
+        crate::window::wndproc::update_alpha_buf(self.hwnd, &self.frame_buf, dw);
+
+        Ok(())
+    }
+
+    /// Render a pre-scaled frame from a `FrameCache` — just a memcpy into the DIB,
+    /// no per-pixel work at render time.
+    pub fn render_cached_frame(
+        &mut self,
+        cache: &FrameCache,
+        frame_idx: usize,
+        flip_h: bool,
+    ) -> Result<()> {
+        let (dw, dh) = cache.dims[frame_idx];
+        let buf = &cache.entries[frame_idx][flip_h as usize];
+
+        // Reallocate GDI cache if dimensions changed (e.g. scale change or variable-size frames).
+        if dw != self.cached_w || dh != self.cached_h {
+            unsafe { self.alloc_gdi_cache(dw, dh); }
+            self.width = dw;
+            self.height = dh;
+        }
+
+        anyhow::ensure!(!self.dib_bits.is_null(), "GDI cache not initialized");
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), self.dib_bits, buf.len());
+
+            let mut rc: RECT = std::mem::zeroed();
+            GetWindowRect(self.hwnd, &mut rc);
+            let pt_dst = POINT { x: rc.left, y: rc.top };
+            let pt_src = POINT { x: 0, y: 0 };
+            let sz = SIZE { cx: dw as i32, cy: dh as i32 };
+            let blend = BLENDFUNCTION {
+                BlendOp: AC_SRC_OVER as u8,
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: AC_SRC_ALPHA as u8,
+            };
+
+            let hdc_screen = GetDC(std::ptr::null_mut());
+            let ok = UpdateLayeredWindow(
+                self.hwnd, hdc_screen,
+                &pt_dst, &sz,
+                self.mem_dc, &pt_src,
+                0, &blend, ULW_ALPHA,
+            );
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
+            if ok == 0 {
+                log::warn!("UpdateLayeredWindow failed (err={})", windows_sys::Win32::Foundation::GetLastError());
+            }
+        }
+
+        // Mirror into frame_buf so that alpha_at_local / hit-test still works.
+        self.frame_buf.resize(buf.len(), 0);
+        self.frame_buf.copy_from_slice(buf);
         crate::window::wndproc::update_alpha_buf(self.hwnd, &self.frame_buf, dw);
 
         Ok(())
