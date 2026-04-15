@@ -64,6 +64,20 @@ Implementation plans: PR-A (`2026-04-07-webapp-pr-a.md`), PR-B/C/D (not yet writ
 
 ---
 
+## Mobile / Touch
+
+- [x] **M-01 — Touch support in webapp** (`crates/ferrite-webapp`) — egui/eframe touch events for drag, tap; test on mobile viewport
+- [x] **M-02 — Touch support in website** (`crates/ferrite-web`) — Dioxus site navigation and interactive elements usable on touch devices
+
+---
+
+## Website — Guides Pages
+
+- [x] **W-01 — Improve guides page visual design** (`crates/ferrite-web`) — layout, typography, spacing polish
+- [x] **W-02 — Add screenshots to guides** (`crates/ferrite-web`) — capture exact screenshots from webapp using Playwright (`tests/webapp/`), embed in guide pages
+
+---
+
 ## Planned PR Groupings (webapp)
 
 | PR | Items | Status |
