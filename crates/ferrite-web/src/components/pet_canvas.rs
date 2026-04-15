@@ -65,7 +65,8 @@ pub fn PetCanvas() -> Element {
 }
 
 fn setup_drag(doc: &web_sys::Document, state: Rc<RefCell<PetWebState>>) {
-    // pointerdown — hit-test pet bounding box and start drag
+    // pointerdown — NON-PASSIVE; hit-test pet bounding box, prevent text selection,
+    // and capture pointer so subsequent events don't land on DOM elements below.
     {
         let state = state.clone();
         let cb = Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |e: web_sys::PointerEvent| {
@@ -75,6 +76,10 @@ fn setup_drag(doc: &web_sys::Document, state: Rc<RefCell<PetWebState>>) {
             let pet_h = s.sheet.frames.first().map(|f| (f.h as f64 * 2.0) as i32).unwrap_or(80);
             let hit = mx >= s.x && mx <= s.x + pet_w && my >= s.y && my <= s.y + pet_h;
             if hit {
+                e.prevent_default();
+                let _ = e.target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                    .map(|el| el.set_pointer_capture(e.pointer_id()));
                 drop(s);
                 let mut s = state.borrow_mut();
                 let offset = (mx - s.x, my - s.y);
@@ -86,7 +91,13 @@ fn setup_drag(doc: &web_sys::Document, state: Rc<RefCell<PetWebState>>) {
                 s.vel_cur = Some(((mx, my), now));
             }
         });
-        doc.add_event_listener_with_callback("pointerdown", cb.as_ref().unchecked_ref()).unwrap();
+        let options = web_sys::AddEventListenerOptions::new();
+        options.set_passive(false);
+        doc.add_event_listener_with_callback_and_add_event_listener_options(
+            "pointerdown",
+            cb.as_ref().unchecked_ref(),
+            &options,
+        ).unwrap();
         cb.forget();
     }
 
