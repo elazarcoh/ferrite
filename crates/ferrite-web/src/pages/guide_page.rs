@@ -1,9 +1,21 @@
 use dioxus::prelude::*;
+use crate::app::Route;
 
 const GETTING_STARTED: &str = include_str!("../../guides/getting-started.md");
 const CUSTOM_SPRITES: &str  = include_str!("../../guides/custom-sprites.md");
 const STATE_MACHINES: &str  = include_str!("../../guides/state-machines.md");
 const CONFIGURATION: &str   = include_str!("../../guides/configuration.md");
+
+fn markdown_to_html(md: &str) -> String {
+    use pulldown_cmark::{html, Options, Parser};
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(md, opts);
+    let mut output = String::new();
+    html::push_html(&mut output, parser);
+    output
+}
 
 #[component]
 pub fn GuidePage(slug: String) -> Element {
@@ -16,27 +28,16 @@ pub fn GuidePage(slug: String) -> Element {
     };
 
     rsx! {
-        div { class: "max-w-2xl mx-auto px-6 py-16 prose prose-slate",
-            dangerous_inner_html: markdown_to_html(content)
+        article { class: "max-w-3xl mx-auto px-6 py-12",
+            Link {
+                to: Route::GuideIndex {},
+                class: "inline-flex items-center gap-1 text-indigo-600 text-sm font-semibold mb-10 hover:text-indigo-800 transition-colors",
+                "← Guides"
+            }
+            div {
+                class: "prose prose-slate prose-headings:font-bold prose-a:text-indigo-600 prose-code:bg-slate-100 prose-code:rounded prose-code:px-1 prose-code:text-sm prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:rounded-xl max-w-none [&_img]:rounded-xl [&_img]:border [&_img]:border-slate-200 [&_img]:my-6 [&_img]:w-full [&_img]:shadow-sm",
+                dangerous_inner_html: markdown_to_html(content)
+            }
         }
     }
-}
-
-fn markdown_to_html(md: &str) -> String {
-    // Simple markdown: convert headings and paragraphs
-    let mut html = String::new();
-    for line in md.lines() {
-        if let Some(rest) = line.strip_prefix("# ") {
-            html.push_str(&format!("<h1 class=\"text-3xl font-bold mb-6\">{}</h1>\n", rest));
-        } else if let Some(rest) = line.strip_prefix("## ") {
-            html.push_str(&format!("<h2 class=\"text-xl font-bold mt-8 mb-3\">{}</h2>\n", rest));
-        } else if let Some(rest) = line.strip_prefix("- ") {
-            html.push_str(&format!("<li>{}</li>\n", rest));
-        } else if line.is_empty() {
-            html.push_str("<br/>\n");
-        } else {
-            html.push_str(&format!("<p class=\"mb-4\">{}</p>\n", line));
-        }
-    }
-    html
 }

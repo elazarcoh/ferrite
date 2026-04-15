@@ -30,3 +30,4 @@ console_error_panic_hook = "0.1"
 once_cell    = { workspace = true }
 gloo-net     = { version = "0.5", features = ["http"] }
 toml         = { workspace = true }
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
