@@ -165,6 +165,7 @@ pub fn open_app_window(
                     log::warn!("Failed to delete sprite: {e}");
                 } else {
                     s.gallery = gallery_entries_from_desktop();
+                    s.config_state.gallery = s.gallery.clone();
                     if s.selected_sprite_key.as_ref() == Some(&key) {
                         s.selected_sprite_key = None;
                         s.sprite_editor = None;
@@ -234,6 +235,7 @@ pub fn open_app_window(
             && let Some(p) = ed.saved_json_path.take() {
                 s.saved_json_path = Some(p.clone());
                 s.gallery = gallery_entries_from_desktop();
+                s.config_state.gallery = s.gallery.clone();
                 s.selected_sprite_key = Some(p.to_string_lossy().to_string());
             }
     });

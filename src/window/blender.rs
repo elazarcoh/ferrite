@@ -1,4 +1,5 @@
 use image::RgbaImage;
+use crate::sprite::sheet::Frame;
 
 /// Copy a source frame region into `dst`, applying an integer upscale and
 /// optional horizontal flip, while premultiplying alpha for Win32
@@ -42,6 +43,38 @@ pub fn blit_frame(
             dst[dst_idx + 3] = a;  // A (premultiplied BGRA)
         }
     }
+}
+
+/// Pre-computed scaled + premultiplied BGRA buffers for every frame in a sprite sheet.
+///
+/// Both normal and horizontally-flipped variants are stored so that render_cached_frame
+/// can do a plain memcpy instead of per-pixel work each tick.
+pub struct FrameCache {
+    pub scale: f32,
+    /// Per-frame `[normal, flipped]` premultiplied BGRA buffers.
+    pub entries: Vec<[Vec<u8>; 2]>,
+    /// `(width, height)` in pixels of each scaled frame.
+    pub dims: Vec<(u32, u32)>,
+}
+
+/// Build a `FrameCache` from a chromakey-applied spritesheet image and frame list.
+///
+/// Call this once after sheet load (chromakey already applied) and again whenever
+/// the scale factor changes.  Rendering then becomes a plain buffer copy.
+pub fn build_frame_cache(src: &RgbaImage, frames: &[Frame], scale: f32) -> FrameCache {
+    let mut entries = Vec::with_capacity(frames.len());
+    let mut dims = Vec::with_capacity(frames.len());
+    for f in frames {
+        let mut normal = Vec::new();
+        blit_frame(src, f.x, f.y, f.w, f.h, &mut normal, scale, false);
+        let mut flipped = Vec::new();
+        blit_frame(src, f.x, f.y, f.w, f.h, &mut flipped, scale, true);
+        let dw = (f.w as f32 * scale).round() as u32;
+        let dh = (f.h as f32 * scale).round() as u32;
+        dims.push((dw, dh));
+        entries.push([normal, flipped]);
+    }
+    FrameCache { scale, entries, dims }
 }
 
 /// Returns the alpha value of the pixel at (`px`, `py`) in a premultiplied
