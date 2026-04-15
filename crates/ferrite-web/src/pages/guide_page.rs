@@ -6,7 +6,9 @@ const CUSTOM_SPRITES: &str  = include_str!("../../guides/custom-sprites.md");
 const STATE_MACHINES: &str  = include_str!("../../guides/state-machines.md");
 const CONFIGURATION: &str   = include_str!("../../guides/configuration.md");
 
-fn markdown_to_html(md: &str) -> String {
+// Safety: `md` must be a compile-time &'static str (embedded via include_str!).
+// pulldown-cmark does not sanitize HTML; passing dynamic/user-controlled input here would be XSS.
+fn markdown_to_html(md: &'static str) -> String {
     use pulldown_cmark::{html, Options, Parser};
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);

@@ -115,6 +115,23 @@ fn setup_drag(doc: &web_sys::Document, state: Rc<RefCell<PetWebState>>) {
         cb.forget();
     }
 
+    // pointercancel — browser took over the gesture (scroll, incoming call, orientation change);
+    // abort drag cleanly so is_dragging never gets stuck true.
+    {
+        let state = state.clone();
+        let cb = Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |_e: web_sys::PointerEvent| {
+            let mut s = state.borrow_mut();
+            if s.is_dragging {
+                s.runner.release((0.0, 0.0));
+                s.is_dragging = false;
+                s.vel_prev = None;
+                s.vel_cur = None;
+            }
+        });
+        doc.add_event_listener_with_callback("pointercancel", cb.as_ref().unchecked_ref()).unwrap();
+        cb.forget();
+    }
+
     // pointerup — compute velocity and release into physics
     {
         let state = state.clone();
