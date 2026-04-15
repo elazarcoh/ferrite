@@ -4,7 +4,7 @@
  * Run after building the webapp dist:
  *   cd tests/webapp
  *   npx serve -l 8080 ../../crates/ferrite-webapp/dist &
- *   npx ts-node scripts/capture-screenshots.ts
+ *   npx tsx scripts/capture-screenshots.ts
  *
  * Output: crates/ferrite-web/assets/guides/{slug}.png
  */
@@ -18,7 +18,7 @@ const OUT_DIR = path.resolve(__dirname, '../../../crates/ferrite-web/assets/guid
 
 async function waitForApp(page: any): Promise<void> {
   await page.waitForFunction(
-    () => typeof (window as any).__ferrite !== 'undefined',
+    '() => typeof window.__ferrite !== "undefined"',
     { timeout: 15000 }
   );
   // Extra wait for first render

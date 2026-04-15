@@ -1,5 +1,7 @@
 # Custom Sprites
 
+![Sprite editor showing the eSheep spritesheet gallery](/ferrite/assets/guides/custom-sprites.png)
+
 Ferrite supports Aseprite-exported spritesheets. Export your animation as a spritesheet
 with JSON metadata and import it via the tray menu.
 
