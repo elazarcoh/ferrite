@@ -90,12 +90,13 @@ fn setup_drag(doc: &web_sys::Document, state: Rc<RefCell<PetWebState>>) {
         cb.forget();
     }
 
-    // pointermove — update position and track velocity while dragging
+    // pointermove — NON-PASSIVE so prevent_default() can suppress browser scroll during drag
     {
         let state = state.clone();
         let cb = Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |e: web_sys::PointerEvent| {
             let mut s = state.borrow_mut();
             if s.is_dragging {
+                e.prevent_default(); // suppress touch scroll while dragging pet
                 let (mx, my) = (e.client_x(), e.client_y());
                 s.x = mx - s.drag_offset.0;
                 s.y = my - s.drag_offset.1;
@@ -104,7 +105,13 @@ fn setup_drag(doc: &web_sys::Document, state: Rc<RefCell<PetWebState>>) {
                 s.vel_cur = Some(((mx, my), now));
             }
         });
-        doc.add_event_listener_with_callback("pointermove", cb.as_ref().unchecked_ref()).unwrap();
+        let options = web_sys::AddEventListenerOptions::new();
+        options.set_passive(false);
+        doc.add_event_listener_with_callback_and_add_event_listener_options(
+            "pointermove",
+            cb.as_ref().unchecked_ref(),
+            &options,
+        ).unwrap();
         cb.forget();
     }
 
